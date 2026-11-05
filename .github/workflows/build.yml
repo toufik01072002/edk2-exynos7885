@@ -1,22 +1,42 @@
-name: C/C++ CI
+name: EDK2 Exynos7885 reference build
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-
-    runs-on: ubuntu-latest
+  build-reference:
+    name: Build upstream A10 reference profile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
 
     steps:
-    - uses: actions/checkout@v3
-    - name: CI Build
-      run: chmod +x ci-build.sh && ./ci-build.sh
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - uses: actions/upload-artifact@v3
-      with:
-        name: Galaxy A10
-        path: ./workspace/boot.tar
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential uuid-dev iasl git nasm \
+            gcc-aarch64-linux-gnu bc mkbootimg python3
+
+      - name: Build EDK2
+        run: |
+          chmod +x ci-build.sh build.sh build_bootshim.sh
+          ./ci-build.sh
+
+      - name: Upload build outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: edk2-exynos7885-reference-a10
+          if-no-files-found: warn
+          path: |
+            workspace/UEFI
+            workspace/Build/EXYNOS7885Pkg/DEBUG_GCC5/FV/EXYNOS7885PKG_UEFI.fd
+            BootShim/BootShim.bin
