@@ -388,9 +388,9 @@ STATIC CONST ARM_TYPE7 mArmDefaultType7_a57_l1i = {
       SMBIOS_HANDLE_A57_L1I,
     },
     1,
-    0x380, //L1 enabled, unknown WB
-    48, //48k i cache max
-    48, //48k installed
+    {0, 0, 0, 0, 1, 3, 0}, //L1 enabled, unknown operation mode
+    {48, 0}, //48k i cache max
+    {48, 0}, //48k installed
     {0,1}, //SRAM type
     {0,1}, //SRAM type
     0, //unkown speed
@@ -409,9 +409,9 @@ STATIC CONST ARM_TYPE7 mArmDefaultType7_a53_l1i = {
       SMBIOS_HANDLE_A53_L1I,
     },
     1,
-    0x380, //L1 enabled, unknown WB
-    32, //32k i cache max
-    32, //32k installed
+    {0, 0, 0, 0, 1, 3, 0}, //L1 enabled, unknown operation mode
+    {32, 0}, //32k i cache max
+    {32, 0}, //32k installed
     {0,1}, //SRAM type
     {0,1}, //SRAM type
     0, //unkown speed
@@ -430,9 +430,9 @@ STATIC CONST ARM_TYPE7 mArmDefaultType7_a57_l1d = {
       SMBIOS_HANDLE_A57_L1D,
     },
     2,
-    0x180, //L1 enabled, WB
-    32, //32k d cache max
-    32, //32k installed
+    {0, 0, 0, 0, 1, 1, 0}, //L1 enabled, write-back
+    {32, 0}, //32k d cache max
+    {32, 0}, //32k installed
     {0,1}, //SRAM type
     {0,1}, //SRAM type
     0, //unkown speed
@@ -451,9 +451,9 @@ STATIC CONST ARM_TYPE7 mArmDefaultType7_a53_l1d = {
       SMBIOS_HANDLE_A53_L1D,
     },
     2,
-    0x180, //L1 enabled, WB
-    32, //32k d cache max
-    32, //32k installed
+    {0, 0, 0, 0, 1, 1, 0}, //L1 enabled, write-back
+    {32, 0}, //32k d cache max
+    {32, 0}, //32k installed
     {0,1}, //SRAM type
     {0,1}, //SRAM type
     0, //unkown speed
@@ -472,9 +472,9 @@ STATIC CONST ARM_TYPE7 mArmDefaultType7_a57_l2 = {
       SMBIOS_HANDLE_A57_L2,
     },
     3,
-    0x181, //L2 enabled, WB
-    2048, //2M d cache max
-    2048, //2M installed
+    {1, 0, 0, 0, 1, 1, 0}, //L2 enabled, write-back
+    {2048, 0}, //2M d cache max
+    {2048, 0}, //2M installed
     {0,1}, //SRAM type
     {0,1}, //SRAM type
     0, //unkown speed
@@ -493,9 +493,9 @@ STATIC CONST ARM_TYPE7 mArmDefaultType7_a53_l2 = {
       SMBIOS_HANDLE_A53_L2,
     },
     3,
-    0x181, //L2 enabled, WB
-    1024, //1M D cache max
-    1024, //1M installed
+    {1, 0, 0, 0, 1, 1, 0}, //L2 enabled, write-back
+    {1024, 0}, //1M D cache max
+    {1024, 0}, //1M installed
     {0,1}, //SRAM type
     {0,1}, //SRAM type
     0, //unkown speed
