@@ -288,7 +288,7 @@ STATIC CONST ARM_TYPE4 mArmDefaultType4_a72 = {
     3, //processor type CPU
     ProcessorFamilyIndicatorFamily2, //processor family, acquire from field2
     2, //manufactuer
-    {{0,},{0.}}, //processor id
+    {0, 0, 0, 0}, //processor id
     5, //version
     {0,0,0,0,0,1}, //voltage
     0, //external clock
@@ -322,7 +322,7 @@ STATIC CONST ARM_TYPE4 mArmDefaultType4_a57 = {
     3, //processor type CPU
     ProcessorFamilyIndicatorFamily2, //processor family, acquire from field2
     2, //manufactuer
-    {{0,},{0.}}, //processor id
+    {0, 0, 0, 0}, //processor id
     3, //version
     {0,0,0,0,0,1}, //voltage
     0, //external clock
@@ -356,7 +356,7 @@ STATIC CONST ARM_TYPE4 mArmDefaultType4_a53 = {
     3, //processor type CPU
     ProcessorFamilyIndicatorFamily2, //processor family, acquire from field2
     2, //manufactuer
-    {{0,},{0.}}, //processor id
+    {0, 0, 0, 0}, //processor id
     4, //version
     {0,0,0,0,0,1}, //voltage
     0, //external clock
