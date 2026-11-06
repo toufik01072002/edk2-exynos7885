@@ -38,5 +38,5 @@ jobs:
           if-no-files-found: warn
           path: |
             workspace/UEFI
-            workspace/Build/EXYNOS7885Pkg/DEBUG_GCC5/FV/EXYNOS7885PKG_UEFI.fd
+            workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd
             BootShim/BootShim.bin
