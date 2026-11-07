@@ -432,9 +432,7 @@ PlatformRegisterOptionsAndKeys (
   VOID
   )
 {
-  INTN ShellOption;
-
-  ShellOption = PlatformRegisterFvBootOption(
+  PlatformRegisterFvBootOption(
       &gUefiShellFileGuid, 
       L"UEFI Shell",
       LOAD_OPTION_ACTIVE
