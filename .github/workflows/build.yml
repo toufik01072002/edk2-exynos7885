@@ -1,42 +1,75 @@
-name: EDK2 Exynos7885 reference build
+name: Build EDK2 SM-A205W
 
 on:
   workflow_dispatch:
+    inputs:
+      edk2_ref:
+        description: "Tag ou branche EDK2 (vide = branche par defaut)"
+        required: false
+        default: ""
   push:
-    branches: ["main"]
-
-permissions:
-  contents: read
+    branches: [main]
+    paths:
+      - "EXYNOS7885Pkg/**"
+      - "BootShim/**"
+      - "build*.sh"
+      - "firstrun.sh"
+      - ".github/workflows/build-a205w.yml"
 
 jobs:
-  build-reference:
-    name: Build upstream A10 reference profile
+  build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
-
     steps:
-      - name: Checkout repository
+      # Le depot doit etre dans un dossier qui a le meme nom que sur ton PC,
+      # avec edk2 et edk2-platforms a cote (voir README).
+      - name: Checkout du depot
         uses: actions/checkout@v4
+        with:
+          path: edk2-exynos7885
+          submodules: recursive
 
-      - name: Install build dependencies
+      - name: Installer les dependances
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential uuid-dev iasl git nasm \
-            gcc-aarch64-linux-gnu bc mkbootimg python3
+          sudo apt-get install -y build-essential uuid-dev acpica-tools git nasm \
+            python3 python3-setuptools gcc-aarch64-linux-gnu mkbootimg \
+            device-tree-compiler
 
-      - name: Build EDK2
+      - name: Cloner EDK2 et edk2-platforms
+        env:
+          EDK2_REF: ${{ github.event.inputs.edk2_ref }}
         run: |
-          chmod +x ci-build.sh build.sh build_bootshim.sh
-          ./ci-build.sh
+          if [ -n "$EDK2_REF" ]; then
+            git clone --recursive -b "$EDK2_REF" https://github.com/tianocore/edk2
+          else
+            git clone --recursive https://github.com/tianocore/edk2
+          fi
+          git clone https://github.com/tianocore/edk2-platforms.git
+          ls -la
 
-      - name: Upload build outputs
-        if: always()
+      - name: Compiler
+        working-directory: edk2-exynos7885
+        run: |
+          chmod +x *.sh
+          ./firstrun.sh
+          ./build.sh
+
+      - name: Preparer les images a flasher
+        working-directory: edk2-exynos7885/workspace
+        run: |
+          ls -l
+          cp boot.img recovery.img
+          tar -c recovery.img -f recovery.tar
+          ls -l
+
+      - name: Publier les fichiers
         uses: actions/upload-artifact@v4
         with:
-          name: edk2-exynos7885-reference-a10
-          if-no-files-found: warn
+          name: a205w-edk2
+          if-no-files-found: error
           path: |
-            workspace/UEFI
-            workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd
-            BootShim/BootShim.bin
+            edk2-exynos7885/workspace/UEFI
+            edk2-exynos7885/workspace/boot.img
+            edk2-exynos7885/workspace/boot.tar
+            edk2-exynos7885/workspace/recovery.img
+            edk2-exynos7885/workspace/recovery.tar
