@@ -39,11 +39,10 @@ jobs:
         env:
           EDK2_REF: ${{ github.event.inputs.edk2_ref }}
         run: |
-          if [ -n "$EDK2_REF" ]; then
-            git clone --recursive -b "$EDK2_REF" https://github.com/tianocore/edk2
-          else
-            git clone --recursive https://github.com/tianocore/edk2
+          if [ -z "$EDK2_REF" ]; then
+            EDK2_REF="edk2-stable202605"
           fi
+          git clone --recursive -b "$EDK2_REF" https://github.com/tianocore/edk2
           git clone https://github.com/tianocore/edk2-platforms.git
           ls -la
 
