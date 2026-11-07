@@ -277,40 +277,6 @@ STATIC CONST ARM_TYPE3 mArmDefaultType3 = {
 };
 
 // Processor
-STATIC CONST ARM_TYPE4 mArmDefaultType4_a72 = {
-  {
-    { // SMBIOS_STRUCTURE Hdr
-      EFI_SMBIOS_TYPE_PROCESSOR_INFORMATION, // UINT8 Type
-      sizeof (SMBIOS_TABLE_TYPE4),           // UINT8 Length
-      SMBIOS_HANDLE_A72_CLUSTER,
-    },
-    1, //socket type
-    3, //processor type CPU
-    ProcessorFamilyIndicatorFamily2, //processor family, acquire from field2
-    2, //manufactuer
-    {0, 0, 0, 0}, //processor id
-    5, //version
-    {0,0,0,0,0,1}, //voltage
-    0, //external clock
-    1200, //max speed
-    1200, //current speed
-    0x41, //status
-    ProcessorUpgradeOther,
-    SMBIOS_HANDLE_A57_L1I, //l1 cache handle
-    SMBIOS_HANDLE_A57_L2, //l2 cache handle
-    0xFFFF, //l3 cache handle
-    0, //serial not set
-    0, //asset not set
-    8, //part number
-    2, //core count in socket
-    2, //enabled core count in socket
-    0, //threads per socket
-    0xEC, // processor characteristics
-    ProcessorFamilyARM, //ARM core
-  },
-  TYPE4_STRINGS
-};
-
 STATIC CONST ARM_TYPE4 mArmDefaultType4_a57 = {
   {
     { // SMBIOS_STRUCTURE Hdr
