@@ -64,20 +64,28 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
 
 //--------------------- DDR --------------------- */
 // RAM Bank 0: 0x80000000 - 0xBBC00000 (956 MiB)
+// Usable RAM in Bank 0:
+    {"RAM Bank 0 Low",    0x80000000, 0x10000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x80000000-0x90000000 (256 MiB)
+
+// BootShim / UEFI FD region (loaded by bootloader):
+    {"BootShim/FD",       0x90000000, 0x00200000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK},    // 0x90000000-0x90200000 (2 MiB)
+
+// Usable RAM after BootShim, before TIMA:
+    {"RAM Bank 0 Mid",    0x90200000, 0x27E00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x90200000-0xB8000000 (638 MiB)
+
 // Reserved regions within bank 0:
     {"TIMA Reserved",     0xB8000000, 0x00200000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},
 
-// Usable RAM in Bank 0 (excluding TIMA at 0xB8000000-0xBA000000)
-    {"RAM Bank 0 Low",    0x80000000, 0x38000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x80000000-0xB8000000 (896 MiB)
-    {"RAM Bank 0 High",   0xBA000000, 0x01C00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0xBA000000-0xBBC00000 (28 MiB)
+// Usable RAM in Bank 0 after TIMA:
+    {"RAM Bank 0 High",   0xB8200000, 0x03A00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0xB8200000-0xBBC00000 (58 MiB)
 
 // RAM Bank 1: 0xC0000000 - 0x100000000 (1024 MiB)
 // Reserved regions within bank 1:
     {"seclog Reserved",   0xC0000000, 0x00080000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 512 KiB
 
 // Usable RAM in Bank 1 (excluding seclog + fixed reservations):
-//   0xC0080000 - 0xE9000000 = 663 MiB
-    {"RAM Bank 1 Low",    0xC0080000, 0x28F80000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0xC0080000-0xE9000000 (663 MiB)
+//   0xC0080000 - 0xE9000000 = 655.5 MiB
+    {"RAM Bank 1 Low",    0xC0080000, 0x28F80000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0xC0080000-0xE9000000 (655.5 MiB)
 
 // Fixed reservations in Bank 1 range:
     {"WiFi/BT Reserved",  0xE9000000, 0x00400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 4 MiB
@@ -87,10 +95,14 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
 
     {"Framebuffer",       0xEC000000, 0x01400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 20 MiB
 
-//   Gap: 0xED400000 - 0xF0C00000 = 0x22800000 = 56 MiB
+//   Gap: 0xED400000 - 0xF0C00000 = 56 MiB
     {"RAM Bank 1 High",   0xED400000, 0x03800000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0xED400000-0xF0C00000 (56 MiB)
 
-    {"Video/Crypto/Modem/CP", 0xF0C00000, 0x0E000000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN}, // 224 MiB
+// CMA video_stream pool (dynamic, reserved at boot):
+    {"CMA video_stream",  0xF0C00000, 0x04800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 0xF0C00000-0xF5400000 (72 MiB)
+
+// Modem/CP region (DTBO overlay 3):
+    {"Modem/CP Reserved", 0xF5400000, 0x09800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 0xF5400000-0xFEC00000 (152 MiB)
 
 //   Gap: 0xFEC00000 - 0xFFC00000 = 16 MiB
     {"RAM Bank 1 VeryHigh", 0xFEC00000, 0x01000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},  // 0xFEC00000-0xFFC00000 (16 MiB)
@@ -110,8 +122,8 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
 //   crypto: 0x8BB800000-0x8BD800000 (32 MiB)
 //   video_frame: 0x8BD800000-0x8C0000000 (40 MiB)
 // Remaining RAM in Bank 2 is usable (not reserved by memblock):
-//   0x880000000 - 0x8BA000000 = 512 MiB
-    {"RAM Bank 2 Low",    0x880000000, 0x20000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0x880000000-0x8BA000000 (512 MiB)
+//   0x880000000 - 0x8BA000000 = 928 MiB
+    {"RAM Bank 2 Low",    0x880000000, 0x3A000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0x880000000-0x8BA000000 (928 MiB)
 //   0x8BB400000 - 0x8BB800000 = 4 MiB (gap between cma-3 and crypto)
     {"RAM Bank 2 Gap1",   0x8BB400000, 0x00400000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0x8BB400000-0x8BB800000 (4 MiB)
 //   After crypto ends at 0x8BD800000, video_frame starts at 0x8BD800000 and ends at 0x8C0000000
