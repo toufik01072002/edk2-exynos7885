@@ -69,25 +69,53 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
 
 // Usable RAM in Bank 0 (excluding TIMA at 0xB8000000-0xBA000000)
     {"RAM Bank 0 Low",    0x80000000, 0x38000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x80000000-0xB8000000 (896 MiB)
-    {"RAM Bank 0 High",   0xBA000000, 0x03C00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0xBA000000-0xBBC00000 (60 MiB)
+    {"RAM Bank 0 High",   0xBA000000, 0x01C00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0xBA000000-0xBBC00000 (28 MiB)
 
 // RAM Bank 1: 0xC0000000 - 0x100000000 (1024 MiB)
 // Reserved regions within bank 1:
     {"seclog Reserved",   0xC0000000, 0x00080000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 512 KiB
 
-// Usable RAM in Bank 1 (excluding seclog at start)
-    {"RAM Bank 1",        0xC0080000, 0x3FF80000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0xC0080000-0x100000000 (1023.5 MiB)
+// Usable RAM in Bank 1 (excluding seclog + fixed reservations):
+//   0xC0080000 - 0xE9000000 = 663 MiB
+    {"RAM Bank 1 Low",    0xC0080000, 0x28F80000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0xC0080000-0xE9000000 (663 MiB)
 
-// RAM Bank 2: 0x880000000 - 0x8C0000000 (1024 MiB) - ABOVE 4GB!
-// CMA pools are dynamic, don't reserve statically - mark as usable
-    {"RAM Bank 2",        0x880000000, 0x40000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 1024 MiB (0x40000000)
-
-// Fixed reservations (not usable system memory):
+// Fixed reservations in Bank 1 range:
     {"WiFi/BT Reserved",  0xE9000000, 0x00400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 4 MiB
     {"ABOX Reserved",     0xE9400000, 0x00400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 4 MiB
-    {"Framebuffer",       0xEC000000, 0x01400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 20 MiB (0x1400000)
-    {"Video/Crypto/Modem/CP", 0xF0C00000, 0x0E000000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN}, // 224 MiB (0xFEC00000 - 0xF0C00000)
+//   Gap: 0xE9800000 - 0xEC000000 = 40 MiB
+    {"RAM Bank 1 Mid",    0xE9800000, 0x02800000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0xE9800000-0xEC000000 (40 MiB)
+
+    {"Framebuffer",       0xEC000000, 0x01400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 20 MiB
+
+//   Gap: 0xED400000 - 0xF0C00000 = 0x22800000 = 56 MiB
+    {"RAM Bank 1 High",   0xED400000, 0x03800000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0xED400000-0xF0C00000 (56 MiB)
+
+    {"Video/Crypto/Modem/CP", 0xF0C00000, 0x0E000000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN}, // 224 MiB
+
+//   Gap: 0xFEC00000 - 0xFFC00000 = 16 MiB
+    {"RAM Bank 1 VeryHigh", 0xFEC00000, 0x01000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},  // 0xFEC00000-0xFFC00000 (16 MiB)
+
     {"GNSS Reserved",     0xFFC00000, 0x00400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 4 MiB
+
+// RAM Bank 2: 0x880000000 - 0x8C0000000 (1024 MiB) - ABOVE 4GB!
+// CMA pools - must be reserved, not usable system memory:
+    {"CMA Pool cma-3",    0x8BA000000, 0x01400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 20 MiB
+    {"CMA Pool crypto",   0x8BB800000, 0x02000000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 32 MiB
+    {"CMA Pool video_fr", 0x8BD800000, 0x02800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 40 MiB
+
+// Usable RAM in Bank 2 (excluding known CMA pools):
+// Bank 2 is 0x880000000 - 0x8C0000000 (1024 MiB total)
+// Known CMA pools from memblock:
+//   cma-3: 0x8BA000000-0x8BB400000 (20 MiB)
+//   crypto: 0x8BB800000-0x8BD800000 (32 MiB)
+//   video_frame: 0x8BD800000-0x8C0000000 (40 MiB)
+// Remaining RAM in Bank 2 is usable (not reserved by memblock):
+//   0x880000000 - 0x8BA000000 = 512 MiB
+    {"RAM Bank 2 Low",    0x880000000, 0x20000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0x880000000-0x8BA000000 (512 MiB)
+//   0x8BB400000 - 0x8BB800000 = 4 MiB (gap between cma-3 and crypto)
+    {"RAM Bank 2 Gap1",   0x8BB400000, 0x00400000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0x8BB400000-0x8BB800000 (4 MiB)
+//   After crypto ends at 0x8BD800000, video_frame starts at 0x8BD800000 and ends at 0x8C0000000
+//   No usable RAM after video_frame
 
     /* Terminator for MMU */
     { "Terminator", 0, 0, 0, 0, 0, 0, 0}};
