@@ -213,9 +213,9 @@ SimpleFbDxeInitialize
 
     /* Retrieve simple frame buffer from pre-SEC bootloader */
     DEBUG((EFI_D_ERROR, "SimpleFbDxe: Retrieve MIPI FrameBuffer parameters from PCD\n"));
-    UINT32              MipiFrameBufferAddr     = FixedPcdGet32(PcdMipiFrameBufferAddress);
-    UINT32              MipiFrameBufferWidth    = FixedPcdGet32(PcdMipiFrameBufferWidth);
-    UINT32              MipiFrameBufferHeight   = FixedPcdGet32(PcdMipiFrameBufferHeight);
+    EFI_PHYSICAL_ADDRESS  MipiFrameBufferAddr     = FixedPcdGet64(PcdMipiFrameBufferAddress);
+    UINT32                MipiFrameBufferWidth    = FixedPcdGet32(PcdMipiFrameBufferWidth);
+    UINT32                MipiFrameBufferHeight   = FixedPcdGet32(PcdMipiFrameBufferHeight);
 
     /* Sanity check */
     if (MipiFrameBufferAddr == 0 || MipiFrameBufferWidth == 0 || MipiFrameBufferHeight == 0)
@@ -262,8 +262,8 @@ SimpleFbDxeInitialize
     mDisplay.Mode->Info->VerticalResolution = MipiFrameBufferHeight;
 
     /* SimpleFB runs on a8r8g8b8 (VIDEO_BPP32) for DB410c */
-    UINT32 LineLength = MipiFrameBufferWidth * VNBYTES(VIDEO_BPP32);
-    UINT32 FrameBufferSize = LineLength * MipiFrameBufferHeight;
+    UINTN LineLength = MipiFrameBufferWidth * VNBYTES(VIDEO_BPP32);
+    UINTN FrameBufferSize = LineLength * MipiFrameBufferHeight;
     EFI_PHYSICAL_ADDRESS FrameBufferAddress = MipiFrameBufferAddr;
 
     mDisplay.Mode->Info->PixelsPerScanLine = MipiFrameBufferWidth;

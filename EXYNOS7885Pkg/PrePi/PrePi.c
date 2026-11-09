@@ -28,7 +28,7 @@ UINT64  mSystemMemoryEnd = FixedPcdGet64 (PcdSystemMemoryBase) +
 UINTN Width = FixedPcdGet32(PcdMipiFrameBufferWidth);
 UINTN Height = FixedPcdGet32(PcdMipiFrameBufferHeight);
 UINTN Bpp = FixedPcdGet32(PcdMipiFrameBufferPixelBpp);
-UINTN FbAddr = FixedPcdGet32(PcdMipiFrameBufferAddress);
+EFI_PHYSICAL_ADDRESS FbAddr = FixedPcdGet64(PcdMipiFrameBufferAddress);
 
 VOID
 PaintScreen(
@@ -36,7 +36,7 @@ PaintScreen(
 )
 {
   // Code from FramebufferSerialPortLib
-	char* Pixels = (void*)FixedPcdGet32(PcdMipiFrameBufferAddress);
+	char* Pixels = (void*)(UINTN)FixedPcdGet64(PcdMipiFrameBufferAddress);
 
 	// Set color.
 	for (UINTN i = 0; i < Width; i++)

@@ -26,7 +26,6 @@ _SetupStackPosition:
   // Calculate Top of the Firmware Device
   MOV64 (x2, FixedPcdGet64(PcdFdBaseAddress))
   MOV32 (x3, FixedPcdGet32(PcdFdSize) - 1)
-  sub   x3, x3, #1
   add   x3, x3, x2      // x3 = FdTop = PcdFdBaseAddress + PcdFdSize
 
   // UEFI Memory Size (stacks are allocated in this region)

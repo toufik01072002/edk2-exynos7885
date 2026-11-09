@@ -19,6 +19,7 @@ UINTN gWidth = FixedPcdGet32(PcdMipiFrameBufferWidth);
 // Reserve half screen for output
 UINTN gHeight = FixedPcdGet32(PcdMipiFrameBufferHeight);
 UINTN gBpp = FixedPcdGet32(PcdMipiFrameBufferPixelBpp);
+EFI_PHYSICAL_ADDRESS gFbAddr = FixedPcdGet64(PcdMipiFrameBufferAddress);
 
 // Module-used internal routine
 void FbConPutCharWithFactor
@@ -70,7 +71,7 @@ SerialPortInitialize
 void ResetFb(void)
 {
 	// Clear current screen.
-	char* Pixels = (void*)FixedPcdGet32(PcdMipiFrameBufferAddress);
+	char* Pixels = (void*)(UINTN)gFbAddr;
 	UINTN BgColor = FB_BGRA8888_BLACK;
 
 	// Set to black color.
@@ -146,7 +147,7 @@ paint:
 	BOOLEAN intstate = ArmGetInterruptState();
 	ArmDisableInterrupts();
 
-	Pixels = (void*)FixedPcdGet32(PcdMipiFrameBufferAddress);
+	Pixels = (void*)(UINTN)gFbAddr;
 	Pixels += m_Position.y * ((gBpp / 8) * FONT_HEIGHT * gWidth);
 	Pixels += m_Position.x * scale_factor * ((gBpp / 8) * (FONT_WIDTH + 1));
 
@@ -316,7 +317,7 @@ void FbConDrawglyph
 /* TODO: Take stride into account */
 void FbConScrollUp(void)
 {
-	unsigned short *dst = (void*)FixedPcdGet32(PcdMipiFrameBufferAddress);
+	unsigned short *dst = (unsigned short *)(UINTN)gFbAddr;
 	unsigned short *src = dst + (gWidth * FONT_HEIGHT);
 	unsigned count = gWidth * (gHeight - FONT_HEIGHT);
 
@@ -344,7 +345,7 @@ void FbConFlush(void)
 	bytes_per_bpp = (gBpp / 8);
 
 	WriteBackInvalidateDataCacheRange(
-		(void*)FixedPcdGet32(PcdMipiFrameBufferAddress),
+		(void*)(UINTN)gFbAddr,
 		(total_x * total_y * bytes_per_bpp)
 	);
 }
