@@ -22,14 +22,14 @@ It is designed to be loaded via kexec from TWRP recovery.
 
 ## Memory Layout (Reference - to be validated against compiled DTB)
 ```
-Kernel load:      0x80080000
-Initramfs load:   0x84000000
-DTB load:         0x88000000
-UEFI FD (target): 0x90000000-0x90200000 (2 MiB reserved)
+Kernel load:      selected by ARM64 kexec-tools from Image header
+Initramfs load:   selected by ARM64 kexec-tools after kernel image
+DTB load:         selected by ARM64 kexec-tools after kernel image
+UEFI FD:          0x90000000-0x90200000 (2 MiB reserved; fixed EDK2 target)
 Trampoline:       NOT ASSIGNED (Phase 2)
 ```
 
-### Reference Memory Regions (from DeviceMemoryMap.h)
+The addresses of the kernel, initramfs and DTB are not fixed by this package's `kexec -l` command. ARM64 kexec-tools selects physical locations at load time and writes the actual initrd start/end into `/chosen`. Do not treat old example addresses as guaranteed placements.\n\n### Reference Memory Regions (from DeviceMemoryMap.h)
 | Region | Address Range | Size | Type |
 |--------|--------------|------|------|
 | RAM Bank 0 | 0x80000000 - 0xBBC00000 | 956 MiB | System RAM |
