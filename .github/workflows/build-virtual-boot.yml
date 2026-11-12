@@ -91,12 +91,19 @@ jobs:
 
       - name: Apply Virtual Boot kernel compatibility patch
         run: |
-          PATCH_FILE="$GITHUB_WORKSPACE/virtual-boot-project/virtual-boot/patches/0001-forward-declare-rt-rq.patch"
-          cd kernel-src
-          git apply --check "$PATCH_FILE"
-          git apply "$PATCH_FILE"
-          git diff --check
-          grep -Fq 'struct rt_rq;' include/trace/events/sched.h
+          python3 - <<'PY'
+          from pathlib import Path
+          target = Path('kernel-src/include/trace/events/sched.h')
+          source = target.read_text()
+          needle = '#include <linux/binfmts.h>\n'
+          if 'struct rt_rq;' not in source:
+              if source.count(needle) != 1:
+                  raise SystemExit('Cannot locate unique binfmts include in sched trace header')
+              source = source.replace(needle, needle + '\n/* Forward declaration for scheduler tracepoint prototypes. */\nstruct rt_rq;\n', 1)
+              target.write_text(source)
+          PY
+          git -C kernel-src diff --check
+          grep -Fq 'struct rt_rq;' kernel-src/include/trace/events/sched.h
 
       - name: Copy Virtual Boot kernel config
         run: |
