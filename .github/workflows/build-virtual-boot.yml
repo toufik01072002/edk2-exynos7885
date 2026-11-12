@@ -142,6 +142,14 @@ jobs:
               elif guarded_exit not in cpufreq_source:
                   raise SystemExit('Cannot locate a schedutil freqvar exit call')
           cpufreq.write_text(cpufreq_source)
+          gpu_makefile = Path('kernel-src/drivers/gpu/Makefile')
+          gpu_source = gpu_makefile.read_text()
+          gpu_old = 'obj-y\t\t\t+= drm/ vga/ arm/\n'
+          gpu_new = 'obj-y\t\t\t+= drm/ vga/\nobj-$(CONFIG_MALI_TMIX)\t+= arm/\n'
+          if gpu_old in gpu_source:
+              gpu_makefile.write_text(gpu_source.replace(gpu_old, gpu_new, 1))
+          elif gpu_new not in gpu_source:
+              raise SystemExit('Cannot locate optional ARM GPU directory entry')
           PY
           git -C kernel-src diff --check
           grep -Fq 'struct rt_rq;' kernel-src/include/trace/events/sched.h
@@ -514,6 +522,7 @@ jobs:
           cp virtual-boot-project/virtual-boot/patches/0002-fix-nmi-inline-declaration.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0003-fix-sched-tune-forward-declarations.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0004-fix-schedutil-config-guards.patch virtual-boot-output/patches/
+          cp virtual-boot-project/virtual-boot/patches/0005-gpu-arm-makefile-conditional.patch virtual-boot-output/patches/
 
       - name: Generate hardware manifest with REAL data
         env:
@@ -546,7 +555,7 @@ jobs:
               "image": "Image",
               "load_address": "0x80080000",
               "sha256": "$KERNEL_SHA256"
-              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch"],
+              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch"],
             },
             "dtb": {
               "source": "Virtual Boot-specific DTS derived from Samsung hardware definitions",
@@ -600,7 +609,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd virtual-boot-output
-          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch hardware-manifest.json > SHA256SUMS
+          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch hardware-manifest.json > SHA256SUMS
           cat SHA256SUMS
 
       - name: Copy documentation
