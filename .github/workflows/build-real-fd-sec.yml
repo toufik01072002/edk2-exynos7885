@@ -9,6 +9,9 @@ on:
       - "build_common.sh"
       - "firstrun.sh"
       - "virtual-boot/scripts/inspect_sec_te.py"
+      - "virtual-boot/scripts/validate_bootshim_image.py"
+      - "BootShim/**"
+      - "build_bootshim.sh"
       - ".github/workflows/build-real-fd-sec.yml"
       - "build.sh"
   workflow_dispatch:
@@ -62,6 +65,22 @@ jobs:
             workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd \
             --base 0x90000000 | tee workspace/sec-entry-report.json
 
+      - name: Build and validate BootShim with the real EDK2 FD
+        working-directory: edk2-exynos7885
+        run: |
+          set -euo pipefail
+          chmod +x build_bootshim.sh
+          ./build_bootshim.sh
+          FD="workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd"
+          FD_SIZE=$(stat -c '%s' "$FD")
+          python3 virtual-boot/scripts/validate_bootshim_image.py \
+            workspace/UEFI \
+            --fd-size "$FD_SIZE" \
+            --fd-window 0x200000 \
+            --fd-base 0x90000000
+          echo "REAL_BOOTSHIM_BUNDLE_BYTES=$(stat -c '%s' workspace/UEFI)"
+          sha256sum workspace/UEFI
+
       - name: Upload real FD and SEC entry report
         uses: actions/upload-artifact@v4
         with:
@@ -70,3 +89,6 @@ jobs:
           path: |
             edk2-exynos7885/workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd
             edk2-exynos7885/workspace/sec-entry-report.json
+            edk2-exynos7885/workspace/UEFI
+            edk2-exynos7885/BootShim/BootShim.elf
+            edk2-exynos7885/BootShim/BootShim.bin
