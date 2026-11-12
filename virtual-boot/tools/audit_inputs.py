@@ -88,6 +88,13 @@ def main():
 
     compatibles = re.findall(r'compatible\s*=\s*((?:"[^"]*"\s*,?\s*)+);', dts)
     memory_nodes = re.findall(r'memory@([0-9a-fA-F]+)\s*\{[^}]*?reg\s*=\s*<([^>]+)>;', dts, re.S)
+    expected_memory_banks = [(0x80000000, 0x3BC00000), (0xC0000000, 0x40000000), (0x880000000, 0x40000000)]
+    observed_memory_banks = []
+    for node, value in memory_nodes:
+        cells = [int(cell, 0) for cell in value.split()]
+        if len(cells) == 3:
+            observed_memory_banks.append(((cells[0] << 32) | cells[1], cells[2]))
+    memory_map_verified = sorted(observed_memory_banks) == sorted(expected_memory_banks)
     initrd_start = re.search(r'linux,initrd-start\s*=\s*<([^>]+)>;', dts)
     initrd_end = re.search(r'linux,initrd-end\s*=\s*<([^>]+)>;', dts)
     bootargs = re.search(r'bootargs\s*=\s*"([^"]*)";', dts)
@@ -105,6 +112,8 @@ def main():
         findings.append("DTB does not declare samsung,exynos7885 compatibility.")
     if "samsung,armv8" in compatible_text and "samsung,exynos7885" in compatible_text and not (model and "A20 CAN SINGLE 05" in model.group(1)):
         findings.append("Base DTB is generic Exynos 7885; the selected A20 CAN SINGLE 05 overlay has not been confirmed in the merged DTB.")
+    if not memory_map_verified:
+        findings.append("DTB RAM banks do not match the corrected SM-A205W memory audit; this DTB must not be booted.")
     if initrd_start or initrd_end:
         findings.append("DTB contains fixed linux,initrd-start/end properties; these must be removed or rebuilt for a dynamically placed initramfs.")
     if "CONFIG_DEVTMPFS_MOUNT=y" not in config_lines:
@@ -130,6 +139,9 @@ def main():
         "dtb": {
             "compatible_properties": compatibles,
             "memory_nodes": [{"node": node, "reg_cells": value.split()} for node, value in memory_nodes],
+            "expected_memory_banks": [{"start": hex(start), "size": hex(size)} for start, size in expected_memory_banks],
+            "observed_memory_banks": [{"start": hex(start), "size": hex(size)} for start, size in observed_memory_banks],
+            "memory_map_verified": memory_map_verified,
             "linux_initrd_start_cells": initrd_start.group(1).split() if initrd_start else None,
             "linux_initrd_end_cells": initrd_end.group(1).split() if initrd_end else None,
             "bootargs": bootargs.group(1) if bootargs else None,
