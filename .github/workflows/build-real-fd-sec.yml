@@ -45,8 +45,8 @@ jobs:
         run: |
           chmod +x ./*.sh
           ./firstrun.sh
-          # firstrun.sh runs in its own process; load EDK2 build environment here.
-          . ../edk2/edksetup.sh
+          # firstrun.sh runs in its own process; reload the shared environment in this shell.
+          . ./build_common.sh
           GCC_AARCH64_PREFIX=aarch64-linux-gnu- build -j"$(nproc)" -s -n 0 \
             -a AARCH64 -t GCC -p EXYNOS7885Pkg/Devices/a205w.dsc
           FD="workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd"
