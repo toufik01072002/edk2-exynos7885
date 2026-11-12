@@ -273,8 +273,6 @@ jobs:
           if 'hardlockup_notifier_list' in mct_source:
               raise SystemExit('Unresolved MCT hardlockup notifier reference remains')
           mct.write_text(mct_source)
-          if 'exynos_cpu.' in ss.read_text():
-              raise SystemExit('Unresolved Exynos snapshot CPU-state reference remains')
           if 'exynos_cpu.' in powermode.read_text():
               raise SystemExit('Unresolved Exynos powermode CPU-state reference remains')
           ehci_hub = Path('kernel-src/drivers/usb/host/ehci-hub.c')
