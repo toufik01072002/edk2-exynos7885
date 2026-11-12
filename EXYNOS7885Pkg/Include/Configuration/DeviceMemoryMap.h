@@ -102,10 +102,10 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
     {"CMA video_stream",  0xF0C00000, 0x04800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 0xF0C00000-0xF5400000 (72 MiB)
 
 // Modem/CP region (DTBO overlay 3):
-    {"Modem/CP Reserved", 0xF5400000, 0x09800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 0xF5400000-0xFEC00000 (152 MiB)
+    {"Modem Reserved",    0xF5400000, 0x08800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 136 MiB, ends at 0xFDC00000
+    {"CP RAM Logging",    0xFDC00000, 0x02000000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 32 MiB, ends at 0xFFC00000
 
 //   Gap: 0xFEC00000 - 0xFFC00000 = 16 MiB
-    {"RAM Bank 1 VeryHigh", 0xFEC00000, 0x01000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},  // 0xFEC00000-0xFFC00000 (16 MiB)
 
     {"GNSS Reserved",     0xFFC00000, 0x00400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 4 MiB
 
