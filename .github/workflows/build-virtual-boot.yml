@@ -89,21 +89,30 @@ jobs:
           cd kernel-src
           git log -1 --format="%H %s"
 
-      - name: Apply Virtual Boot kernel compatibility patch
+      - name: Apply Virtual Boot kernel compatibility patches
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          target = Path('kernel-src/include/trace/events/sched.h')
-          source = target.read_text()
+          sched = Path('kernel-src/include/trace/events/sched.h')
+          sched_source = sched.read_text()
           needle = '#include <linux/binfmts.h>\n'
-          if 'struct rt_rq;' not in source:
-              if source.count(needle) != 1:
+          if 'struct rt_rq;' not in sched_source:
+              if sched_source.count(needle) != 1:
                   raise SystemExit('Cannot locate unique binfmts include in sched trace header')
-              source = source.replace(needle, needle + '\n/* Forward declaration for scheduler tracepoint prototypes. */\nstruct rt_rq;\n', 1)
-              target.write_text(source)
+              sched_source = sched_source.replace(needle, needle + '\n/* Forward declaration for scheduler tracepoint prototypes. */\nstruct rt_rq;\n', 1)
+              sched.write_text(sched_source)
+          nmi = Path('kernel-src/include/linux/nmi.h')
+          nmi_source = nmi.read_text()
+          broken = 'static inline void void sl_softirq_entry(const char *, void *) { }'
+          fixed = 'static inline void sl_softirq_entry(const char *, void *) { }'
+          if broken in nmi_source:
+              nmi.write_text(nmi_source.replace(broken, fixed, 1))
+          elif fixed not in nmi_source:
+              raise SystemExit('Cannot locate sl_softirq_entry inline declaration')
           PY
           git -C kernel-src diff --check
           grep -Fq 'struct rt_rq;' kernel-src/include/trace/events/sched.h
+          grep -Fq 'static inline void sl_softirq_entry' kernel-src/include/linux/nmi.h
 
       - name: Copy Virtual Boot kernel config
         run: |
@@ -467,6 +476,7 @@ jobs:
         run: |
           mkdir -p virtual-boot-output/patches
           cp virtual-boot-project/virtual-boot/patches/0001-forward-declare-rt-rq.patch virtual-boot-output/patches/
+          cp virtual-boot-project/virtual-boot/patches/0002-fix-nmi-inline-declaration.patch virtual-boot-output/patches/
 
       - name: Generate hardware manifest with REAL data
         env:
@@ -499,7 +509,7 @@ jobs:
               "image": "Image",
               "load_address": "0x80080000",
               "sha256": "$KERNEL_SHA256"
-              "patches": ["patches/0001-forward-declare-rt-rq.patch"],
+              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch"],
             },
             "dtb": {
               "source": "Virtual Boot-specific DTS derived from Samsung hardware definitions",
@@ -553,7 +563,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd virtual-boot-output
-          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch hardware-manifest.json > SHA256SUMS
+          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch hardware-manifest.json > SHA256SUMS
           cat SHA256SUMS
 
       - name: Copy documentation
