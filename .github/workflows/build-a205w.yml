@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
   push:
-    branches: [main]
+    branches: [main, virtual-boot-a20-dev]
     paths:
       - "EXYNOS7885Pkg/**"
       - "BootShim/**"
@@ -32,7 +32,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential uuid-dev acpica-tools git nasm \
-            python3 python3-setuptools gcc-aarch64-linux-gnu mkbootimg \
+            python3 python3-setuptools gcc-aarch64-linux-gnu \
             device-tree-compiler
           sudo sed -i '/^from gki\.generate_gki_certificate import generate_gki_certificate$/d' /usr/bin/mkbootimg
 
@@ -54,22 +54,29 @@ jobs:
           ./firstrun.sh
           ./build.sh
 
-      - name: Preparer les images a flasher
+      - name: Verifier le bundle non flashable
         working-directory: edk2-exynos7885/workspace
         run: |
-          ls -l
-          cp boot.img recovery.img
-          tar -c recovery.img -f recovery.tar
-          ls -l
+          test -s UEFI
+          test -s UEFI.manifest.json
+          test -s SHA256SUMS
+          sha256sum -c SHA256SUMS
+          python3 - <<'PY'
+          import json
+          with open("UEFI.manifest.json", encoding="utf-8") as stream:
+              manifest = json.load(stream)
+          assert manifest["bootable"] is False
+          assert manifest["launch_enabled"] is False
+          assert manifest["safety"]["flashable_images_created"] is False
+          print("EDK2 bundle verified; launch remains disabled.")
+          PY
 
-      - name: Publier les fichiers
+      - name: Publier le bundle EDK2 non flashable
         uses: actions/upload-artifact@v4
         with:
-          name: a205w-edk2
+          name: a205w-edk2-bundle-only
           if-no-files-found: error
           path: |
             edk2-exynos7885/workspace/UEFI
-            edk2-exynos7885/workspace/boot.img
-            edk2-exynos7885/workspace/boot.tar
-            edk2-exynos7885/workspace/recovery.img
-            edk2-exynos7885/workspace/recovery.tar
+            edk2-exynos7885/workspace/UEFI.manifest.json
+            edk2-exynos7885/workspace/SHA256SUMS
