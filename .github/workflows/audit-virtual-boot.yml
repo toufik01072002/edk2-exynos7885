@@ -107,8 +107,12 @@ jobs:
           MODEL="$(fdtget a20-virtual-boot-memory.dtb / model)"
           echo "Virtual DTB model: $MODEL"
           echo "$MODEL" | grep -F "A20 CAN SINGLE 05"
-          test "$(fdtget a20-virtual-boot-memory.dtb /memory@880000000 reg)" = "8 80000000 40000000"
-          test "$(fdtget a20-virtual-boot-memory.dtb /reserved-memory/edk2_uefi@90000000 reg)" = "0 90000000 200000"
+          BANK2="$(fdtget a20-virtual-boot-memory.dtb /memory@880000000 reg)"
+          EDK2_RESERVED="$(fdtget a20-virtual-boot-memory.dtb /reserved-memory/edk2_uefi@90000000 reg)"
+          echo "Bank2 cells: $BANK2"
+          echo "EDK2 reservation cells: $EDK2_RESERVED"
+          echo "$BANK2" | grep -Eiq "^0*8 0*80000000 0*40000000$"
+          echo "$EDK2_RESERVED" | grep -Eiq "^0*0 0*90000000 0*200000$"
           ! fdtget a20-virtual-boot-memory.dtb /chosen bootargs | grep -q skip_initramfs
           ! fdtget a20-virtual-boot-memory.dtb /chosen linux,initrd-start >/dev/null 2>&1
           ! fdtget a20-virtual-boot-memory.dtb /chosen linux,initrd-end >/dev/null 2>&1
