@@ -13,8 +13,8 @@ implemented.
 ## Intended flow
 
 1. TWRP verifies the package manifest and hashes.
-2. TWRP loads the dedicated ARM64 Linux Image, matching DTB, and initramfs
-   into RAM through kexec.
+2. A future TWRP loader will load a dedicated ARM64 Linux Image, matching
+   board DTB, and initramfs into RAM. This path is not yet approved or proven.
 3. The virtual-boot initramfs verifies the board identity, package contents,
    memory reservations, and required devices.
 4. A kernel-supported handoff mechanism prepares the machine for EDK2.
@@ -37,27 +37,51 @@ implemented.
 ## Current integration facts
 
 - Device target: Samsung SM-A205W, ARM64, Exynos 7885 family.
-- TWRP device configuration already references
-  `prebuilt/kexec/Image`.
-- The device configuration copies a kexec executable and
-  `exynos7885.dtb` into recovery.
+- The device configuration references `prebuilt/kexec/Image` and copies
+  `prebuilt/kexec/kexec`, but the kexec executable is absent from that
+  repository path and must be built or supplied before TWRP can load a
+  second kernel.
+- The prebuilt kernel's embedded configuration was extracted and confirms
+  `CONFIG_KEXEC=y`, `CONFIG_BLK_DEV_INITRD=y`, `CONFIG_DEVTMPFS=y`,
+  `CONFIG_OF=y`, `CONFIG_PROC_FS=y`, and `CONFIG_SYSFS=y`.
+- The matching board overlay is
+  `exynos7884B-a20_can_single_05.dts`, compatible with
+  `Samsung A20 CAN SINGLE 05` and hardware revisions 0x05–0xff.
+- GitHub Actions successfully compiles the base DTB and A20 overlay and
+  merges them. A separate virtual-boot memory overlay now corrects the
+  three audited RAM banks and adds explicit EDK2/Bank 2 carveout reservations.
+- The candidate DTB removes the stale fixed initrd addresses and the
+  `skip_initramfs` boot argument. A future runtime loader must supply the
+  actual initrd start/end addresses.
+- A diagnostic BusyBox initramfs and a hashed, non-bootable candidate archive
+  have been built in GitHub Actions. They are analysis artifacts only.
 - EDK2 is built with
   `EXYNOS7885Pkg/Devices/a205w.dsc`.
 - The current EDK2 BootShim is deliberately inert (SAFE MODE).
-- The current kernel kexec relocation path was found to clear x0-x3 before
-  branching to the target entry. Therefore it is not yet a proven Linux
-  ARM64 DTB handoff, and it is not an EDK2 handoff.
+- The current kernel kexec relocation path clears x0-x3 before branching
+  to the target entry. Therefore standard kexec does not yet provide the
+  required ARM64 DTB register handoff for this kernel.
+- The prebuilt generic DTB originally described only about 2 GiB of usable
+  memory and had fixed initrd addresses. The candidate memory overlay
+  corrects the audited 3-bank layout, but it has not been tested on-device.
+- The candidate DTB still contains the full vendor peripheral tree. A
+  minimal, DMA-safe staging device tree and the required device quiescence
+  procedure remain unproven.
 
 ## Required implementation work
 
 ### A. Virtual Linux boot package
 
-- Pin the exact kernel commit and build configuration.
-- Build a dedicated Image with the required kexec and initramfs support.
-- Pin and validate the matching A205W DTB.
-- Build a small initramfs with board checks, hash verification, memory-map
-  validation, and a diagnostic shell.
-- Package Image, DTB, initramfs, EDK2 bundle, and a signed or hashed manifest.
+- Build a dedicated Image from the pinned kernel source in the same workflow
+  as the board DTB, rather than relying on an unproven prebuilt pairing.
+- Verify every corrected RAM bank and reserved carveout against the live
+  SM-A205W memory audit.
+- Prove that the selected kernel can boot as a second-stage kernel before
+  adding any device-side launch action.
+- Build a diagnostic initramfs with board checks, hash verification,
+  memory-map reporting, and a diagnostic shell.
+- Package Image, DTB, initramfs, and a hashed manifest. Keep the archive
+  explicitly non-bootable until the loader and memory contract are proven.
 - Add a reproducible GitHub Actions workflow and artifact verification.
 
 ### B. Kernel handoff support
