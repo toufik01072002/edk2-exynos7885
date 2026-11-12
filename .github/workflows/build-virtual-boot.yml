@@ -104,7 +104,7 @@ jobs:
           nmi = Path('kernel-src/include/linux/nmi.h')
           nmi_source = nmi.read_text()
           broken = 'static inline void void sl_softirq_entry(const char *, void *) { }'
-          fixed = 'static inline void sl_softirq_entry(const char *, void *) { }'
+          fixed = 'static inline void sl_softirq_entry(const char *desc, void *data) { }'
           if broken in nmi_source:
               nmi.write_text(nmi_source.replace(broken, fixed, 1))
           elif fixed not in nmi_source:
