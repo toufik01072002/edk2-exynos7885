@@ -15,7 +15,7 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - name: Checkout EDK2 development branch
         uses: actions/checkout@v4
@@ -82,7 +82,7 @@ jobs:
         run: |
           python3 edk2-exynos7885/virtual-boot/tools/audit_inputs.py \
             --kernel sources/android_device_samsung_a20/prebuilt/kexec/Image \
-            --dtb a20-can-single-05-merged.dtb \\
+            --dtb a20-can-single-05-merged.dtb \
             --a20-overlay sources/Kernel_SM-A205W/arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_can_single_05.dts \
             --kernel-source sources/Kernel_SM-A205W \
             --report virtual-boot-audit.json
