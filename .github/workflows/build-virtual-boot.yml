@@ -401,6 +401,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y device-tree-compiler
 
+      - name: Check validator Python syntax
+        run: |
+          python3 -m py_compile virtual-boot-project/virtual-boot/scripts/validate_dtb_binary.py
+
       - name: Validate DTB and memory map against EDK2 reference
         run: |
           python3 virtual-boot-project/virtual-boot/scripts/validate_dtb_binary.py \
