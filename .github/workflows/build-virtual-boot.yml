@@ -232,14 +232,15 @@ jobs:
               raise SystemExit('Cannot isolate optional cpuidle cluster-state wait')
           # MMC command-queue diagnostics are not required for the standalone EFI boot target.
           queue = Path('kernel-src/drivers/mmc/card/queue.c')
-          queue_source = queue.read_text()
-          cmdq_call = '\\tcmdq_dumpregs(cq_host);'
-          if cmdq_call in queue_source:
-              if queue_source.count(cmdq_call) != 1:
-                  raise SystemExit('MMC CMDQ diagnostic call is not unique')
-              queue.write_text(queue_source.replace(cmdq_call, '\\t/* CMDQ register dump omitted in virtual boot. */', 1))
-          elif 'cmdq_dumpregs(cq_host);' in queue_source:
-              raise SystemExit('Cannot isolate MMC CMDQ diagnostic call')
+          queue_lines = queue.read_text().splitlines(True)
+          cmdq_matches = [i for i, line in enumerate(queue_lines) if 'cmdq_dumpregs(cq_host);' in line]
+          if len(cmdq_matches) == 1:
+              i = cmdq_matches[0]
+              indent = queue_lines[i][:len(queue_lines[i]) - len(queue_lines[i].lstrip())]
+              queue_lines[i] = indent + '/* CMDQ register dump omitted in virtual boot. */\n'
+              queue.write_text(''.join(queue_lines))
+          elif len(cmdq_matches) > 1:
+              raise SystemExit('MMC CMDQ diagnostic call is not unique')
           gadget = Path('kernel-src/drivers/usb/dwc3/gadget.c')
           gadget_source = gadget.read_text()
           gadget_old = 'extern bool acc_dev_status;'
