@@ -21,9 +21,10 @@
   - Base: `arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts`
   - Overlay: `arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi`
 - **Model**: Samsung Galaxy A20 (SM-A205W) - corrected from A20e
-- **Memory Regions**: Defined per Samsung DTB (3 banks + Bank 3 empty)
-- **Reserved Regions**: All Samsung reservations included (TIMA, seclog, modem, gnss, wifibt, abox, framebuffer, CMA pools)
-- **UEFI FD Region**: Added at 0x90000000-0x90200000 (2 MiB) with no-map
+- **Memory Regions**: Three non-empty banks matching DeviceMemoryMap.h exactly; no synthetic empty Bank 3 node
+- **Reserved Regions**: Samsung fixed reservations plus explicit Bank 2 EDK2 exclusions; dynamic ION pools retain size/alloc-ranges semantics
+- **UEFI FD Region**: Fixed at 0x90000000-0x90200000 (2 MiB) with no-map
+- **Initrd placement**: No static linux,initrd-start/end in the base DTB; ARM64 kexec-tools patches the actual values at load time
 - **CPUs**: 8 cores (2x A73 + 6x A53) with correct idle states
 - **Peripherals**: UART2 (console), I2C4, MMC0, USB, DECON, ABOX, PWM, RTC, Watchdog, ADC, Thermal
 - **Status**: Source created, **PENDING COMPILATION AND BINARY VALIDATION**
@@ -47,15 +48,12 @@
 - **Status**: Design complete, **PENDING BUILD**
 
 ### 🔄 GitHub Actions Workflow (.github/workflows/build-virtual-boot.yml)
-- **Job 1**: build-kernel - Clone Kernel_SM-A205W (kexec-arm64-4.4-d-work, commit 1e70ef87), build Image + DTB
-- **Job 2**: build-initramfs - Build BusyBox static, create initramfs.cpio.gz
-- **Job 3**: build-bundle - Create manifest, SHA256SUMS, documentation
-- **Status**: REQUIRES REWRITE with correct:
-  - Repository URL
-  - Branch and commit
-  - DTB compilation path (exynos/dtbo/)
-  - Compiler compatible with kernel 4.4
-  - Proper dependency installation per job
+- **Kernel source**: pinned to kexec-arm64-4.4-d-work at commit 1e70ef871acb9ea0cd79a531b18e98f61debfc71
+- **DTB preflight**: DTS preprocessing, DTC compilation and binary memory-map validation run before kernel Image compilation
+- **Kernel config**: Kconfig checks include canonical '# CONFIG_ECT is not set'
+- **Initramfs**: independent BusyBox static build and archive verification job
+- **Bundle**: waits for kernel, initramfs and DTB validation jobs; emits hashes and manifest
+- **Current Status**: Workflow prepared; no GitHub Actions run has been started
 
 ## Memory Map Validation - REQUIRED CHECKS
 
@@ -124,13 +122,11 @@ Contains 14 commits ahead of base:
 
 ## Outstanding Issues (Must Fix Before Phase 1 Complete)
 
-1. **DTB Compilation**: Must compile using authentic Samsung DTS chain from `arch/arm64/boot/dts/exynos/dtbo/`
-2. **Binary DTB Validation**: Replace regex validator with libfdt-based validation
-3. **Workflow Rewrite**: Fix repository URL, branch, commit, compilation paths, compiler
-4. **Initramfs Build**: Install aarch64-linux-gnu-gcc in build job, verify BusyBox ARM64 static build
-5. **Memory Address Assignment**: DTB at 0x88000000 collides with trampoline (Phase 2) - document clearly
-6. **No Placeholders**: Manifest must contain real SHA256, real commit, real build date
-7. **Model Correction**: Galaxy A20 (not A20e) throughout all documentation
+1. **DTB compilation and binary validation**: Implemented in workflow, execution still pending
+2. **Initramfs build**: Workflow defined; actual BusyBox ARM64 static build still pending
+3. **kexec placement**: Kernel, initrd and DTB addresses are allocator-selected; verify actual placements from kexec debug output on device
+4. **UEFI handoff**: Trampoline and EDK2 transfer remain Phase 2 work
+5. **Hardware validation**: No on-device kexec boot test has been performed
 
 ## Next Steps (Order Mandatory)
 
