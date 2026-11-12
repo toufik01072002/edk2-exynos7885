@@ -1,0 +1,64 @@
+{
+  "format": "VIRTUAL-BOOT-ARM64",
+  "format_version": 1,
+  "platform": "Samsung SM-A205W / Exynos 7885",
+  "architecture": "AARCH64",
+  "model": "Samsung Galaxy A20 (SM-A205W)",
+  "codename": "a20",
+  "build_date": "BUILD_DATE_PLACEHOLDER",
+  "git_commit": "GIT_COMMIT_PLACEHOLDER",
+  "kernel": {
+    "source": "https://github.com/toufik01072002/Kernel_SM-A205W",
+    "branch": "kexec-arm64-4.4-d-work",
+    "commit": "1e70ef871acb9ea0cd79a531b18e98f61debfc71",
+    "config": "virtual-boot-minimal",
+    "image": "Image",
+    "load_address": "0x80080000",
+    "sha256": "KERNEL_SHA256_PLACEHOLDER"
+  },
+  "dtb": {
+    "source": "virtual-boot/dtb/exynos7885-a205w-virtual.dts",
+    "base_dts": "arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts (from Kernel_SM-A205W)",
+    "overlay_dtsi": "arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi (from Kernel_SM-A205W)",
+    "file": "exynos7885-a205w-virtual.dtb",
+    "load_address": "0x88000000",
+    "sha256": "DTB_SHA256_PLACEHOLDER"
+  },
+  "initramfs": {
+    "base": "BusyBox 1.36.1 static",
+    "file": "initramfs.cpio.gz",
+    "load_address": "0x84000000",
+    "sha256": "INITRAMFS_SHA256_PLACEHOLDER"
+  },
+  "memory_map": {
+    "bank0": "0x80000000-0xBBC00000 (956 MiB)",
+    "bank1": "0xC0000000-0x100000000 (1024 MiB)",
+    "bank2": "0x880000000-0x8C0000000 (1024 MiB, >4GB)",
+    "uefi_fd": "0x90000000-0x90200000 (2 MiB)",
+    "reserved": [
+      "TIMA: 0xB8000000-0xB8200000",
+      "seclog: 0xC0000000-0xC0080000",
+      "WiFi/BT: 0xE9000000-0xE9400000",
+      "ABOX: 0xE9400000-0xE9800000",
+      "Framebuffer: 0xEC000000-0xED400000",
+      "CMA video_stream: 0xF0C00000-0xF5400000",
+      "Modem/CP: 0xF5400000-0xFEC00000",
+      "GNSS: 0xFFC00000-0x100000000",
+      "CMA cma-3: 0x8BA000000-0x8BB400000",
+      "CMA crypto: 0x8BB800000-0x8BD800000",
+      "CMA video_frame: 0x8BD800000-0x8C0000000"
+    ]
+  },
+  "kexec": {
+    "kernel_entry": "0x80080000",
+    "dtb_addr": "0x88000000",
+    "initrd_addr": "0x84000000",
+    "uefi_handoff_addr": "0x90000000",
+    "note": "Phase 1 only - no trampoline address assigned yet"
+  },
+  "validation": {
+    "dtb_memory_map": "PENDING - requires binary DTB validation",
+    "dtb_source_authentic": "YES - built from Samsung DTS/DTBO chain",
+    "dtb_validation_method": "libfdt-based binary DTB parsing (not regex)"
+  }
+}
