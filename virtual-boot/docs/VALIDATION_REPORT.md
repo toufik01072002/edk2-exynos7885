@@ -17,9 +17,11 @@
 - **Status**: Ready for GitHub Actions build
 
 ### 🔄 DTB Source (virtual-boot/dtb/exynos7885-a205w-virtual.dts)
-- **Source**: Authentic Samsung DTS chain from Kernel_SM-A205W
-  - Base: `arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts`
-  - Overlay: `arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi`
+- **Source**: Virtual Boot-specific DTS derived from Samsung Exynos7885/A20 hardware definitions
+  - Reference base: `arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts` (reviewed, not directly included)
+  - Reference A20 overlay: `arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi` (reviewed, not directly included)
+  - Direct Samsung include: `exynos7885-pm-domains.dtsi`
+  - The custom DTS intentionally selects and adapts the hardware nodes needed for the diagnostic kernel; it is not a verbatim merge of the complete base DTS and DTBO overlay.
 - **Model**: Samsung Galaxy A20 (SM-A205W) - corrected from A20e
 - **Memory Regions**: Defined per Samsung DTB (3 banks + Bank 3 empty)
 - **Reserved Regions**: All Samsung reservations included (TIMA, seclog, modem, gnss, wifibt, abox, framebuffer, CMA pools)
@@ -29,7 +31,7 @@
 - **Status**: Source created, **PENDING COMPILATION AND BINARY VALIDATION**
 
 ### 🔄 DTB Binary Validation
-- **Requirement**: Validate compiled DTB binary using libfdt, not regex
+- **Requirement**: Validate the compiled DTB binary with `dtc`/`fdtget` (not regex) against `DeviceMemoryMap.h`
 - **Checks Required**:
   1. Memory bank reg properties with correct #address-cells/#size-cells
   2. All reserved-memory regions present with correct attributes (no-map, reusable)
@@ -50,12 +52,12 @@
 - **Job 1**: build-kernel - Clone Kernel_SM-A205W (kexec-arm64-4.4-d-work, commit 1e70ef87), build Image + DTB
 - **Job 2**: build-initramfs - Build BusyBox static, create initramfs.cpio.gz
 - **Job 3**: build-bundle - Create manifest, SHA256SUMS, documentation
-- **Status**: REQUIRES REWRITE with correct:
-  - Repository URL
-  - Branch and commit
-  - DTB compilation path (exynos/dtbo/)
-  - Compiler compatible with kernel 4.4
-  - Proper dependency installation per job
+- **Status**: Workflow corrections published; first successful GitHub Actions run still pending.
+  - Kernel checkout exposes the exact commit output.
+  - DTS is preprocessed with the kernel include paths before `dtc` compilation.
+  - Kernel artifacts are staged at stable paths before upload.
+  - Binary DTB validation receives both the DTB and `DeviceMemoryMap.h`.
+  - Initramfs and bundle jobs still require execution evidence.
 
 ## Memory Map Validation - REQUIRED CHECKS
 
@@ -75,8 +77,8 @@
 | Framebuffer | 0xEC000000 | 0x01400000 (20 MiB) |
 | RAM Bank 1 High | 0xED400000 | 0x03800000 (56 MiB) |
 | CMA video_stream | 0xF0C00000 | 0x04800000 (72 MiB) |
-| Modem/CP Reserved | 0xF5400000 | 0x09800000 (152 MiB) |
-| RAM Bank 1 VeryHigh | 0xFEC00000 | 0x01000000 (16 MiB) |
+| Modem Reserved | 0xF5400000 | 0x08800000 (136 MiB) |
+| CP RAM Logging | 0xFDC00000 | 0x02000000 (32 MiB) |
 | GNSS Reserved | 0xFFC00000 | 0x00400000 (4 MiB) |
 | CMA Pool cma-3 | 0x8BA000000 | 0x01400000 (20 MiB) |
 | CMA Pool crypto | 0x8BB800000 | 0x02000000 (32 MiB) |
@@ -98,7 +100,7 @@
 - video_stream (CMA): 0x4800000 (72 MiB) - secure, reusable
 
 ### Validation Status: **PENDING**
-The current regex-based validator is insufficient. A proper libfdt-based binary DTB validator must be created and run after successful compilation.
+The binary validator now uses `dtc`/`fdtget`, checks the FDT header and all three `/memory` banks, verifies every fixed reservation is inside RAM and carries `no-map`, and requires exact parity between fixed DTB reservations and all `MEM_RES` descriptors. It has not yet been executed against a compiled DTB.
 
 ## Kernel Branch Selection Analysis
 
@@ -126,7 +128,7 @@ Contains 14 commits ahead of base:
 
 1. **DTB Compilation**: Must compile using authentic Samsung DTS chain from `arch/arm64/boot/dts/exynos/dtbo/`
 2. **Binary DTB Validation**: Replace regex validator with libfdt-based validation
-3. **Workflow Rewrite**: Fix repository URL, branch, commit, compilation paths, compiler
+3. **First CI execution**: Run the corrected workflow and fix the first real compiler or validation failure
 4. **Initramfs Build**: Install aarch64-linux-gnu-gcc in build job, verify BusyBox ARM64 static build
 5. **Memory Address Assignment**: DTB at 0x88000000 collides with trampoline (Phase 2) - document clearly
 6. **No Placeholders**: Manifest must contain real SHA256, real commit, real build date
@@ -136,9 +138,9 @@ Contains 14 commits ahead of base:
 
 A. ✅ Compare kernel branches - COMPLETE (kexec-arm64-4.4-d-work selected)
 B. ✅ Identify authentic DTS/DTBO chain - COMPLETE
-C. 🔄 Correct DTS and validate compilation - IN PROGRESS
-D. 🔄 Validate memory from binary DTB - PENDING
-E. 🔄 Correct kernel config and build workflow - PENDING
+C. 🔄 Correct DTS and DTB compilation inputs - PREPARED, BUILD PENDING
+D. 🔄 Validate memory from binary DTB - VALIDATOR IMPLEMENTED, EXECUTION PENDING
+E. ✅ Correct kernel config checks and build workflow - CORRECTIONS PUBLISHED
 F. 🔄 Build initramfs with proper dependencies - PENDING
 G. 🔄 Generate bundle, hashes, reports - PENDING
 
