@@ -10,9 +10,9 @@ The Phase 1 kernel, DTB, initramfs and bundle build passed in GitHub Actions run
 - `BootShim/BootShim.S` contains a 64-byte ARM64 Linux Image-style header, then a copy routine that copies `UEFI_SIZE` bytes from `_Payload` to `UEFI_BASE` and branches to `UEFI_BASE`.
 - The header currently writes `UEFI_BASE` (0x90000000) into the `text_offset` field and `UEFI_SIZE` (0x00200000) into `image_size`.
 - Linux ARM64 boot documentation in the selected kernel branch describes `text_offset` as the image load offset from a 2 MiB-aligned RAM base. The same branch's `arch/arm64/kernel/head.S` rejects `TEXT_OFFSET > 0x1fffff`. Therefore 0x90000000 is not a valid ARM64 Image `text_offset`; the kexec-loadable wrapper header must be redesigned rather than treated as a finished Linux Image.
-- `_Payload` is only a label. There is no `.incbin` or other firmware inclusion in `BootShim.S`.
-- `build_bootshim.sh` only invokes the BootShim Makefile. The Makefile assembles `BootShim.S` and converts the object to raw binary; neither script accepts an FD input or appends an EDK2 firmware volume.
-- The current Virtual Boot GitHub Actions workflow does not build or validate BootShim. Run 68 therefore provides no BootShim build evidence.
+- `_Payload` is a label at the end of the BootShim code. The firmware is appended by the top-level `build.sh`: it concatenates `BootShim/BootShim.bin` and `workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd` into `workspace/UEFI`. Thus the FD payload is present after the shim in that combined image; the assembly source itself does not use `.incbin`.
+- `build_bootshim.sh` builds only the shim binary; the top-level `build.sh` performs the subsequent shim+FD concatenation and wraps the combined image with `mkbootimg` as `boot.img`.
+- The EDK2 workflow `.github/workflows/build-a205w.yml` runs `build.sh` and publishes `workspace/UEFI` plus boot/recovery images. It is separate from the Virtual Boot workflow. Run 68 validates the Virtual Boot kernel/DTB/initramfs bundle, not this BootShim+FD combination.
 - `EXYNOS7885Pkg/EXYNOS7885Pkg.fdf` defines an EDK2 FD at base 0x90000000 with size 0x00200000. `DeviceMemoryMap.h` reserves the same 2 MiB as `BootShim/FD`, and the Virtual Boot DTB marks that range no-map.
 - The selected kernel branch's `arch/arm64/kernel/machine_kexec.c` includes a guard that BUGs if more than one CPU is online for a normal kexec. SMP shutdown requirements must therefore be resolved explicitly before any launch attempt.
 
@@ -26,7 +26,7 @@ The Phase 1 kernel, DTB, initramfs and bundle build passed in GitHub Actions run
 
 ### 2.2 Correct the kexec-loadable wrapper
 1. Implement a valid ARM64 Linux Image header for the BootShim wrapper. `text_offset`, `image_size`, flags, alignment and actual binary length must agree with the selected kernel's ARM64 boot protocol and kexec loader.
-2. Embed the verified FD payload explicitly and define an unambiguous payload offset and length. The wrapper's image size must account for the complete wrapper plus embedded payload.
+2. Keep the existing shim+FD concatenation, but make the payload boundary explicit and validate it: the FD must begin exactly at the end of BootShim.bin, with a recorded offset and length. The wrapper's Linux Image header must declare the complete combined image size, not merely the 2 MiB FD size.
 3. Validate that the kexec loader places the wrapper in usable RAM, not in the reserved FD window, and that the source payload cannot overlap the 0x90000000 destination.
 4. Add static checks for header fields, payload offset/length, FD bounds, destination range and SHA-256.
 
