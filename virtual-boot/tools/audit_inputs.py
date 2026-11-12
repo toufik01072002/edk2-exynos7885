@@ -53,7 +53,7 @@ def main():
         ["sh", str(extractor), str(args.kernel)],
         check=False, capture_output=True
     )
-    if extracted.returncode != 0 or not extracted.stdout.startswith(b"CONFIG_"):
+    if extracted.returncode != 0 or b"CONFIG_" not in extracted.stdout:
         raise SystemExit("BLOCKED: cannot extract the actual configuration embedded in the prebuilt kernel")
     config_text = extracted.stdout.decode("utf-8", errors="replace")
     config_lines = set(config_text.splitlines())
