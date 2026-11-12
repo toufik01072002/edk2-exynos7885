@@ -1,6 +1,12 @@
 name: Build Virtual Boot ARM64 (SM-A205W)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-virtual-boot.yml'
+      - 'virtual-boot/**'
+      - 'EXYNOS7885Pkg/Include/Configuration/DeviceMemoryMap.h'
   workflow_dispatch:
     inputs:
       kernel_ref:
@@ -56,8 +62,8 @@ jobs:
       - name: Clone Kernel_SM-A205W (correct branch)
         id: checkout_kernel
         env:
-          KERNEL_REF: ${{ github.event.inputs.kernel_ref }}
-          EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit }}
+          KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'kexec-arm64-4.4-d-work' }}
+          EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit || '1e70ef871acb9ea0cd79a531b18e98f61debfc71' }}
         run: |
           git clone --recursive https://github.com/toufik01072002/Kernel_SM-A205W.git kernel-src
           cd kernel-src
@@ -380,7 +386,7 @@ jobs:
           name: virtual-boot-kernel
           path: kernel-artifacts
 
-      - name: Install libfdt Python bindings
+      - name: Install DTB validation tools
         run: |
           sudo apt-get update
           sudo apt-get install -y device-tree-compiler
@@ -467,9 +473,9 @@ jobs:
               "sha256": "$KERNEL_SHA256"
             },
             "dtb": {
-              "source": "authentic Samsung DTS chain",
-              "base_dts": "arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts",
-              "overlay_dtsi": "arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi",
+              "source": "Virtual Boot-specific DTS derived from Samsung hardware definitions",
+              "reference_base_dts": "arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts",
+              "reference_a20_overlay": "arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi",
               "file": "exynos7885-a205w-virtual.dtb",
               "load_address": "0x88000000",
               "sha256": "$DTB_SHA256"
@@ -509,7 +515,7 @@ jobs:
             },
             "validation": {
               "dtb_memory_map": "PASSED - binary DTB validated via dtc/fdtget",
-              "dtb_source_authentic": "YES - built from Samsung DTS/DTBO chain",
+              "dtb_source_authentic": "Samsung-derived; directly includes exynos7885-pm-domains.dtsi, with other nodes adapted in the Virtual Boot DTS",
               "dtb_validation_method": "dtc/fdtget binary DTB parsing against DeviceMemoryMap.h"
             }
           }
