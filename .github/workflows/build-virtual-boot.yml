@@ -54,6 +54,7 @@ jobs:
           "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc" --version
 
       - name: Clone Kernel_SM-A205W (correct branch)
+        id: verify_commit
         env:
           KERNEL_REF: ${{ github.event.inputs.kernel_ref }}
           EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit }}
@@ -70,12 +71,7 @@ jobs:
             echo "Got:      $ACTUAL_COMMIT"
             exit 1
           fi
-          echo "commit=$ACTUAL_COMMIT" >> $GITHUB_OUTPUT
-
-      - name: Verify kernel commit
-        id: verify_commit
-        run: |
-          cd kernel-src
+          echo "commit=$ACTUAL_COMMIT" >> "$GITHUB_OUTPUT"
           git log -1 --format="%H %s"
 
       - name: Copy Virtual Boot kernel config
@@ -95,7 +91,7 @@ jobs:
             olddefconfig
 
           grep -qx 'CONFIG_KEXEC=y' out/.config
-          grep -qx 'CONFIG_ECT=n' out/.config
+          grep -qx '# CONFIG_ECT is not set' out/.config
           grep -qx 'CONFIG_NR_CPUS=8' out/.config
           grep -qx 'CONFIG_SCHED_HMP=y' out/.config
 
@@ -121,9 +117,17 @@ jobs:
         run: |
           mkdir -p virtual-boot-output
           sudo apt-get update && sudo apt-get install -y device-tree-compiler
-          dtc -O dtb -o virtual-boot-output/exynos7885-a205w-virtual.dtb \
-            -I dts \
-            virtual-boot-project/virtual-boot/dtb/exynos7885-a205w-virtual.dts
+          cp kernel-src/arch/arm64/boot/dts/exynos/dtbo/exynos7885-pm-domains.dtsi \
+            virtual-boot-project/virtual-boot/dtb/exynos7885-pm-domains.dtsi
+          cpp -nostdinc \
+            -I kernel-src/include \
+            -I kernel-src/arch/arm64/boot/dts \
+            -D__DTS__ -undef -x assembler-with-cpp \
+            virtual-boot-project/virtual-boot/dtb/exynos7885-a205w-virtual.dts \
+            > virtual-boot-output/exynos7885-a205w-virtual.preprocessed.dts
+          dtc -@ -I dts -O dtb \
+            -o virtual-boot-output/exynos7885-a205w-virtual.dtb \
+            virtual-boot-output/exynos7885-a205w-virtual.preprocessed.dts
           echo "Virtual Boot DTB size: $(wc -c < virtual-boot-output/exynos7885-a205w-virtual.dtb) bytes"
 
       - name: Verify kernel and DTB artifacts
@@ -145,13 +149,20 @@ jobs:
           sha256=$(sha256sum virtual-boot-output/exynos7885-a205w-virtual.dtb | cut -d' ' -f1)
           echo "sha256=$sha256" >> $GITHUB_OUTPUT
 
+      - name: Stage kernel artifacts with stable paths
+        run: |
+          mkdir -p kernel-artifacts-staging
+          cp kernel-src/out/arch/arm64/boot/Image kernel-artifacts-staging/Image
+          cp virtual-boot-output/exynos7885-a205w-virtual.dtb kernel-artifacts-staging/exynos7885-a205w-virtual.dtb
+          test -s kernel-artifacts-staging/Image
+          test -s kernel-artifacts-staging/exynos7885-a205w-virtual.dtb
+
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: virtual-boot-kernel
-          path: |
-            kernel-src/out/arch/arm64/boot/Image
-            virtual-boot-output/exynos7885-a205w-virtual.dtb
+          path: kernel-artifacts-staging/
+          if-no-files-found: error
 
   build-initramfs:
     name: Build initramfs
@@ -382,17 +393,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y python3-libfdt
 
-      - name: Run binary DTB validation
+      - name: Validate DTB and memory map against EDK2 reference
         run: |
           python3 virtual-boot-project/virtual-boot/scripts/validate_dtb_binary.py \
-            kernel-artifacts/exynos7885-a205w-virtual.dtb
-
-      - name: Validate memory map against reference
-        run: |
-          echo "=== Memory Map Reference Validation ==="
-          echo "Reference: DeviceMemoryMap.h (commit f4af1d3)"
-          echo "Checking key regions in DTB..."
-          true
+            kernel-artifacts/exynos7885-a205w-virtual.dtb \
+            virtual-boot-project/EXYNOS7885Pkg/Include/Configuration/DeviceMemoryMap.h
 
   build-bundle:
     name: Create Virtual Boot Bundle
@@ -436,12 +441,17 @@ jobs:
 
       - name: Generate hardware manifest with REAL data
         env:
-          BUILD_DATE: ${{ github.event.workflow_run.created_at || github.event.head_commit.timestamp }}
           GIT_COMMIT: ${{ needs.build-kernel.outputs.kernel_commit }}
           KERNEL_SHA256: ${{ needs.build-kernel.outputs.kernel_sha256 }}
           DTB_SHA256: ${{ needs.build-kernel.outputs.dtb_sha256 }}
           INITRAMFS_SHA256: ${{ needs.build-initramfs.outputs.initramfs_sha256 }}
         run: |
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          : "${BUILD_DATE:?BUILD_DATE is empty}"
+          : "${GIT_COMMIT:?GIT_COMMIT is empty}"
+          : "${KERNEL_SHA256:?KERNEL_SHA256 is empty}"
+          : "${DTB_SHA256:?DTB_SHA256 is empty}"
+          : "${INITRAMFS_SHA256:?INITRAMFS_SHA256 is empty}"
           cat > virtual-boot-output/hardware-manifest.json << MANIFESTEOF
           {
             "format": "VIRTUAL-BOOT-ARM64",
@@ -502,9 +512,9 @@ jobs:
               "note": "Phase 1 only - trampoline not assigned"
             },
             "validation": {
-              "dtb_memory_map": "PASSED - binary DTB validated via libfdt",
-              "dtb_source_authentic": "YES - built from Samsung DTS/DTBO chain",
-              "dtb_validation_method": "libfdt-based binary DTB parsing"
+              "dtb_memory_map": "PASSED - validate-dtb job completed successfully against DeviceMemoryMap.h",
+              "dtb_source_authentic": "Derived from Samsung Exynos7885 source definitions; standalone Virtual Boot DTS",
+              "dtb_validation_method": "DTB binary parsing plus DeviceMemoryMap.h descriptor comparison"
             }
           }
           MANIFESTEOF
