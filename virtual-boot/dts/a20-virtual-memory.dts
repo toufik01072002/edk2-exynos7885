@@ -1,0 +1,68 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+    fragment@0 {
+        target-path = "/memory@80000000";
+        __overlay__ {
+            reg = <0x0 0x80000000 0x3BC00000>;
+        };
+    };
+
+    fragment@1 {
+        target-path = "/memory@C0000000";
+        __overlay__ {
+            reg = <0x0 0xC0000000 0x40000000>;
+        };
+    };
+
+    fragment@2 {
+        target-path = "/memory@880000000";
+        __overlay__ {
+            reg = <0x8 0x80000000 0x40000000>;
+        };
+    };
+
+    fragment@3 {
+        target-path = "/reserved-memory";
+        __overlay__ {
+            edk2_uefi@90000000 {
+                compatible = "removed-dma-pool";
+                reg = <0x0 0x90000000 0x00200000>;
+                no-map;
+            };
+
+            cma3_reserved@8ba000000 {
+                compatible = "removed-dma-pool";
+                reg = <0x8 0xBA000000 0x01400000>;
+                no-map;
+            };
+
+            bank2_gap@8bb400000 {
+                compatible = "removed-dma-pool";
+                reg = <0x8 0xBB400000 0x00400000>;
+                no-map;
+            };
+
+            video_frame@8bd800000 {
+                compatible = "removed-dma-pool";
+                reg = <0x8 0xBD800000 0x02800000>;
+                no-map;
+            };
+        };
+    };
+
+    fragment@4 {
+        target-path = "/reserved-memory/crypto";
+        __overlay__ {
+            alloc-ranges = <0x8 0xBB800000 0x02000000>;
+        };
+    };
+
+    fragment@5 {
+        target-path = "/reserved-memory/video_stream";
+        __overlay__ {
+            alloc-ranges = <0x0 0xF0C00000 0x04800000>;
+        };
+    };
+};
