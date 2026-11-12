@@ -98,7 +98,9 @@ jobs:
           git apply --check "$PATCH_FILE"
           git apply "$PATCH_FILE"
           git diff --check
-          grep -q '^struct rt_rq;
+          grep -Fq 'struct rt_rq;' include/trace/events/sched.h
+          sha256=$(sha256sum "$PATCH_FILE" | cut -d' ' -f1)
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
 
       - name: Copy Virtual Boot kernel config
         run: |
