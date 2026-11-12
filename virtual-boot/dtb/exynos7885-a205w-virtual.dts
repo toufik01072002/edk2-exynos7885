@@ -136,12 +136,6 @@
             no-map;
         };
 
-        crypto_reserved: crypto@8bb800000 {
-            compatible = "removed-dma-pool";
-            reg = <0x8 0xBB800000 0x02000000>;
-            no-map;
-        };
-
         video_frame_reserved: video-frame@8bd800000 {
             compatible = "removed-dma-pool";
             reg = <0x8 0xBD800000 0x02800000>;
@@ -154,6 +148,7 @@
             ion,reusable;
             size = <0x2000000>;
             alignment = <0x0 0x00400000>;
+            alloc-ranges = <0x8 0xBB800000 0x02000000>;
             id = <1>;
         };
 
@@ -165,7 +160,7 @@
             alignment = <0x0 0x00400000>;
             id = <3>;
             compat-id = <25 31>;
-            alloc-ranges = <0x0 0x80000000 0x80000000>;
+            alloc-ranges = <0x0 0xF0C00000 0x04800000>;
         };
 
         /* UEFI FD region for Virtual Boot */
