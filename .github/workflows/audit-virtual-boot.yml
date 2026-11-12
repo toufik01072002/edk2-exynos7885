@@ -43,7 +43,7 @@ jobs:
       - name: Install DTB inspection tool
         run: |
           sudo apt-get update
-          sudo apt-get install -y device-tree-compiler
+          sudo apt-get install -y build-essential bc bison flex libssl-dev libelf-dev device-tree-compiler
 
       - name: Record exact source revisions
         run: |
@@ -53,11 +53,36 @@ jobs:
             echo "Kernel_SM-A205W=$(git -C sources/Kernel_SM-A205W rev-parse HEAD)"
           } | tee virtual-boot-source-refs.txt
 
+      - name: Build and merge the A20 CAN SINGLE 05 device tree
+        run: |
+          make -C sources/Kernel_SM-A205W O=out ARCH=arm64 exynos7885-a20_defconfig
+          make -C sources/Kernel_SM-A205W O=out ARCH=arm64 dtbs
+
+          BASE="sources/Kernel_SM-A205W/out/arch/arm64/boot/dts/exynos/dtbo/exynos7885.dtb"
+          OVERLAY="sources/Kernel_SM-A205W/out/arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_can_single_05.dtbo"
+
+          test -s "$BASE"
+          test -s "$OVERLAY"
+          fdtoverlay -i "$BASE" -o a20-can-single-05-merged.dtb "$OVERLAY"
+          dtc -I dtb -O dts -o a20-can-single-05-merged.dts a20-can-single-05-merged.dtb
+
+          MODEL="$(fdtget a20-can-single-05-merged.dtb / model)"
+          echo "Merged DTB model: $MODEL"
+          echo "$MODEL" | grep -F "A20 CAN SINGLE 05"
+          {
+            echo "base_dtb_sha256=$(sha256sum "$BASE" | cut -d' ' -f1)"
+            echo "overlay_dtbo_sha256=$(sha256sum "$OVERLAY" | cut -d' ' -f1)"
+            echo "merged_dtb_sha256=$(sha256sum a20-can-single-05-merged.dtb | cut -d' ' -f1)"
+            echo "model=$MODEL"
+            echo "status=MERGED_FOR_ANALYSIS_ONLY_NOT_BOOTABLE"
+          } | tee a20-dtb-candidate-report.txt
+
+
       - name: Audit kernel, DTB and embedded kernel configuration
         run: |
           python3 edk2-exynos7885/virtual-boot/tools/audit_inputs.py \
             --kernel sources/android_device_samsung_a20/prebuilt/kexec/Image \
-            --dtb sources/android_device_samsung_a20/prebuilt/kexec/exynos7885.dtb \
+            --dtb a20-can-single-05-merged.dtb \\
             --a20-overlay sources/Kernel_SM-A205W/arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_can_single_05.dts \
             --kernel-source sources/Kernel_SM-A205W \
             --report virtual-boot-audit.json
@@ -69,5 +94,8 @@ jobs:
           path: |
             virtual-boot-audit.json
             virtual-boot-source-refs.txt
+            a20-can-single-05-merged.dtb
+            a20-can-single-05-merged.dts
+            a20-dtb-candidate-report.txt
           if-no-files-found: error
           retention-days: 30
