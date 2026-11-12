@@ -182,6 +182,15 @@ def main():
         raise ValueError("DTB contains no fixed reserved-memory reg entries")
     print("PASS: {} fixed reservations are inside RAM and covered by MEM_RES descriptors".format(
         len(fixed_reserved)))
+    actual_fixed = sorted((start, end) for start, end, _, _ in fixed_reserved)
+    expected_fixed = sorted(reference_reserved)
+    if actual_fixed != expected_fixed:
+        missing = sorted(set(expected_fixed) - set(actual_fixed))
+        unexpected = sorted(set(actual_fixed) - set(expected_fixed))
+        raise ValueError("fixed DTB reservations do not match DeviceMemoryMap.h; missing={}, unexpected={}".format(
+            [(hex(a), hex(e)) for a, e in missing],
+            [(hex(a), hex(e)) for a, e in unexpected]))
+    print("PASS: fixed DTB reservations match every MEM_RES descriptor exactly")
     print("PASS: fixed reserved-memory regions do not overlap one another")
     if dynamic_reserved:
         print("INFO: dynamic reservations: " + ", ".join(
