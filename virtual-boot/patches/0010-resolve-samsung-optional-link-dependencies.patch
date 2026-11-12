@@ -1,0 +1,77 @@
+From: Virtual Boot compatibility
+Subject: [PATCH 0010] Resolve optional Samsung driver link dependencies
+
+--- a/drivers/trace/exynos-ss.c
++++ b/drivers/trace/exynos-ss.c
+@@
+-	unsigned cpu, core, mpidr;
+@@
+-	/* TODO: Core Power Information */
+-        for_each_possible_cpu(cpu) {
+-                mpidr = cpu_logical_map(cpu);
+-                core = mpidr_cpu_num(mpidr)^4;
+-                if (exynos_cpu.power_state(cpu))
+-			exynos_ss_core_power_stat(ESS_SIGN_ALIVE, core);
+-		else
+-			exynos_ss_core_power_stat(ESS_SIGN_DEAD, core);
+-	}
++	/* Optional Exynos power-state provider is not part of Virtual Boot. */
+
+--- a/drivers/soc/samsung/exynos-powermode.c
++++ b/drivers/soc/samsung/exynos-powermode.c
+@@
+ 	case CPU_DEAD:
+ 	case CPU_DEAD_FROZEN:
+-		cpumask_and(&mask, topology_idle_cpumask(cpu), cpu_online_mask);
+-		if (cpumask_weight(&mask) == 0) {
+-			/* Wait power down cluster */
+-			while (exynos_cpu.cluster_state(cpu))
+-				udelay(1);
+-		}
++		/* The optional exynos_cpu cluster-state provider is unavailable. */
++		break;
+
+--- a/drivers/hid/hid-input.c
++++ b/drivers/hid/hid-input.c
+@@
+-extern bool lcd_is_on;
+@@
+-	if(!lcd_is_on){
+-		dbg_hid("lcd is off, don't report LED event\n");
+-		kfree(buf);
+-		return;
+-	}
++	/* Do not depend on the Android display driver's lcd_is_on global. */
+
+--- a/drivers/clocksource/exynos_mct.c
++++ b/drivers/clocksource/exynos_mct.c
+@@
+-extern struct atomic_notifier_head hardlockup_notifier_list;
++#ifdef CONFIG_HARDLOCKUP_DETECTOR_OTHER_CPU
++extern struct atomic_notifier_head hardlockup_notifier_list;
++#endif
+@@
+-	atomic_notifier_chain_register(&hardlockup_notifier_list, &nb_hardlockup_block);
++#ifdef CONFIG_HARDLOCKUP_DETECTOR_OTHER_CPU
++	atomic_notifier_chain_register(&hardlockup_notifier_list, &nb_hardlockup_block);
++#endif
+
+--- a/fs/f2fs/file.c
++++ b/fs/f2fs/file.c
+@@
+-	if (hard_reset_key_pressed)
+-		return true;
++#ifdef CONFIG_SEC_DEBUG
++	if (hard_reset_key_pressed)
++		return true;
++#endif
+
+--- a/fs/f2fs/super.c
++++ b/fs/f2fs/super.c
+@@
+-	if (F2FS_OPTION(sbi).fsync_mode == FSYNC_MODE_NOBARRIER) {
++#ifdef CONFIG_SEC_DEBUG
++	if (F2FS_OPTION(sbi).fsync_mode == FSYNC_MODE_NOBARRIER) {
+@@
+ 	}
++#endif
