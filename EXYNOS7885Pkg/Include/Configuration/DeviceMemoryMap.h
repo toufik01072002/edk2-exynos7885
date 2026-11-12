@@ -105,7 +105,6 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
     {"Modem Reserved",    0xF5400000, 0x08800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 136 MiB, ends at 0xFDC00000
     {"CP RAM Logging",    0xFDC00000, 0x02000000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 32 MiB, ends at 0xFFC00000
 
-//   Gap: 0xFEC00000 - 0xFFC00000 = 16 MiB
 
     {"GNSS Reserved",     0xFFC00000, 0x00400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 4 MiB
 
