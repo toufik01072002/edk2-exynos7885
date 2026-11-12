@@ -33,7 +33,11 @@
         linux,initrd-end = <0x85FFFFFF>;
     };
 
-    /* Memory regions from exynos7885.dts, refined with A20 overlay knowledge */
+    /*
+     * Virtual Boot uses the approved EDK2 physical map: Bank 0 is 956 MiB
+     * (0x80000000-0xBBC00000). The generic Exynos7885 SoC DTS advertises
+     * 986 MiB (0x3DA00000); that extra 30 MiB is not part of this A20 map.
+     */
     memory@80000000 {
         device_type = "memory";
         reg = <0x0 0x80000000 0x3BC00000>;  /* 956 MiB - Bank 0, DeviceMemoryMap.h */
