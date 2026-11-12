@@ -22,6 +22,8 @@ _Head:
         .byte   0x41, 0x52, 0x4d, 0x64
         .long   0
 
+        /* Linux arm64 enters the Image at image_base + TEXT_OFFSET. */
+        .org    TEXT_OFFSET, 0
 _Start:
         /* Preserve x0: ARM64 Linux Image entry supplies the FDT address. */
         adr     x1, _Payload
