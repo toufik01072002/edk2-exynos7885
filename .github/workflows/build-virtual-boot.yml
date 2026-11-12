@@ -93,7 +93,6 @@ jobs:
       - name: Build Virtual Boot DTB from authentic DTS source
         run: |
           mkdir -p virtual-boot-output
-          sudo apt-get update && sudo apt-get install -y device-tree-compiler
           cp kernel-src/arch/arm64/boot/dts/exynos/dtbo/exynos7885-pm-domains.dtsi \
             virtual-boot-project/virtual-boot/dtb/exynos7885-pm-domains.dtsi
           cpp -nostdinc \
