@@ -44,6 +44,8 @@ _Stop:
         wfe
         b       _Stop
 
+        /* Emit the LDR literal pool before the appended FD payload. */
+        .ltorg
         .align  4
 _Payload:
         /* build_bootshim.sh appends the firmware FD immediately here. */
