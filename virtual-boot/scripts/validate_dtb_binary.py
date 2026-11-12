@@ -152,6 +152,8 @@ def main():
         if reg:
             regions = decode_reg(reg, reserved_addr_cells, reserved_size_cells)
             no_map = fdtget(dtb, path, "no-map") is not None
+            if not no_map:
+                raise ValueError("{} fixed reservation must carry no-map".format(path))
             for region in regions:
                 if not any(contained(region, bank) for bank in expected_banks):
                     raise ValueError("{} reservation lies outside reference RAM: {}".format(
