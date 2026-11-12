@@ -15,6 +15,8 @@ permissions:
 jobs:
   audit:
     runs-on: ubuntu-24.04
+    env:
+      ANDROID_MAJOR_VERSION: p
     timeout-minutes: 30
     steps:
       - name: Checkout EDK2 development branch
