@@ -126,6 +126,28 @@
             size = <0x400000>;
         };
 
+        /*
+         * Fixed Bank 2 reservations from DeviceMemoryMap.h / memblock map.
+         * These are static EDK2 handoff exclusions, not relocatable CMA pools.
+         */
+        cma3_reserved: cma-3@8ba000000 {
+            compatible = "removed-dma-pool";
+            reg = <0x8 0xBA000000 0x01400000>;
+            no-map;
+        };
+
+        crypto_reserved: crypto@8bb800000 {
+            compatible = "removed-dma-pool";
+            reg = <0x8 0xBB800000 0x02000000>;
+            no-map;
+        };
+
+        video_frame_reserved: video-frame@8bd800000 {
+            compatible = "removed-dma-pool";
+            reg = <0x8 0xBD800000 0x02800000>;
+            no-map;
+        };
+
         /* CMA pools */
         crypto {
             compatible = "exynos8890-ion,crypto";
