@@ -181,7 +181,7 @@ jobs:
           NOT BOOTABLE — ANALYSIS CANDIDATE ONLY
           This archive is not approved for kexec or device boot.
           The DTB initrd addresses are cleared for dynamic placement; no verified loader supplies them yet.
-          The merged DTB memory banks do not yet match the corrected three-bank SM-A205W RAM map.
+          The three-bank RAM map and audited carveouts are patched for analysis, not runtime-validated.
           The current kexec relocation path clears x0-x3 before branching.
           No RAM reservation or DMA-quiescence handoff has been implemented.
           EDK2 execution is disabled. No flash partitions are modified.
@@ -198,7 +198,7 @@ jobs:
                       h.update(chunk)
               return h.hexdigest()
           files = {}
-          for name in ("Image", "a20-can-single-05.dtb", "initramfs.cpio.gz", "STATUS.txt"):
+          for name in ("Image", "a20-virtual-boot-memory.dtb", "initramfs.cpio.gz", "STATUS.txt"):
               p = root / name
               files[name] = {"size": p.stat().st_size, "sha256": digest(p)}
           manifest = {
@@ -212,7 +212,7 @@ jobs:
               "files": files,
               "required_work_remaining": [
                   "implement a verified runtime loader that sets initrd addresses dynamically",
-                  "align the DTB with the corrected three-bank RAM map and reserve all audited carveouts",
+                  "validate the corrected RAM banks and carveout reservations against the live device map",
                   "prove memory reservation for all loaded segments",
                   "quiesce DMA-capable devices before handoff",
                   "implement and validate the ARM64 kexec-to-EDK2 register and exception-level contract",
