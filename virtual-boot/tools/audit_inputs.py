@@ -91,6 +91,7 @@ def main():
     initrd_start = re.search(r'linux,initrd-start\s*=\s*<([^>]+)>;', dts)
     initrd_end = re.search(r'linux,initrd-end\s*=\s*<([^>]+)>;', dts)
     bootargs = re.search(r'bootargs\s*=\s*"([^"]*)";', dts)
+    model = re.search(r'model\s*=\s*"([^"]*)";', dts)
 
     findings = [
         "This report audits input files only; it does not prove that the kernel can boot as a standalone virtual environment.",
@@ -102,8 +103,8 @@ def main():
     compatible_text = " | ".join(compatibles)
     if "samsung,exynos7885" not in compatible_text:
         findings.append("DTB does not declare samsung,exynos7885 compatibility.")
-    if "samsung,armv8" in compatible_text and "samsung,exynos7885" in compatible_text:
-        findings.append("Base DTB is generic Exynos 7885; the selected A20 CAN SINGLE 05 overlay must be applied before the result can be considered a board DTB.")
+    if "samsung,armv8" in compatible_text and "samsung,exynos7885" in compatible_text and not (model and "A20 CAN SINGLE 05" in model.group(1)):
+        findings.append("Base DTB is generic Exynos 7885; the selected A20 CAN SINGLE 05 overlay has not been confirmed in the merged DTB.")
     if initrd_start or initrd_end:
         findings.append("DTB contains fixed linux,initrd-start/end properties; these must be removed or rebuilt for a dynamically placed initramfs.")
     if "CONFIG_DEVTMPFS_MOUNT=y" not in config_lines:
@@ -132,6 +133,7 @@ def main():
             "linux_initrd_start_cells": initrd_start.group(1).split() if initrd_start else None,
             "linux_initrd_end_cells": initrd_end.group(1).split() if initrd_end else None,
             "bootargs": bootargs.group(1) if bootargs else None,
+            "model": model.group(1) if model else None,
         },
         "blocking_findings": findings,
         "status": "INPUTS_VALIDATED_HANDOFF_BLOCKED" if binary_config_verified else "INPUTS_FORMATS_VALIDATED_BINARY_CONFIG_UNVERIFIED",
