@@ -91,11 +91,44 @@ jobs:
           } | tee a20-dtb-candidate-report.txt
 
 
+          dtc -@ -I dts -O dtb \
+            -o a20-virtual-memory.dtbo \
+            edk2-exynos7885/virtual-boot/dts/a20-virtual-memory.dts
+          fdtoverlay -i a20-can-single-05-merged.dtb \
+            -o a20-virtual-boot-memory.dtb a20-virtual-memory.dtbo
+
+          fdtput -d a20-virtual-boot-memory.dtb /chosen linux,initrd-start
+          fdtput -d a20-virtual-boot-memory.dtb /chosen linux,initrd-end
+          BOOTARGS="$(fdtget a20-virtual-boot-memory.dtb /chosen bootargs)"
+          BOOTARGS="$(printf '%s\n' "$BOOTARGS" | sed -E 's/(^|[[:space:]])skip_initramfs([[:space:]]|$)/ /g' | tr -s ' ' | sed 's/^ //;s/ $//')"
+          fdtput -t s a20-virtual-boot-memory.dtb /chosen bootargs "$BOOTARGS"
+
+          dtc -I dtb -O dts -o a20-virtual-boot-memory.dts a20-virtual-boot-memory.dtb
+          MODEL="$(fdtget a20-virtual-boot-memory.dtb / model)"
+          echo "Virtual DTB model: $MODEL"
+          echo "$MODEL" | grep -F "A20 CAN SINGLE 05"
+          test "$(fdtget a20-virtual-boot-memory.dtb /memory@880000000 reg)" = "8 80000000 40000000"
+          test "$(fdtget a20-virtual-boot-memory.dtb /reserved-memory/edk2_uefi@90000000 reg)" = "0 90000000 200000"
+          ! fdtget a20-virtual-boot-memory.dtb /chosen bootargs | grep -q skip_initramfs
+          ! fdtget a20-virtual-boot-memory.dtb /chosen linux,initrd-start >/dev/null 2>&1
+          ! fdtget a20-virtual-boot-memory.dtb /chosen linux,initrd-end >/dev/null 2>&1
+
+          {
+            echo "memory_overlay_sha256=$(sha256sum a20-virtual-memory.dtbo | cut -d' ' -f1)"
+            echo "virtual_dtb_sha256=$(sha256sum a20-virtual-boot-memory.dtb | cut -d' ' -f1)"
+            echo "bank0=$(fdtget a20-virtual-boot-memory.dtb /memory@80000000 reg)"
+            echo "bank1=$(fdtget a20-virtual-boot-memory.dtb /memory@C0000000 reg)"
+            echo "bank2=$(fdtget a20-virtual-boot-memory.dtb /memory@880000000 reg)"
+            echo "edk2_reserved=$(fdtget a20-virtual-boot-memory.dtb /reserved-memory/edk2_uefi@90000000 reg)"
+            echo "status=MEMORY_MAP_PATCHED_ANALYSIS_ONLY_NOT_BOOTABLE"
+          } | tee a20-virtual-memory-report.txt
+
+
       - name: Audit kernel, DTB and embedded kernel configuration
         run: |
           python3 edk2-exynos7885/virtual-boot/tools/audit_inputs.py \
             --kernel sources/android_device_samsung_a20/prebuilt/kexec/Image \
-            --dtb a20-can-single-05-merged.dtb \
+            --dtb a20-virtual-boot-memory.dtb \
             --a20-overlay sources/Kernel_SM-A205W/arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_can_single_05.dts \
             --kernel-source sources/Kernel_SM-A205W \
             --report virtual-boot-audit.json
@@ -141,13 +174,13 @@ jobs:
           gzip -dc initramfs.cpio.gz | cpio --list
 
           install -m 0644 sources/android_device_samsung_a20/prebuilt/kexec/Image candidate/Image
-          install -m 0644 a20-can-single-05-merged.dtb candidate/a20-can-single-05.dtb
+          install -m 0644 a20-virtual-boot-memory.dtb candidate/a20-virtual-boot-memory.dtb
           install -m 0644 initramfs.cpio.gz candidate/initramfs.cpio.gz
 
           cat > candidate/STATUS.txt <<'STATUS'
           NOT BOOTABLE — ANALYSIS CANDIDATE ONLY
           This archive is not approved for kexec or device boot.
-          The DTB still contains fixed linux,initrd-start/end properties.
+          The DTB initrd addresses are cleared for dynamic placement; no verified loader supplies them yet.
           The merged DTB memory banks do not yet match the corrected three-bank SM-A205W RAM map.
           The current kexec relocation path clears x0-x3 before branching.
           No RAM reservation or DMA-quiescence handoff has been implemented.
@@ -178,7 +211,7 @@ jobs:
               "bootable": False,
               "files": files,
               "required_work_remaining": [
-                  "remove or dynamically set fixed initrd properties using a verified runtime loader",
+                  "implement a verified runtime loader that sets initrd addresses dynamically",
                   "align the DTB with the corrected three-bank RAM map and reserve all audited carveouts",
                   "prove memory reservation for all loaded segments",
                   "quiesce DMA-capable devices before handoff",
@@ -202,6 +235,10 @@ jobs:
             virtual-boot-audit.json
             virtual-boot-source-refs.txt
             a20-can-single-05-merged.dtb
+            a20-virtual-memory.dtbo
+            a20-virtual-boot-memory.dtb
+            a20-virtual-boot-memory.dts
+            a20-virtual-memory-report.txt
             a20-can-single-05-merged.dts
             a20-dtb-candidate-report.txt
             initramfs.cpio.gz
