@@ -208,8 +208,18 @@ def main():
         for other in fixed_reserved[i + 1:]:
             if other[0] >= current[1]:
                 break
-            errors.append("fixed reserved-memory overlap: {} and {}".format(
-                current[2], other[2]))
+            overlap = (max(current[0], other[0]), min(current[1], other[1]))
+            pair = {current[2].rsplit("/", 1)[-1], other[2].rsplit("/", 1)[-1]}
+            # A20 CP logging is an overlapping sub-allocation/view of the
+            # modem interface reservation. Permit only this documented range.
+            if (pair == {"modem_if", "cp_ram_logging"}
+                    and overlap == (0xFCC00000, 0xFDC00000)):
+                warnings.append(
+                    "documented modem_if/cp_ram_logging overlap: 0x{:X}-0x{:X}".format(
+                        overlap[0], overlap[1]))
+                continue
+            errors.append("fixed reserved-memory overlap: {} and {} at 0x{:X}-0x{:X}".format(
+                current[2], other[2], overlap[0], overlap[1]))
 
     fixed_ranges = [(start, end) for start, end, _ in fixed_reserved]
 
@@ -268,7 +278,7 @@ def main():
         return 1
 
     print("PASS: all fixed reservations are within reference MEM_RES ranges")
-    print("PASS: fixed reserved-memory regions do not overlap")
+    print("PASS: no unapproved fixed reserved-memory overlaps")
     print("PASS: {} /memreserve/ entries are contained in reference RAM".format(len(memreserve)))
     if warnings:
         print("DTB MEMORY MAP VALIDATION: PASSED_WITH_WARNINGS")
