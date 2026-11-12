@@ -93,12 +93,12 @@ def main():
 \t\t\t\tcontinue;
 
 \t\t\tif (dtb) {
-\t\t\t\tpr_err("kexec: multiple DTB segments are not supported\\\\n");
+\t\t\t\tpr_err("kexec: multiple DTB segments are not supported\\n");
 \t\t\t\treturn -EINVAL;
 \t\t\t}
 
 \t\t\tif (!segment->mem || (segment->mem & 7)) {
-\t\t\t\tpr_err("kexec: invalid DTB destination address\\\\n");
+\t\t\t\tpr_err("kexec: invalid DTB destination address\\n");
 \t\t\t\treturn -EINVAL;
 \t\t\t}
 
@@ -106,12 +106,12 @@ def main():
 \t\t}
 
 \t\tif (!dtb) {
-\t\t\tpr_err("kexec: refusing ARM64 image without a DTB segment\\\\n");
+\t\t\tpr_err("kexec: refusing ARM64 image without a DTB segment\\n");
 \t\t\treturn -EINVAL;
 \t\t}
 
 \t\tkimage_dtb = dtb;
-\t\tpr_info("kexec: ARM64 target DTB at %pa\\\\n", &kimage_dtb);
+\t\tpr_info("kexec: ARM64 target DTB at %pa\\n", &kimage_dtb);
 \t}
 
 \tkexec_image_info(kimage);
