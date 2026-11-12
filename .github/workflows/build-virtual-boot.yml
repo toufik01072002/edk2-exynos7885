@@ -112,6 +112,14 @@ jobs:
           PY
           git -C kernel-src diff --check
           grep -Fq 'struct rt_rq;' kernel-src/include/trace/events/sched.h
+          tune = Path('kernel-src/kernel/sched/tune.h')
+          tune_source = tune.read_text()
+          tune_needle = '#ifdef CONFIG_SCHED_TUNE\n'
+          if 'struct cpufreq_policy;' not in tune_source:
+              if tune_source.count(tune_needle) != 1:
+                  raise SystemExit('Cannot locate CONFIG_SCHED_TUNE guard in tune.h')
+              tune_source = tune_source.replace(tune_needle, tune_needle + '\nstruct cpufreq_policy;\nstruct freqvar_boost_data;\n', 1)
+              tune.write_text(tune_source)
           grep -Fq 'static inline void sl_softirq_entry' kernel-src/include/linux/nmi.h
 
       - name: Copy Virtual Boot kernel config
@@ -477,6 +485,7 @@ jobs:
           mkdir -p virtual-boot-output/patches
           cp virtual-boot-project/virtual-boot/patches/0001-forward-declare-rt-rq.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0002-fix-nmi-inline-declaration.patch virtual-boot-output/patches/
+          cp virtual-boot-project/virtual-boot/patches/0003-fix-sched-tune-forward-declarations.patch virtual-boot-output/patches/
 
       - name: Generate hardware manifest with REAL data
         env:
@@ -509,7 +518,7 @@ jobs:
               "image": "Image",
               "load_address": "0x80080000",
               "sha256": "$KERNEL_SHA256"
-              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch"],
+              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch"],
             },
             "dtb": {
               "source": "Virtual Boot-specific DTS derived from Samsung hardware definitions",
@@ -563,7 +572,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd virtual-boot-output
-          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch hardware-manifest.json > SHA256SUMS
+          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch hardware-manifest.json > SHA256SUMS
           cat SHA256SUMS
 
       - name: Copy documentation
