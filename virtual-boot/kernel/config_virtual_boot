@@ -53,7 +53,7 @@ CONFIG_EXYNOS_SOC_INFO=y
 CONFIG_EXYNOS_SOC_EXYNOS7885=y
 
 # Samsung ECT (Early Chip Tuning) - DISABLED to avoid UEFI FD memory conflict at 0x90000000
-CONFIG_ECT=n
+# CONFIG_ECT is not set
 # CONFIG_ECT_DUMP is not set
 
 # Timer
