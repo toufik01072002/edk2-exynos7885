@@ -1,0 +1,66 @@
+name: Validate Phase 2 BootShim
+
+on:
+  push:
+    branches:
+      - "phase2/**"
+    paths:
+      - "BootShim/**"
+      - "build_bootshim.sh"
+      - "virtual-boot/scripts/validate_bootshim_image.py"
+      - ".github/workflows/validate-bootshim.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "BootShim/**"
+      - "build_bootshim.sh"
+      - "virtual-boot/scripts/validate_bootshim_image.py"
+      - ".github/workflows/validate-bootshim.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bootshim-header-and-payload:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install ARM64 cross tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu python3
+
+      - name: Create deterministic PI FV fixture
+        run: |
+          mkdir -p workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          size = 0x200000
+          fd = bytearray(size)
+          struct.pack_into("<Q", fd, 32, size)
+          fd[40:44] = b"_FVH"
+          struct.pack_into("<H", fd, 48, 0x48)
+          fd[55] = 2
+          Path("workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd").write_bytes(fd)
+          PY
+
+      - name: Build BootShim bundle against fixture
+        run: ./build_bootshim.sh
+
+      - name: Validate ARM64 Image header and appended FV
+        run: |
+          python3 virtual-boot/scripts/validate_bootshim_image.py \
+            workspace/UEFI \
+            --fd-size 0x200000 \
+            --fd-window 0x200000 \
+            --fd-base 0x90000000
+
+      - name: Verify the shim does not branch directly to the FV base
+        run: |
+          grep -q 'HandoffPending' BootShim/BootShim.S
+          ! grep -Eq 'br[[:space:]]+x5' BootShim/BootShim.S
