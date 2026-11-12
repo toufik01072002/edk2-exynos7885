@@ -24,7 +24,7 @@
   - The custom DTS intentionally selects and adapts the hardware nodes needed for the diagnostic kernel; it is not a verbatim merge of the complete base DTS and DTBO overlay.
 - **Model**: Samsung Galaxy A20 (SM-A205W) - corrected from A20e
 - **Memory Regions**: Defined per Samsung DTB (3 banks + Bank 3 empty)
-- **Reserved Regions**: All Samsung reservations included (TIMA, seclog, modem, gnss, wifibt, abox, framebuffer, CMA pools)
+- **Reserved Regions**: All 13 fixed EDK2 MEM_RES descriptors are mirrored as no-map reservations in the Virtual Boot DTB
 - **UEFI FD Region**: Added at 0x90000000-0x90200000 (2 MiB) with no-map
 - **CPUs**: 8 cores (2x A73 + 6x A53) with correct idle states
 - **Peripherals**: UART2 (console), I2C4, MMC0, USB, DECON, ABOX, PWM, RTC, Watchdog, ADC, Thermal
@@ -86,18 +86,21 @@
 | RAM Bank 2 Low | 0x880000000 | 0x3A000000 (928 MiB) |
 | RAM Bank 2 Gap1 | 0x8BB400000 | 0x00400000 (4 MiB) |
 
-### Samsung DTB Reserved Regions (exynos7885-rmem.dtsi + A20 overlay)
-- framebuffer@0xEC000000: 0x1400000 (20 MiB)
-- modem_if@0xF5400000: 0x8800000 (136 MiB)
-- cp_ram_logging@0xFDC00000: 0x2000000 (32 MiB)
-- gnss_if@0xFFC00000: 0x400000 (4 MiB)
-- tima_region@0xB8000000: 0x200000 (2 MiB)
-- seclog@0xC0000000: 0x80000 (512 KiB)
-- wifibt_if@0xE9000000: 0x400000 (4 MiB)
-- abox_rmem@0xE9400000: 0x400000 (4 MiB)
-- btabox_rmem: 0x400000 (4 MiB) - dynamic allocation
-- crypto (CMA): 0x2000000 (32 MiB) - reusable
-- video_stream (CMA): 0x4800000 (72 MiB) - secure, reusable
+### Virtual Boot Fixed Reservations
+- Framebuffer: 0xEC000000-0xED400000 (20 MiB)
+- Modem: 0xF5400000-0xFDC00000 (136 MiB)
+- CP RAM logging: 0xFDC00000-0xFFC00000 (32 MiB)
+- GNSS: 0xFFC00000-0x100000000 (4 MiB)
+- TIMA: 0xB8000000-0xB8200000 (2 MiB)
+- seclog: 0xC0000000-0xC0080000 (512 KiB)
+- WiFi/BT: 0xE9000000-0xE9400000 (4 MiB)
+- ABOX: 0xE9400000-0xE9800000 (4 MiB)
+- CMA video_stream: 0xF0C00000-0xF5400000 (72 MiB)
+- CMA cma-3: 0x8BA000000-0x8BB400000 (20 MiB)
+- CMA crypto: 0x8BB800000-0x8BD800000 (32 MiB)
+- CMA video_frame: 0x8BD800000-0x8C0000000 (40 MiB)
+- All 13 fixed reservations are represented as `no-map` regions in the Virtual Boot DTS.
+- The stock Samsung dynamic CMA/ABOX allocations are intentionally pinned or omitted in this diagnostic-only DTB so they cannot consume memory reserved by EDK2.
 
 ### Validation Status: **PENDING**
 The binary validator now uses `dtc`/`fdtget`, checks the FDT header and all three `/memory` banks, verifies every fixed reservation is inside RAM and carries `no-map`, and requires exact parity between fixed DTB reservations and all `MEM_RES` descriptors. It has not yet been executed against a compiled DTB.
