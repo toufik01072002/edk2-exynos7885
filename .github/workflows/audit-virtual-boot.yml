@@ -165,10 +165,13 @@ jobs:
           Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
           SOURCES
           sudo apt-get -o Dir::Etc::sourcelist=/tmp/arm64.sources -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 update
-          apt-get -o Dir::Etc::sourcelist=/tmp/arm64.sources -o Dir::Etc::sourceparts=- download busybox-static:arm64
+          apt-get -o Dir::Etc::sourcelist=/tmp/arm64.sources -o Dir::Etc::sourceparts=- download busybox-static:arm64=1:1.36.1-6ubuntu3.1
 
           mkdir -p busybox-arm64 initramfs-root/bin candidate
           dpkg-deb -x busybox-static_*_arm64.deb busybox-arm64
+          BUSYBOX_VERSION="$(dpkg-deb -f busybox-static_*_arm64.deb Version)"
+          test "$BUSYBOX_VERSION" = "1:1.36.1-6ubuntu3.1"
+          echo "busybox_static_version=$BUSYBOX_VERSION" | tee -a virtual-boot-source-refs.txt
           BUSYBOX="$(find busybox-arm64 -type f -name busybox -print -quit)"
           test -n "$BUSYBOX"
           file "$BUSYBOX" | grep -E "ARM aarch64|aarch64"
@@ -195,6 +198,7 @@ jobs:
           install -m 0644 sources/Kernel_SM-A205W/out/arch/arm64/boot/Image candidate/Image
           install -m 0644 a20-virtual-boot-memory.dtb candidate/a20-virtual-boot-memory.dtb
           install -m 0644 initramfs.cpio.gz candidate/initramfs.cpio.gz
+          install -m 0644 virtual-boot-source-refs.txt candidate/source-refs.txt
 
           cat > candidate/STATUS.txt <<'STATUS'
           NOT BOOTABLE — ANALYSIS CANDIDATE ONLY
@@ -207,7 +211,7 @@ jobs:
           STATUS
 
           python3 - <<'PY'
-          import hashlib, json
+          import hashlib, json, subprocess
           from pathlib import Path
           root = Path("candidate")
           def digest(p):
@@ -217,9 +221,19 @@ jobs:
                       h.update(chunk)
               return h.hexdigest()
           files = {}
-          for name in ("Image", "a20-virtual-boot-memory.dtb", "initramfs.cpio.gz", "STATUS.txt"):
+          for name in ("Image", "a20-virtual-boot-memory.dtb", "initramfs.cpio.gz", "STATUS.txt", "source-refs.txt"):
               p = root / name
               files[name] = {"size": p.stat().st_size, "sha256": digest(p)}
+          busybox_deb = next(Path(".").glob("busybox-static_*_arm64.deb"))
+          busybox_binary = Path("busybox-arm64/usr/bin/busybox")
+          source_refs = {}
+          for line in Path("virtual-boot-source-refs.txt").read_text(encoding="utf-8").splitlines():
+              if "=" in line:
+                  key, value = line.split("=", 1)
+                  source_refs[key] = value
+          busybox_version = subprocess.check_output(
+              ["dpkg-deb", "-f", str(busybox_deb), "Version"], text=True
+          ).strip()
           manifest = {
               "format": "7K-A20-VIRTUAL-BOOT-CANDIDATE",
               "format_version": 1,
@@ -228,6 +242,10 @@ jobs:
               "soc": "Exynos 7885 / Exynos 7884B",
               "launch_enabled": False,
               "bootable": False,
+              "kernel_handoff_abi": "A20-kexec-DTB-v1",
+              "kernel_patch_applied_in_ci": True,
+              "source_revisions": source_refs,
+              "busybox": {"package": "busybox-static:arm64", "version": busybox_version, "binary_sha256": digest(busybox_binary)},
               "files": files,
               "required_work_remaining": [
                   "implement a verified runtime loader that sets initrd addresses dynamically",
