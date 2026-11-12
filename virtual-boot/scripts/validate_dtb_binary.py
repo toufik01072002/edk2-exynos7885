@@ -240,10 +240,18 @@ def main():
             if re.sub(r"[^a-z0-9]+", "", path.rsplit("/", 1)[-1].lower()) in normalized
             and amount == end - start
         ]
-        if matching_dynamic:
+        pinned_dynamic = [
+            (path, alloc_ranges)
+            for path, amount, alloc_ranges in matching_dynamic
+            if any(region == (start, end) for region in alloc_ranges)
+        ]
+        if pinned_dynamic:
+            print("PASS: reference MEM_RES '{}' is pinned by dynamic pool {}".format(
+                name, pinned_dynamic[0][0]))
+        elif matching_dynamic:
             warnings.append(
                 "reference MEM_RES '{}' is represented by a size-matched dynamic pool, "
-                "but its physical address is not fixed by DTB: {}".format(
+                "but its alloc-ranges do not pin the exact physical address: {}".format(
                     name, matching_dynamic[0][0]))
         else:
             warnings.append(
