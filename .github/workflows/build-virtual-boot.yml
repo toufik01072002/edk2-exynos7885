@@ -104,6 +104,9 @@ jobs:
           dtc -@ -I dts -O dtb \
             -o virtual-boot-output/exynos7885-a205w-virtual.dtb \
             virtual-boot-output/exynos7885-a205w-virtual.preprocessed.dts
+          python3 virtual-boot-project/virtual-boot/scripts/validate_dtb_binary.py \
+            virtual-boot-output/exynos7885-a205w-virtual.dtb \
+            virtual-boot-project/EXYNOS7885Pkg/Include/Configuration/DeviceMemoryMap.h
           echo "Virtual Boot DTB size: $(wc -c < virtual-boot-output/exynos7885-a205w-virtual.dtb) bytes"
 
       - name: Configure Virtual Boot
