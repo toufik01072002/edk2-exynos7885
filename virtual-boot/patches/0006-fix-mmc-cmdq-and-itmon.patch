@@ -1,9 +1,10 @@
-diff --git a/include/linux/mmc/host.h b/include/linux/mmc/host.h
---- a/include/linux/mmc/host.h
-+++ b/include/linux/mmc/host.h
-@@ -99,1 +99,2 @@
- 	void (*pclear)(struct mmc_host *host);
-+	int (*crypto_cfg)(struct mmc_host *host, struct mmc_request *mrq, u32 slot);
+diff --git a/drivers/mmc/host/cmdq_hci.h b/drivers/mmc/host/cmdq_hci.h
+--- a/drivers/mmc/host/cmdq_hci.h
++++ b/drivers/mmc/host/cmdq_hci.h
+@@ -300,1 +300,2 @@
+ 	void (*clear_set_dumpregs)(struct mmc_host *mmc, bool set);
++	int (*crypto_cfg)(struct mmc_host *mmc, struct mmc_request *mrq, u32 slot);
+ 	void (*enhanced_strobe_mask)(struct mmc_host *mmc, bool set);
 diff --git a/drivers/trace/exynos7885-itmon.c b/drivers/trace/exynos7885-itmon.c
 --- a/drivers/trace/exynos7885-itmon.c
 +++ b/drivers/trace/exynos7885-itmon.c
