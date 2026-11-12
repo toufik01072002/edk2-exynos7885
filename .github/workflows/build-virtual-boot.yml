@@ -209,12 +209,23 @@ jobs:
               pass
           else:
               raise SystemExit('Cannot locate ECD stack table or verify dynamic allocation fix')
+          ehci_hub = Path('kernel-src/drivers/usb/host/ehci-hub.c')
+          ehci_source = ehci_hub.read_text()
+          ehci_old = '\t\t\t\tehci_vdbg (ehci, "port %d reset\\n", wIndex + 1);'
+          ehci_new = '\t\t\t\tehci_dbg (ehci, "port %d reset\\n", wIndex + 1);'
+          if ehci_old in ehci_source:
+              if ehci_source.count(ehci_old) != 1:
+                  raise SystemExit('EHCI verbose debug call is not unique')
+              ehci_hub.write_text(ehci_source.replace(ehci_old, ehci_new, 1))
+          elif ehci_new not in ehci_source:
+              raise SystemExit('Cannot locate EHCI verbose debug call compatibility point')
           PY
           git -C kernel-src diff --check
           grep -Fq 'struct rt_rq;' kernel-src/include/trace/events/sched.h
           grep -Fq 'static inline void sl_softirq_entry' kernel-src/include/linux/nmi.h
           grep -Fq 'struct cpufreq_policy;' kernel-src/kernel/sched/tune.h
           grep -Fq '#ifndef arch_scale_freq_invariant' kernel-src/kernel/sched/sched.h
+          grep -Fq 'ehci_dbg (ehci, "port %d reset' kernel-src/drivers/usb/host/ehci-hub.c
 
       - name: Copy Virtual Boot kernel config
         run: |
@@ -585,6 +596,7 @@ jobs:
           cp virtual-boot-project/virtual-boot/patches/0006-fix-mmc-cmdq-and-itmon.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0007-guard-sec-debug-snapshot-calls.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0008-move-exynos-condbg-function-table-off-stack.patch virtual-boot-output/patches/
+          cp virtual-boot-project/virtual-boot/patches/0009-fix-ehci-verbose-debug-call.patch virtual-boot-output/patches/
 
       - name: Generate hardware manifest with REAL data
         env:
@@ -617,7 +629,7 @@ jobs:
               "image": "Image",
               "load_address": "0x80080000",
               "sha256": "$KERNEL_SHA256",
-              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch", "patches/0006-fix-mmc-cmdq-and-itmon.patch", "patches/0007-guard-sec-debug-snapshot-calls.patch", "patches/0008-move-exynos-condbg-function-table-off-stack.patch"]
+              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch", "patches/0006-fix-mmc-cmdq-and-itmon.patch", "patches/0007-guard-sec-debug-snapshot-calls.patch", "patches/0008-move-exynos-condbg-function-table-off-stack.patch", "patches/0009-fix-ehci-verbose-debug-call.patch"]
             },
             "dtb": {
               "source": "Virtual Boot-specific DTS derived from Samsung hardware definitions",
@@ -672,7 +684,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd virtual-boot-output
-          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch patches/0006-fix-mmc-cmdq-and-itmon.patch patches/0007-guard-sec-debug-snapshot-calls.patch patches/0008-move-exynos-condbg-function-table-off-stack.patch hardware-manifest.json > SHA256SUMS
+          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch patches/0006-fix-mmc-cmdq-and-itmon.patch patches/0007-guard-sec-debug-snapshot-calls.patch patches/0008-move-exynos-condbg-function-table-off-stack.patch patches/0009-fix-ehci-verbose-debug-call.patch hardware-manifest.json > SHA256SUMS
           cat SHA256SUMS
 
       - name: Copy documentation
