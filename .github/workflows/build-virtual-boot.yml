@@ -33,6 +33,10 @@ jobs:
           path: virtual-boot-project
           submodules: false
 
+      - name: Check validator Python syntax before kernel build
+        run: |
+          python3 -m py_compile virtual-boot-project/virtual-boot/scripts/validate_dtb_binary.py
+
       - name: Install kernel build dependencies
         run: |
           sudo apt-get update
@@ -400,10 +404,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y device-tree-compiler
-
-      - name: Check validator Python syntax
-        run: |
-          python3 -m py_compile virtual-boot-project/virtual-boot/scripts/validate_dtb_binary.py
 
       - name: Validate DTB and memory map against EDK2 reference
         run: |
