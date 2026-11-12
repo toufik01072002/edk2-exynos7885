@@ -28,6 +28,10 @@
     #size-cells = <1>;
     interrupt-parent = <&gic>;
 
+    aliases {
+        serial2 = <&serial_2>;
+    };
+
     chosen {
         stdout-path = "serial2:115200n8";
         bootargs = "console=ttySAC2,115200 earlycon=exynos4210_serial,0x13820000 rootwait ro clk_ignore_unused";
