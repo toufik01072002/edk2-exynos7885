@@ -86,7 +86,7 @@ def main():
                         fail(f"invalid TE StrippedSize {stripped}")
                     adjustment = stripped - TE_HEADER_SIZE
                     xip_entry = args.base + payload_offset + entry_rva - adjustment
-                    te_entry = image_base + entry_rva - adjustment if image_base else None
+                    te_entry = image_base + entry_rva if image_base else None
                     found.append({
                         "fd_base": hex(args.base),
                         "fv_length": hex(fv_length),
