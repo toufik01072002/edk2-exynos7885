@@ -1,0 +1,12 @@
+diff --git a/drivers/usb/host/ehci-hub.c b/drivers/usb/host/ehci-hub.c
+index 0000000..0000000 100644
+--- a/drivers/usb/host/ehci-hub.c
++++ b/drivers/usb/host/ehci-hub.c
+@@ -1225,7 +1225,7 @@ static int ehci_hub_control(
+ 					wIndex + 1);
+ 				temp |= PORT_OWNER;
+ 			} else {
+-				ehci_vdbg (ehci, "port %d reset\n", wIndex + 1);
++				ehci_dbg (ehci, "port %d reset\n", wIndex + 1);
+ 
+ 				/* W/A for Synopsys HC HSIC port.
