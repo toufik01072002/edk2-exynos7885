@@ -1,0 +1,10 @@
+diff --git a/kernel/sched/tune.h b/kernel/sched/tune.h
+--- a/kernel/sched/tune.h
++++ b/kernel/sched/tune.h
+@@ -1,2 +1,5 @@
+ #ifdef CONFIG_SCHED_TUNE
+ 
++struct cpufreq_policy;
++struct freqvar_boost_data;
++
+ #ifdef CONFIG_FREQVAR_SCHEDTUNE
