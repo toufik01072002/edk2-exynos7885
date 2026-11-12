@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build a bundle for analysis only. Never create a flashable boot/recovery image.
-set -euo pipefail
+set -e
 
 . build_common.sh
 ./build_bootshim.sh
