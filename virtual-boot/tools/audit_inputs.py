@@ -5,7 +5,6 @@ import hashlib
 import json
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 REQUIRED_CONFIG = (
@@ -40,7 +39,7 @@ def main():
             raise SystemExit(f"BLOCKED: missing or empty input: {path}")
 
     kernel_bytes = args.kernel.read_bytes()[:64]
-    if len(kernel_bytes) < 64 or kernel_bytes[0x38:0x3c] != b"ARM\\x64":
+    if len(kernel_bytes) < 64 or kernel_bytes[0x38:0x3c] != b"ARM\x64":
         raise SystemExit("BLOCKED: prebuilt kernel does not have the AArch64 Image magic at offset 0x38")
 
     dtb_bytes = args.dtb.read_bytes()[:4]
@@ -70,11 +69,11 @@ def main():
         raise SystemExit("BLOCKED: dtc could not decode DTB: " + dtc.stderr[-2000:])
     dts = dtc.stdout
 
-    compatibles = re.findall(r'compatible\\s*=\\s*((?:"[^"]*"\\s*,?\\s*)+);', dts)
-    memory_nodes = re.findall(r'memory@([0-9a-fA-F]+)\\s*\\{[^}]*?reg\\s*=\\s*<([^>]+)>;', dts, re.S)
-    initrd_start = re.search(r'linux,initrd-start\\s*=\\s*<([^>]+)>;', dts)
-    initrd_end = re.search(r'linux,initrd-end\\s*=\\s*<([^>]+)>;', dts)
-    bootargs = re.search(r'bootargs\\s*=\\s*"([^"]*)";', dts)
+    compatibles = re.findall(r'compatible\s*=\s*((?:"[^"]*"\s*,?\s*)+);', dts)
+    memory_nodes = re.findall(r'memory@([0-9a-fA-F]+)\s*\{[^}]*?reg\s*=\s*<([^>]+)>;', dts, re.S)
+    initrd_start = re.search(r'linux,initrd-start\s*=\s*<([^>]+)>;', dts)
+    initrd_end = re.search(r'linux,initrd-end\s*=\s*<([^>]+)>;', dts)
+    bootargs = re.search(r'bootargs\s*=\s*"([^"]*)";', dts)
 
     findings = [
         "This report audits input files only; it does not prove that the kernel can boot as a standalone virtual environment.",
@@ -116,7 +115,7 @@ def main():
         "status": "INPUTS_VALIDATED_HANDOFF_BLOCKED",
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    args.report.write_text(json.dumps(report, indent=2) + "\\n", encoding="utf-8")
+    args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))
     print("AUDIT PASSED: file formats and embedded kernel configuration verified; launch remains disabled.")
 
