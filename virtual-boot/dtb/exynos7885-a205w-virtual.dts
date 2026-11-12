@@ -2,14 +2,14 @@
 
 /*
  * Samsung SM-A205W (Galaxy A20) Virtual Boot Device Tree
- * Exynos 7885 - Built from authentic Samsung DTS/DTBO chain
+ * Exynos 7885 - Virtual Boot-specific DTS derived from Samsung hardware definitions
  * 
- * Base: arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts (from Kernel_SM-A205W)
- * Overlay: arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi
+ * Reference base: arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts
+ * Reference A20 overlay: arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi
  * 
  * This DTS is designed for Virtual Boot kernel only.
- * It uses the authentic Samsung SoC definitions and applies
- * the A20 board-specific overlay.
+ * It includes the authentic Samsung Exynos7885 PM-domain DTSI and adapts
+ * selected A20 board-specific hardware definitions.
  */
 
 #include <dt-bindings/soc/samsung/exynos7885.h>
@@ -117,30 +117,34 @@
             no-map;
         };
 
-        /* BT ABOX reserved */
-        btabox_rmem {
-            compatible = "exynos,btabox_rmem";
-            size = <0x400000>;
+        /*
+         * Fixed no-map reservations for the Virtual Boot diagnostic kernel.
+         * Addresses and sizes are taken from DeviceMemoryMap.h; the stock
+         * Samsung CMA pools are dynamic, so they are pinned here to prevent
+         * the diagnostic kernel from allocating over EDK2-reserved memory.
+         */
+        cma_3: cma-3@8ba000000 {
+            compatible = "removed-dma-pool";
+            reg = <0x8 0xBA000000 0x01400000>;
+            no-map;
         };
 
-        /* CMA pools */
-        crypto {
-            compatible = "exynos8890-ion,crypto";
-            ion,reusable;
-            size = <0x2000000>;
-            alignment = <0x0 0x00400000>;
-            id = <1>;
+        crypto: crypto@8bb800000 {
+            compatible = "removed-dma-pool";
+            reg = <0x8 0xBB800000 0x02000000>;
+            no-map;
         };
 
-        video_stream {
-            compatible = "exynos8890-ion,vstream";
-            ion,secure;
-            ion,reusable;
-            size = <0x4800000>;
-            alignment = <0x0 0x00400000>;
-            id = <3>;
-            compat-id = <25 31>;
-            alloc-ranges = <0x0 0x80000000 0x80000000>;
+        video_frame: video-frame@8bd800000 {
+            compatible = "removed-dma-pool";
+            reg = <0x8 0xBD800000 0x02800000>;
+            no-map;
+        };
+
+        video_stream: video-stream@f0c00000 {
+            compatible = "removed-dma-pool";
+            reg = <0x0 0xF0C00000 0x04800000>;
+            no-map;
         };
 
         /* UEFI FD region for Virtual Boot */
