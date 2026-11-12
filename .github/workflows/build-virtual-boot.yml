@@ -210,19 +210,6 @@ jobs:
           else:
               raise SystemExit('Cannot locate ECD stack table or verify dynamic allocation fix')
           # Resolve known vendor-only references for a standalone virtual-boot kernel.
-          ss = Path('kernel-src/drivers/trace/exynos-ss.c')
-          ss_source = ss.read_text()
-          panic_start = ss_source.find('int exynos_ss_prepare_panic(void)')
-          panic_export = ss_source.find('\nEXPORT_SYMBOL(exynos_ss_prepare_panic);', panic_start)
-          if panic_start < 0 or panic_export < 0:
-              raise SystemExit('Cannot isolate exynos_ss_prepare_panic()')
-          panic_fn = ss_source[panic_start:panic_export]
-          if 'exynos_cpu.power_state(cpu)' in panic_fn:
-              panic_stub = 'int exynos_ss_prepare_panic(void)\n{\n\t/* Vendor CPU power-state provider is unavailable in Virtual Boot. */\n\treturn 0;\n}\n'
-              ss_source = ss_source[:panic_start] + panic_stub + ss_source[panic_export:]
-              ss.write_text(ss_source)
-          elif 'exynos_cpu.power_state(cpu)' in ss_source:
-              raise SystemExit('Unresolved exynos_ss CPU power-state reference remains')
           powermode = Path('kernel-src/drivers/soc/samsung/exynos-powermode.c')
           powermode_source = powermode.read_text()
           wait_loop = '\t\t\twhile (exynos_cpu.cluster_state(cpu))\n\t\t\t\tudelay(1);'
@@ -307,7 +294,6 @@ jobs:
           grep -Fq 'struct cpufreq_policy;' kernel-src/kernel/sched/tune.h
           grep -Fq '#ifndef arch_scale_freq_invariant' kernel-src/kernel/sched/sched.h
           grep -Fq 'ehci_dbg (ehci, "port %d reset' kernel-src/drivers/usb/host/ehci-hub.c
-          ! grep -Fq 'exynos_cpu.power_state(cpu)' kernel-src/drivers/trace/exynos-ss.c
           ! grep -Fq 'exynos_cpu.cluster_state(cpu)' kernel-src/drivers/soc/samsung/exynos-powermode.c
           grep -Fq 'bool acc_dev_status;' kernel-src/drivers/usb/dwc3/gadget.c
           grep -Fq 'bool lcd_is_on = true;' kernel-src/drivers/hid/hid-input.c
@@ -326,14 +312,16 @@ jobs:
             virtual_boot_defconfig
 
           # Exclude Android-only services that are not part of the EFI boot environment.
-          bash scripts/config --file out/.config --disable SEC_DEBUG --disable SEC_EXT \
-            --disable F2FS_FS --disable TRUSTONIC_TEE --disable TRUSTONIC_TRUSTED_UI \
+          bash scripts/config --file out/.config --disable EXYNOS_SNAPSHOT \
+            --disable SEC_DEBUG --disable SEC_EXT --disable F2FS_FS \
+            --disable TRUSTONIC_TEE --disable TRUSTONIC_TRUSTED_UI \
             --disable SECURE_OS_CONTROL --disable SECURE_OS_BOOSTER_API
 
           make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
             olddefconfig
 
           ! grep -qx 'CONFIG_F2FS_FS=y' out/.config || { echo 'ERROR: F2FS must be disabled for standalone target'; exit 1; }
+          ! grep -qx 'CONFIG_EXYNOS_SNAPSHOT=y' out/.config || { echo 'ERROR: Exynos snapshot diagnostics must be disabled for standalone target'; exit 1; }
           ! grep -qx 'CONFIG_TRUSTONIC_TEE=y' out/.config || { echo 'ERROR: Trustonic TEE must be disabled for standalone target'; exit 1; }
 
           echo '=== Effective kernel configuration ==='
