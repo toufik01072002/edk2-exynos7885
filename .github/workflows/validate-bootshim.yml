@@ -64,3 +64,6 @@ jobs:
         run: |
           grep -q 'HandoffPending' BootShim/BootShim.S
           ! grep -Eq 'br[[:space:]]+x5' BootShim/BootShim.S
+
+      - name: Validate Python validator syntax
+        run: python3 -m py_compile virtual-boot/scripts/validate_bootshim_image.py
