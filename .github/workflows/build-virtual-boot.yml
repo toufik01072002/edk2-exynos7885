@@ -212,25 +212,26 @@ jobs:
           # Resolve known vendor-only references for a standalone virtual-boot kernel.
           ss = Path('kernel-src/drivers/trace/exynos-ss.c')
           ss_source = ss.read_text()
-          ss_loop = '''        for_each_possible_cpu(cpu) {
-                mpidr = cpu_logical_map(cpu);
-                core = mpidr_cpu_num(mpidr)^4;
-                if (exynos_cpu.power_state(cpu))
-                        exynos_ss_core_power_stat(ESS_SIGN_ALIVE, core);
-                else
-                        exynos_ss_core_power_stat(ESS_SIGN_DEAD, core);
-        }
-'''
+          ss_loop = """        for_each_possible_cpu(cpu) {
+                  mpidr = cpu_logical_map(cpu);
+                  core = mpidr_cpu_num(mpidr)^4;
+                  if (exynos_cpu.power_state(cpu))
+                          exynos_ss_core_power_stat(ESS_SIGN_ALIVE, core);
+                  else
+                          exynos_ss_core_power_stat(ESS_SIGN_DEAD, core);
+          }
+"""
           if ss_loop in ss_source:
-              ss_source = ss_source.replace(ss_loop, '\t\t/* CPU power-state table is not part of the standalone boot target. */\n', 1)
+              ss_source = ss_source.replace(ss_loop, "\t\t/* CPU power-state table is not part of the standalone boot target. */\n", 1)
               ss.write_text(ss_source)
           elif 'exynos_cpu.power_state(cpu)' in ss_source:
               raise SystemExit('Cannot isolate optional exynos_ss CPU power-state loop')
           powermode = Path('kernel-src/drivers/soc/samsung/exynos-powermode.c')
           powermode_source = powermode.read_text()
-          wait_loop = '\t\t\twhile (exynos_cpu.cluster_state(cpu))\n\t\t\t\tudelay(1);'
+          wait_loop = """\t\t\twhile (exynos_cpu.cluster_state(cpu))
+\t\t\t\tudelay(1);"""
           if wait_loop in powermode_source:
-              powermode_source = powermode_source.replace(wait_loop, '\t\t\t/* No vendor cluster-state table in the virtual-boot target. */', 1)
+              powermode_source = powermode_source.replace(wait_loop, "\t\t\t/* No vendor cluster-state table in the virtual-boot target. */", 1)
               powermode.write_text(powermode_source)
           elif 'exynos_cpu.cluster_state(cpu)' in powermode_source:
               raise SystemExit('Cannot isolate optional cpuidle cluster-state wait')
@@ -254,28 +255,25 @@ jobs:
               raise SystemExit('Cannot locate HID LCD-state declaration')
           mct = Path('kernel-src/drivers/clocksource/exynos_mct.c')
           mct_source = mct.read_text()
-          mct_source = mct_source.replace(
-              'extern struct atomic_notifier_head hardlockup_notifier_list;',
-              '#ifdef CONFIG_HARDLOCKUP_DETECTOR\nextern struct atomic_notifier_head hardlockup_notifier_list;\n#endif', 1)
+          mct_source = mct_source.replace('extern struct atomic_notifier_head hardlockup_notifier_list;\n', '', 1)
           dump_start = mct_source.find('static void exynos4_mct_tick_dump(unsigned int cpu)')
           handler_start = mct_source.find('static int exynos4_mct_hardlockup_handler', dump_start)
           handler_end = mct_source.find('\nstatic int exynos4_local_timer_setup', handler_start)
           if dump_start >= 0 and handler_start > dump_start and handler_end > handler_start:
-              dump_block = mct_source[dump_start:handler_end]
-              mct_source = mct_source[:dump_start] + '#ifdef CONFIG_HARDLOCKUP_DETECTOR\n' + dump_block + '#endif /* CONFIG_HARDLOCKUP_DETECTOR */\n' + mct_source[handler_end:]
-          elif 'static int exynos4_mct_hardlockup_handler' in mct_source and '#ifdef CONFIG_HARDLOCKUP_DETECTOR' not in mct_source:
+              mct_source = mct_source[:dump_start] + mct_source[handler_end:]
+          elif 'static int exynos4_mct_hardlockup_handler' in mct_source:
               raise SystemExit('Cannot isolate optional MCT hard-lockup callback')
-          notifier = '''static struct notifier_block nb_hardlockup_block = {
-                .notifier_call = exynos4_mct_hardlockup_handler,
-        };
-'''
+          notifier = """static struct notifier_block nb_hardlockup_block = {
+\t.notifier_call = exynos4_mct_hardlockup_handler,
+};
+"""
           if notifier in mct_source:
-              mct_source = mct_source.replace(notifier, '#ifdef CONFIG_HARDLOCKUP_DETECTOR\n' + notifier + '#endif /* CONFIG_HARDLOCKUP_DETECTOR */\n', 1)
-          register = '\tatomic_notifier_chain_register(&hardlockup_notifier_list, &nb_hardlockup_block);'
+              mct_source = mct_source.replace(notifier, '', 1)
+          register = '\tatomic_notifier_chain_register(&hardlockup_notifier_list, &nb_hardlockup_block);\n'
           if register in mct_source:
-              mct_source = mct_source.replace(register, '#ifdef CONFIG_HARDLOCKUP_DETECTOR\n' + register + '\n#endif /* CONFIG_HARDLOCKUP_DETECTOR */', 1)
+              mct_source = mct_source.replace(register, '', 1)
           elif 'atomic_notifier_chain_register(&hardlockup_notifier_list' in mct_source:
-              raise SystemExit('Cannot guard MCT hard-lockup notifier registration')
+              raise SystemExit('Cannot remove optional MCT hard-lockup notifier registration')
           mct.write_text(mct_source)
           ehci_hub = Path('kernel-src/drivers/usb/host/ehci-hub.c')
           ehci_source = ehci_hub.read_text()
