@@ -512,7 +512,7 @@ jobs:
               "note": "Phase 1 only - trampoline not assigned"
             },
             "validation": {
-              "dtb_memory_map": "PASSED_WITH_WARNINGS - strict bank and fixed-reservation checks passed; dynamic CMA placement warnings are retained",
+              "dtb_memory_map": "PASSED_WITH_WARNINGS - bank spans and fixed reservations checked; incomplete or dynamic reservation mappings are reported",
               "dtb_source_authentic": "Derived from Samsung Exynos7885 source definitions; standalone Virtual Boot DTS",
               "dtb_validation_method": "DTB binary parsing plus DeviceMemoryMap.h descriptor comparison"
             }
