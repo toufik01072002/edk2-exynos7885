@@ -200,7 +200,7 @@ def main():
                     warnings.append("{} alloc-range spans bank boundaries: {}".format(
                         path, tuple(hex(x) for x in region)))
             dynamic_reserved.append((path, amount, alloc_ranges))
-            print("UNPINNED dynamic reservation: {} size={} bytes alloc-ranges={}".format(
+            print("Dynamic reservation: {} size={} bytes alloc-ranges={}".format(
                 path, amount, [(hex(a), hex(e)) for a, e in alloc_ranges]))
 
     fixed_reserved.sort()
