@@ -212,16 +212,17 @@ jobs:
           # Resolve known vendor-only references for a standalone virtual-boot kernel.
           ss = Path('kernel-src/drivers/trace/exynos-ss.c')
           ss_source = ss.read_text()
-          ss_start = ss_source.find('        for_each_possible_cpu(cpu)')
-          ss_end = ss_source.find('\n        }', ss_start)
-          if ss_start >= 0 and ss_end > ss_start:
-              ss_source = ss_source[:ss_start] + '\t\t/* CPU power-state table is not part of the standalone boot target. */' + ss_source[ss_end + len('\n        }'):]
-              decl = '\tunsigned cpu, core, mpidr;\n'
-              if decl in ss_source:
-                  ss_source = ss_source.replace(decl, '', 1)
+          panic_start = ss_source.find('int exynos_ss_prepare_panic(void)')
+          panic_export = ss_source.find('\nEXPORT_SYMBOL(exynos_ss_prepare_panic);', panic_start)
+          if panic_start < 0 or panic_export < 0:
+              raise SystemExit('Cannot isolate exynos_ss_prepare_panic()')
+          panic_fn = ss_source[panic_start:panic_export]
+          if 'exynos_cpu.power_state(cpu)' in panic_fn:
+              panic_stub = 'int exynos_ss_prepare_panic(void)\n{\n\t/* Vendor CPU power-state provider is unavailable in Virtual Boot. */\n\treturn 0;\n}\n'
+              ss_source = ss_source[:panic_start] + panic_stub + ss_source[panic_export:]
               ss.write_text(ss_source)
           elif 'exynos_cpu.power_state(cpu)' in ss_source:
-              raise SystemExit('Cannot isolate optional exynos_ss CPU power-state loop')
+              raise SystemExit('Unresolved exynos_ss CPU power-state reference remains')
           powermode = Path('kernel-src/drivers/soc/samsung/exynos-powermode.c')
           powermode_source = powermode.read_text()
           wait_loop = '\t\t\twhile (exynos_cpu.cluster_state(cpu))\n\t\t\t\tudelay(1);'
