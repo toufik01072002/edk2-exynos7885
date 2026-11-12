@@ -472,9 +472,9 @@ jobs:
               "sha256": "$KERNEL_SHA256"
             },
             "dtb": {
-              "source": "authentic Samsung DTS chain",
-              "base_dts": "arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts",
-              "overlay_dtsi": "arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi",
+              "source": "Standalone Virtual Boot DTS preprocessed against the pinned Samsung kernel include tree",
+              "reference_base_dts": "arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts",
+              "reference_board_overlay": "arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi",
               "file": "exynos7885-a205w-virtual.dtb",
               "load_address": "0x88000000",
               "sha256": "$DTB_SHA256"
