@@ -171,7 +171,7 @@ jobs:
               "files": files,
               "required_work_remaining": [
                   "remove or dynamically set fixed initrd properties using a verified runtime loader",
-              "align the DTB with the corrected three-bank RAM map and reserve all audited carveouts",
+                  "align the DTB with the corrected three-bank RAM map and reserve all audited carveouts",
                   "prove memory reservation for all loaded segments",
                   "quiesce DMA-capable devices before handoff",
                   "implement and validate the ARM64 kexec-to-EDK2 register and exception-level contract",
