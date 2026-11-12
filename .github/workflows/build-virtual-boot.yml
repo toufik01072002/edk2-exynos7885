@@ -181,6 +181,29 @@ jobs:
               pass
           else:
               raise SystemExit('Cannot locate SEC_DEBUG snapshot call guard point')
+          condbg = Path('kernel-src/drivers/trace/exynos-condbg.c')
+          condbg_source = condbg.read_text()
+          stack_table = '\tset_param_fn_t fn[SZ_256] = {0, };\n'
+          dynamic_table = '\tset_param_fn_t *fn;\n\tint fw_loaded;\n'
+          if stack_table in condbg_source:
+              if condbg_source.count(stack_table) != 1:
+                  raise SystemExit('Cannot locate unique ECD stack function table')
+              condbg_source = condbg_source.replace(stack_table, dynamic_table, 1)
+              allocation_anchor = '\t/* Set/Get parameter */\n\tset_param(fn);\n'
+              allocation = '\tfn = kcalloc(SZ_256, sizeof(*fn), GFP_KERNEL);\n\tif (!fn)\n\t\treturn -ENOMEM;\n'
+              if condbg_source.count(allocation_anchor) != 1:
+                  raise SystemExit('Cannot locate unique ECD function table initialization')
+              condbg_source = condbg_source.replace(allocation_anchor, allocation + allocation_anchor, 1)
+              return_anchor = '\treturn interface->fw_loaded;\n'
+              return_replacement = '\tfw_loaded = interface->fw_loaded;\n\tkfree(fn);\n\treturn fw_loaded;\n'
+              if condbg_source.count(return_anchor) != 1:
+                  raise SystemExit('Cannot locate unique ECD function table return')
+              condbg_source = condbg_source.replace(return_anchor, return_replacement, 1)
+              condbg.write_text(condbg_source)
+          elif dynamic_table in condbg_source and 'kcalloc(SZ_256, sizeof(*fn), GFP_KERNEL)' in condbg_source and 'kfree(fn);' in condbg_source:
+              pass
+          else:
+              raise SystemExit('Cannot locate ECD stack table or verify dynamic allocation fix')
           PY
           git -C kernel-src diff --check
           grep -Fq 'struct rt_rq;' kernel-src/include/trace/events/sched.h
@@ -556,6 +579,7 @@ jobs:
           cp virtual-boot-project/virtual-boot/patches/0005-gpu-arm-makefile-conditional.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0006-fix-mmc-cmdq-and-itmon.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0007-guard-sec-debug-snapshot-calls.patch virtual-boot-output/patches/
+          cp virtual-boot-project/virtual-boot/patches/0008-move-exynos-condbg-function-table-off-stack.patch virtual-boot-output/patches/
 
       - name: Generate hardware manifest with REAL data
         env:
@@ -643,7 +667,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd virtual-boot-output
-          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch patches/0006-fix-mmc-cmdq-and-itmon.patch patches/0007-guard-sec-debug-snapshot-calls.patch hardware-manifest.json > SHA256SUMS
+          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch patches/0006-fix-mmc-cmdq-and-itmon.patch patches/0007-guard-sec-debug-snapshot-calls.patch patches/0008-move-exynos-condbg-function-table-off-stack.patch hardware-manifest.json > SHA256SUMS
           cat SHA256SUMS
 
       - name: Copy documentation
