@@ -588,7 +588,7 @@ jobs:
               "image": "Image",
               "load_address": "0x80080000",
               "sha256": "$KERNEL_SHA256",
-              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch", "patches/0006-fix-mmc-cmdq-and-itmon.patch", "patches/0007-guard-sec-debug-snapshot-calls.patch"],
+              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch", "patches/0006-fix-mmc-cmdq-and-itmon.patch", "patches/0007-guard-sec-debug-snapshot-calls.patch"]
             },
             "dtb": {
               "source": "Virtual Boot-specific DTS derived from Samsung hardware definitions",
@@ -638,6 +638,7 @@ jobs:
             }
           }
           MANIFESTEOF
+          python3 -m json.tool virtual-boot-output/hardware-manifest.json >/dev/null
 
       - name: Generate SHA256SUMS
         run: |
