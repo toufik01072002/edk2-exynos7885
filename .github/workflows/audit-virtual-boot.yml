@@ -1,0 +1,72 @@
+name: Audit A20 virtual boot inputs
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - virtual-boot-a20-dev
+    paths:
+      - "virtual-boot/**"
+      - ".github/workflows/audit-virtual-boot.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout EDK2 development branch
+        uses: actions/checkout@v4
+        with:
+          ref: virtual-boot-a20-dev
+          path: edk2-exynos7885
+          persist-credentials: false
+
+      - name: Checkout A20 device inputs
+        uses: actions/checkout@v4
+        with:
+          repository: toufik01072002/android_device_samsung_a20
+          ref: virtual-boot-a20-dev
+          path: sources/android_device_samsung_a20
+          persist-credentials: false
+
+      - name: Checkout A20 kernel sources
+        uses: actions/checkout@v4
+        with:
+          repository: toufik01072002/Kernel_SM-A205W
+          ref: virtual-boot-a20-dev
+          path: sources/Kernel_SM-A205W
+          persist-credentials: false
+
+      - name: Install DTB inspection tool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y device-tree-compiler
+
+      - name: Record exact source revisions
+        run: |
+          {
+            echo "edk2-exynos7885=$(git -C edk2-exynos7885 rev-parse HEAD)"
+            echo "android_device_samsung_a20=$(git -C sources/android_device_samsung_a20 rev-parse HEAD)"
+            echo "Kernel_SM-A205W=$(git -C sources/Kernel_SM-A205W rev-parse HEAD)"
+          } | tee virtual-boot-source-refs.txt
+
+      - name: Audit kernel, DTB and embedded kernel configuration
+        run: |
+          python3 edk2-exynos7885/virtual-boot/tools/audit_inputs.py \
+            --kernel sources/android_device_samsung_a20/prebuilt/kexec/Image \
+            --dtb sources/android_device_samsung_a20/prebuilt/kexec/exynos7885.dtb \
+            --kernel-source sources/Kernel_SM-A205W \
+            --report virtual-boot-audit.json
+
+      - name: Upload read-only audit report
+        uses: actions/upload-artifact@v4
+        with:
+          name: A20-VIRTUAL-BOOT-AUDIT-\${{ github.sha }}
+          path: |
+            virtual-boot-audit.json
+            virtual-boot-source-refs.txt
+          if-no-files-found: error
+          retention-days: 30
