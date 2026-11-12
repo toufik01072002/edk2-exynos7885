@@ -57,6 +57,7 @@ jobs:
       - name: Locate and validate the PrePi SEC TE entry
         working-directory: edk2-exynos7885
         run: |
+          set -euo pipefail
           python3 virtual-boot/scripts/inspect_sec_te.py \
             workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd \
             --base 0x90000000 | tee workspace/sec-entry-report.json
