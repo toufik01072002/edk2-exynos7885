@@ -21,6 +21,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: virtual-boot-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-kernel:
     name: Build Virtual Boot Kernel + DTB
@@ -101,10 +105,13 @@ jobs:
           make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
             olddefconfig
 
-          grep -qx 'CONFIG_KEXEC=y' out/.config
-          grep -qx '# CONFIG_ECT is not set' out/.config
-          grep -qx 'CONFIG_NR_CPUS=8' out/.config
-          grep -qx 'CONFIG_SCHED_HMP=y' out/.config
+          echo '=== Effective kernel configuration ==='
+          grep -E '^(CONFIG_(KEXEC|ECT|NR_CPUS|SCHED_HMP|SOC_SAMSUNG|DISABLE_CPU_SCHED_DOMAIN_BALANCE|CGROUP_SCHED|FAIR_GROUP_SCHED|SCHED_AUTOGROUP)=|# CONFIG_(ECT|SCHED_AUTOGROUP) is not set)' out/.config || true
+          grep -qx 'CONFIG_KEXEC=y' out/.config || { echo 'ERROR: CONFIG_KEXEC is not enabled'; exit 1; }
+          grep -qx 'CONFIG_SOC_SAMSUNG=y' out/.config || { echo 'ERROR: CONFIG_SOC_SAMSUNG is not enabled'; exit 1; }
+          if grep -qx 'CONFIG_ECT=y' out/.config; then echo 'ERROR: CONFIG_ECT must remain disabled'; exit 1; fi
+          grep -qx 'CONFIG_NR_CPUS=8' out/.config || { echo 'ERROR: CONFIG_NR_CPUS must be 8'; exit 1; }
+          grep -qx 'CONFIG_SCHED_HMP=y' out/.config || { echo 'ERROR: CONFIG_SCHED_HMP dependencies are not satisfied'; exit 1; }
 
       - name: Prepare embedded binaries for out-of-tree build
         run: |
