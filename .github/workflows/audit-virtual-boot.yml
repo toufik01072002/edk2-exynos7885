@@ -102,10 +102,18 @@ jobs:
 
       - name: Build diagnostic initramfs and non-bootable candidate
         run: |
-          sudo dpkg --add-architecture arm64
-          sudo apt-get update
           sudo apt-get install -y cpio file
-          apt-get download busybox-static:arm64
+          sudo dpkg --add-architecture arm64
+          cat > /tmp/arm64.sources <<'SOURCES'
+          Types: deb
+          URIs: https://ports.ubuntu.com/ubuntu-ports
+          Suites: noble noble-updates noble-security
+          Components: main universe
+          Architectures: arm64
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          SOURCES
+          sudo apt-get -o Dir::Etc::sourcelist=/tmp/arm64.sources -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 update
+          apt-get -o Dir::Etc::sourcelist=/tmp/arm64.sources -o Dir::Etc::sourceparts=- download busybox-static:arm64
 
           mkdir -p busybox-arm64 initramfs-root/bin candidate
           dpkg-deb -x busybox-static_*_arm64.deb busybox-arm64
