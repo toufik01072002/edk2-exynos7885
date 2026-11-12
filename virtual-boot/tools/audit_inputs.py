@@ -30,17 +30,27 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--kernel", required=True, type=Path)
     parser.add_argument("--dtb", required=True, type=Path)
+    parser.add_argument("--a20-overlay", required=True, type=Path)
     parser.add_argument("--kernel-source", required=True, type=Path)
     parser.add_argument("--report", required=True, type=Path)
     args = parser.parse_args()
 
-    for path in (args.kernel, args.dtb):
+    for path in (args.kernel, args.dtb, args.a20_overlay):
         if not path.is_file() or path.stat().st_size == 0:
             raise SystemExit(f"BLOCKED: missing or empty input: {path}")
 
     kernel_bytes = args.kernel.read_bytes()[:64]
     if len(kernel_bytes) < 64 or kernel_bytes[0x38:0x3c] != b"ARM\x64":
         raise SystemExit("BLOCKED: prebuilt kernel does not have the AArch64 Image magic at offset 0x38")
+
+    overlay_text = args.a20_overlay.read_text(encoding="utf-8", errors="replace")
+    overlay_compatible = re.search(r'compatible\s*=\s*"([^"]+)"\s*,\s*"([^"]+)"\s*;', overlay_text)
+    overlay_rev = re.search(r'dtbo-hw_rev\s*=\s*<([^>]+)>;', overlay_text)
+    overlay_rev_end = re.search(r'dtbo-hw_rev_end\s*=\s*<([^>]+)>;', overlay_text)
+    if not overlay_compatible or "A20 CAN SINGLE 05" not in overlay_compatible.group(1):
+        raise SystemExit("BLOCKED: selected overlay is not the A20 CAN SINGLE 05 board variant")
+    if not overlay_rev or not overlay_rev_end or int(overlay_rev.group(1), 0) != 5 or int(overlay_rev_end.group(1), 0) != 255:
+        raise SystemExit("BLOCKED: selected overlay does not cover hardware revisions 0x05-0xff")
 
     dtb_bytes = args.dtb.read_bytes()[:4]
     if dtb_bytes != bytes.fromhex("d00dfeed"):
@@ -93,7 +103,7 @@ def main():
     if "samsung,exynos7885" not in compatible_text:
         findings.append("DTB does not declare samsung,exynos7885 compatibility.")
     if "samsung,armv8" in compatible_text and "samsung,exynos7885" in compatible_text:
-        findings.append("DTB declares generic Exynos 7885 compatibility; A20 board-specific overlay matching is still unverified.")
+        findings.append("Base DTB is generic Exynos 7885; the selected A20 CAN SINGLE 05 overlay must be applied before the result can be considered a board DTB.")
     if initrd_start or initrd_end:
         findings.append("DTB contains fixed linux,initrd-start/end properties; these must be removed or rebuilt for a dynamically placed initramfs.")
     if "CONFIG_DEVTMPFS_MOUNT=y" not in config_lines:
@@ -106,6 +116,7 @@ def main():
         "inputs": {
             "kernel": {"path": str(args.kernel), "size": args.kernel.stat().st_size, "sha256": sha256(args.kernel), "aarch64_image_magic": True},
             "dtb": {"path": str(args.dtb), "size": args.dtb.stat().st_size, "sha256": sha256(args.dtb), "fdt_magic": True},
+            "a20_overlay_source": {"path": str(args.a20_overlay), "size": args.a20_overlay.stat().st_size, "sha256": sha256(args.a20_overlay), "compatible": list(overlay_compatible.groups()), "hardware_revision_start": int(overlay_rev.group(1), 0), "hardware_revision_end": int(overlay_rev_end.group(1), 0), "variant_match": True},
         },
         "kernel_config": {
             "extracted_from_prebuilt_image": binary_config_verified,
