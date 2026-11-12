@@ -10,6 +10,7 @@ on:
       - "firstrun.sh"
       - "virtual-boot/scripts/inspect_sec_te.py"
       - ".github/workflows/build-real-fd-sec.yml"
+      - "build.sh"
   workflow_dispatch:
 
 permissions:
