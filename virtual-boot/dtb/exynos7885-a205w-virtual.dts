@@ -78,9 +78,10 @@
         };
 
         /* CP RAM logging */
+        /* A20 DTBO overlays (including overlay.3.dts) place CP logging here. */
         cp_ram_logging {
             compatible = "exynos,cp_ram_logging";
-            reg = <0x0 0xFDC00000 0x2000000>;
+            reg = <0x0 0xFCC00000 0x2000000>;
             no-map;
         };
 
