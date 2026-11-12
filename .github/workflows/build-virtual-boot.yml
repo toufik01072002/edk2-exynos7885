@@ -166,6 +166,21 @@ jobs:
               itmon.write_text(itmon_source.replace(old_itmon, new_itmon, 1))
           elif new_itmon not in itmon_source:
               raise SystemExit('Cannot locate ITMON PMU read sequence')
+          snapshot = Path('kernel-src/drivers/trace/exynos-ss.c')
+          snapshot_source = snapshot.read_text()
+          sec_debug_call = '\t\tif (sec_debug_get_debug_level() &&\n'
+          sec_debug_guard = '#if defined(CONFIG_SEC_EXT) && defined(CONFIG_SEC_DEBUG)\n' + sec_debug_call
+          secure_dump_call = '\t\t\texynos_sdm_dump_secure_region();\n'
+          if sec_debug_call in snapshot_source:
+              if snapshot_source.count(sec_debug_call) != 1 or snapshot_source.count(secure_dump_call) != 1:
+                  raise SystemExit('Cannot locate unique optional SEC_DEBUG snapshot calls')
+              snapshot_source = snapshot_source.replace(sec_debug_call, sec_debug_guard, 1)
+              snapshot_source = snapshot_source.replace(secure_dump_call, secure_dump_call + '#endif /* CONFIG_SEC_EXT && CONFIG_SEC_DEBUG */\n', 1)
+              snapshot.write_text(snapshot_source)
+          elif sec_debug_guard in snapshot_source and '#endif /* CONFIG_SEC_EXT && CONFIG_SEC_DEBUG */' in snapshot_source:
+              pass
+          else:
+              raise SystemExit('Cannot locate SEC_DEBUG snapshot call guard point')
           PY
           git -C kernel-src diff --check
           grep -Fq 'struct rt_rq;' kernel-src/include/trace/events/sched.h
@@ -540,6 +555,7 @@ jobs:
           cp virtual-boot-project/virtual-boot/patches/0004-fix-schedutil-config-guards.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0005-gpu-arm-makefile-conditional.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0006-fix-mmc-cmdq-and-itmon.patch virtual-boot-output/patches/
+          cp virtual-boot-project/virtual-boot/patches/0007-guard-sec-debug-snapshot-calls.patch virtual-boot-output/patches/
 
       - name: Generate hardware manifest with REAL data
         env:
@@ -571,8 +587,8 @@ jobs:
               "config": "virtual-boot-minimal",
               "image": "Image",
               "load_address": "0x80080000",
-              "sha256": "$KERNEL_SHA256"
-              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch", "patches/0006-fix-mmc-cmdq-and-itmon.patch"],
+              "sha256": "$KERNEL_SHA256",
+              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch", "patches/0006-fix-mmc-cmdq-and-itmon.patch", "patches/0007-guard-sec-debug-snapshot-calls.patch"],
             },
             "dtb": {
               "source": "Virtual Boot-specific DTS derived from Samsung hardware definitions",
@@ -626,7 +642,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd virtual-boot-output
-          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch patches/0006-fix-mmc-cmdq-and-itmon.patch hardware-manifest.json > SHA256SUMS
+          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch patches/0006-fix-mmc-cmdq-and-itmon.patch patches/0007-guard-sec-debug-snapshot-calls.patch hardware-manifest.json > SHA256SUMS
           cat SHA256SUMS
 
       - name: Copy documentation
