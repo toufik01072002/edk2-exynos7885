@@ -32,12 +32,22 @@ def main() -> None:
 
     code0, reserved = struct.unpack_from("<II", data, 0)
     text_offset, image_size, flags = struct.unpack_from("<QQQ", data, 8)
-    if code0 == 0:
-        fail("ARM64 Image code0 branch is empty")
+    if (code0 & 0xFC000000) != 0x14000000:
+        fail("ARM64 Image code0 is not an AArch64 unconditional branch")
     if reserved != 0:
         fail("ARM64 Image reserved word at offset 4 must be zero")
     if text_offset != 0x80000 or text_offset % 0x1000:
         fail(f"unexpected text_offset: 0x{text_offset:x}")
+    imm26 = code0 & 0x03FFFFFF
+    if imm26 & (1 << 25):
+        imm26 -= 1 << 26
+    branch_target = imm26 << 2
+    if branch_target != text_offset:
+        fail(f"Image header branch targets 0x{branch_target:x}, not TEXT_OFFSET 0x{text_offset:x}")
+    if len(data) <= text_offset:
+        fail("image does not contain executable code at TEXT_OFFSET")
+    if struct.unpack_from("<I", data, text_offset)[0] == 0:
+        fail("BootShim entry instruction at TEXT_OFFSET is empty")
     if image_size != len(data):
         fail(f"image_size field {image_size} != bundle length {len(data)}")
     if data[56:60] != MAGIC:
@@ -54,10 +64,11 @@ def main() -> None:
         fail(f"firmware-volume length {fv_length} is invalid for FD size {args.fd_size}")
 
     print("PASS: ARM64 Image header fields and magic")
+    print(f"PASS: header branch target and executable entry at file offset 0x{text_offset:x}")
     print(f"PASS: image_size={image_size}, bundle_size={len(data)}")
     print(f"PASS: appended PI firmware volume at file offset 0x{fd_offset:x}")
     print(f"PASS: FD destination window 0x{args.fd_base:x}-0x{args.fd_base + args.fd_window:x}")
-    print("NOTE: SEC PE/COFF entry point is not yet resolved; shim intentionally does not branch to FD base.")
+    print("NOTE: SEC entry is reported separately; this validator does not authorize the SEC handoff.")
 
 
 if __name__ == "__main__":
