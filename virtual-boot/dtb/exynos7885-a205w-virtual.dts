@@ -65,6 +65,13 @@
         #size-cells = <1>;
         ranges;
 
+        /* BootShim / EDK2 firmware volume: reserved in DeviceMemoryMap.h. */
+        uefi_fd: uefi-fd@90000000 {
+            compatible = "removed-dma-pool";
+            reg = <0x0 0x90000000 0x00200000>;
+            no-map;
+        };
+
         /* Framebuffer handover from exynos7885-rmem.dtsi */
         fb_handover: framebuffer@0xEC000000 {
             compatible = "exynos,dpu_fb_handover";
