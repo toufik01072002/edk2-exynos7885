@@ -104,8 +104,8 @@ def main():
     }
     observed_reserved = {}
     for node_name in expected_reserved:
-        node_match = re.search(rf'{re.escape(node_name)}\\s*\\{{([^{{}}]*)\\}}', dts, re.S)
-        reg_match = re.search(r'reg\\s*=\\s*<([^>]+)>;', node_match.group(1)) if node_match else None
+        node_match = re.search(rf'{re.escape(node_name)}\s*\{{([^{{}}]*)\}}', dts, re.S)
+        reg_match = re.search(r'reg\s*=\s*<([^>]+)>;', node_match.group(1)) if node_match else None
         if reg_match:
             cells = [int(cell, 0) for cell in reg_match.group(1).split()]
             if len(cells) == 3:
@@ -113,8 +113,8 @@ def main():
     reserved_ranges_verified = observed_reserved == expected_reserved
 
     def alloc_range(node_name):
-        node_match = re.search(rf'\\b{re.escape(node_name)}\\s*\\{{([^{{}}]*)\\}}', dts, re.S)
-        prop_match = re.search(r'alloc-ranges\\s*=\\s*<([^>]+)>;', node_match.group(1)) if node_match else None
+        node_match = re.search(rf'\b{re.escape(node_name)}\s*\{{([^{{}}]*)\}}', dts, re.S)
+        prop_match = re.search(r'alloc-ranges\s*=\s*<([^>]+)>;', node_match.group(1)) if node_match else None
         if not prop_match:
             return None
         cells = [int(cell, 0) for cell in prop_match.group(1).split()]
