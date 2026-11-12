@@ -1,0 +1,18 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: [PATCH 7/7] exynos-ss: guard optional SEC_DEBUG upload hooks
+
+The snapshot driver includes sec_debug.h only when both SEC_EXT and
+SEC_DEBUG are enabled. Keep calls to the optional upload hooks under the
+same condition so minimal Virtual Boot configurations compile cleanly.
+
+--- a/drivers/trace/exynos-ss.c
++++ b/drivers/trace/exynos-ss.c
+@@
+-		if (sec_debug_get_debug_level() &&
++#if defined(CONFIG_SEC_EXT) && defined(CONFIG_SEC_DEBUG)
++		if (sec_debug_get_debug_level() &&
+ 			(__raw_readl(exynos_ss_get_base_vaddr() + ESS_OFFSET_SCRATCH)
+ 					== ESS_SIGN_SCRATCH) &&
+ 			sec_debug_enter_upload())
+ 			exynos_sdm_dump_secure_region();
++#endif
