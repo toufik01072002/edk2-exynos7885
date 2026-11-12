@@ -1,61 +1,47 @@
+/*
+ * ARM64 Linux Image wrapper for the SM-A205W Virtual Boot path.
+ *
+ * The Linux Image header is fixed at offsets 0..63. The UEFI FD is an
+ * appended payload; its physical destination is NOT an executable entry
+ * point. Until the SEC PE/COFF entry point is extracted and validated,
+ * this shim deliberately stops after copying the FD instead of branching
+ * blindly to the beginning of the firmware volume.
+ */
+        .section .text, "ax"
+        .align  3
+        .global _Head
 _Head:
-	/* Set _Entry address */
-	adr		x1, _Payload
-
-	/* Jump to the real code */
-	b		_Start
-
-	/* Fake Linux kernel header */
-
-_StackBase:
-	/* Text Offset */
-	.quad UEFI_BASE
-
-_StackSize:
-	/* Image Size */
-	.quad UEFI_SIZE
-
-	/* Flags */
-	.quad 0
-
-	/* Reserved */
-	.quad 0
-
-	/* Reserved */
-	.quad 0
-
-	/* Reserved */
-	.quad 0
-
-	/* ARM64 Magic */
-	.ascii "ARM\x64"
-
-	/* Reserved */
-	.long 0
+        b       _Start
+        .long   0
+        .quad   TEXT_OFFSET
+        .quad   IMAGE_SIZE
+        .quad   0
+        .quad   0
+        .quad   0
+        .quad   0
+        .ascii  "ARM\\x64"
+        .long   0
 
 _Start:
-	mov		x4, x1
-	ldr		x5, _StackBase
-	cmp		x4, x5
-	beq		_Entry
-	ldr		x6,  _StackSize
+        /* Preserve x0: ARM64 Linux Image entry supplies the FDT address. */
+        adr     x1, _Payload
+        ldr     x5, =UEFI_BASE
+        ldr     x6, =UEFI_SIZE
 
 _CopyLoop:
-	ldp		x2, x3, [x4], #16
-	stp		x2, x3, [x5], #16
-	subs	x6, x6, #16
-	b.ne	_CopyLoop
-	ldr		x5, _StackBase
+        ldp     x2, x3, [x1], #16
+        stp     x2, x3, [x5], #16
+        subs    x6, x6, #16
+        b.ne    _CopyLoop
 
-_Entry:
-	br		x5
+_HandoffPending:
+        /* UEFI_BASE is the FV header, not a proven SEC entry point. */
+        dsb     sy
+        isb
+_Stop:
+        wfe
+        b       _Stop
 
-_Dead:
-	/* We should never get here */
-	b		_Dead
-
-.text
-.align 4
-
+        .align  4
 _Payload:
-	/* Your code will get ran right after this binary */
+        /* build_bootshim.sh appends the firmware FD immediately here. */
