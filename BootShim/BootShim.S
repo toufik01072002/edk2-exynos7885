@@ -19,7 +19,7 @@ _Head:
         .quad   0
         .quad   0
         .quad   0
-        .ascii  "ARM\\x64"
+        .byte   0x41, 0x52, 0x4d, 0x64
         .long   0
 
 _Start:
