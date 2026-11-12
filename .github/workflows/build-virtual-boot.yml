@@ -482,7 +482,7 @@ jobs:
               "commit": "$GIT_COMMIT",
               "config": "virtual-boot-minimal",
               "image": "Image",
-              "load_address": "0x80080000",
+              "placement": "Selected by ARM64 kexec-tools from the Image header and available memory",
               "sha256": "$KERNEL_SHA256"
             },
             "dtb": {
@@ -490,13 +490,13 @@ jobs:
               "reference_base_dts": "arch/arm64/boot/dts/exynos/dtbo/exynos7885.dts",
               "reference_board_overlay": "arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_common.dtsi",
               "file": "exynos7885-a205w-virtual.dtb",
-              "load_address": "0x88000000",
+              "placement": "Selected by ARM64 kexec-tools after the kernel image",
               "sha256": "$DTB_SHA256"
             },
             "initramfs": {
               "base": "BusyBox 1.36.1 static",
               "file": "initramfs.cpio.gz",
-              "load_address": "0x84000000",
+              "placement": "Selected by ARM64 kexec-tools after the kernel image; initrd start/end are patched into /chosen",
               "sha256": "$INITRAMFS_SHA256"
             },
             "memory_map": {
@@ -519,9 +519,9 @@ jobs:
               ]
             },
             "kexec": {
-              "kernel_entry": "0x80080000",
-              "dtb_addr": "0x88000000",
-              "initrd_addr": "0x84000000",
+              "kernel_entry": "Derived from the ARM64 Image header and selected load address",
+              "dtb_addr": "Selected by ARM64 kexec-tools",
+              "initrd_addr": "Selected by ARM64 kexec-tools; /chosen is patched with the actual exclusive end",
               "uefi_handoff_addr": "0x90000000",
               "note": "Phase 1 only - trampoline not assigned"
             },
