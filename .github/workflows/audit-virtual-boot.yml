@@ -64,7 +64,7 @@ jobs:
       - name: Upload read-only audit report
         uses: actions/upload-artifact@v4
         with:
-          name: A20-VIRTUAL-BOOT-AUDIT-\${{ github.sha }}
+          name: A20-VIRTUAL-BOOT-AUDIT-${{ github.sha }}
           path: |
             virtual-boot-audit.json
             virtual-boot-source-refs.txt
