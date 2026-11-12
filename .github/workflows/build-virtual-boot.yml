@@ -269,7 +269,15 @@ jobs:
               mct_source = mct_source.replace(register, '', 1)
           elif 'atomic_notifier_chain_register(&hardlockup_notifier_list' in mct_source:
               raise SystemExit('Cannot remove optional MCT hard-lockup notifier registration')
+          mct_source = mct_source.replace('extern struct atomic_notifier_head hardlockup_notifier_list;\\n', '')
+          mct_source = mct_source.replace('atomic_notifier_chain_register(&hardlockup_notifier_list, &nb_hardlockup_block);', '/* optional hard-lockup notifier omitted for virtual boot */')
+          if 'hardlockup_notifier_list' in mct_source:
+              raise SystemExit('Unresolved MCT hardlockup notifier reference remains')
           mct.write_text(mct_source)
+          if 'exynos_cpu.' in ss.read_text():
+              raise SystemExit('Unresolved Exynos snapshot CPU-state reference remains')
+          if 'exynos_cpu.' in powermode.read_text():
+              raise SystemExit('Unresolved Exynos powermode CPU-state reference remains')
           ehci_hub = Path('kernel-src/drivers/usb/host/ehci-hub.c')
           ehci_source = ehci_hub.read_text()
           ehci_old = '\t\t\t\tehci_vdbg (ehci, "port %d reset\\n", wIndex + 1);'
@@ -305,8 +313,20 @@ jobs:
           make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
             virtual_boot_defconfig
 
+          # Enable providers for the Samsung F2FS and MMC command-queue hooks;
+          # omit Trustonic TEE, which depends on unavailable socket internals here.
+          scripts/config --file out/.config --enable SEC_EXT --enable SEC_REBOOT \
+            --enable SEC_DEBUG --enable MMC_CQ_HCI \
+            --disable TRUSTONIC_TEE --disable TRUSTONIC_TRUSTED_UI \
+            --disable SECURE_OS_CONTROL --disable SECURE_OS_BOOSTER_API
+
           make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
             olddefconfig
+
+          grep -qx 'CONFIG_SEC_DEBUG=y' out/.config || { echo 'ERROR: SEC_DEBUG hook provider not enabled'; exit 1; }
+          grep -qx 'CONFIG_SEC_REBOOT=y' out/.config || { echo 'ERROR: SEC_REBOOT dependency not enabled'; exit 1; }
+          grep -qx 'CONFIG_MMC_CQ_HCI=y' out/.config || { echo 'ERROR: MMC CQ HCI provider not enabled'; exit 1; }
+          ! grep -qx 'CONFIG_TRUSTONIC_TEE=y' out/.config || { echo 'ERROR: Trustonic TEE must be disabled for standalone target'; exit 1; }
 
           echo '=== Effective kernel configuration ==='
           grep -E '^(CONFIG_(KEXEC|ECT|NR_CPUS|SCHED_HMP|SOC_SAMSUNG|DISABLE_CPU_SCHED_DOMAIN_BALANCE|CGROUP_SCHED|FAIR_GROUP_SCHED|SCHED_AUTOGROUP)=|# CONFIG_(ECT|SCHED_AUTOGROUP) is not set)' out/.config || true
