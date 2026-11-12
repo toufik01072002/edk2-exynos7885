@@ -1,0 +1,68 @@
+name: Build real A205W EDK2 FD and locate SEC entry
+
+on:
+  push:
+    branches:
+      - "phase2/**"
+    paths:
+      - "EXYNOS7885Pkg/**"
+      - "build_common.sh"
+      - "firstrun.sh"
+      - "virtual-boot/scripts/inspect_sec_te.py"
+      - ".github/workflows/build-real-fd-sec.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-inspect-sec:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout project branch
+        uses: actions/checkout@v4
+        with:
+          path: edk2-exynos7885
+          submodules: recursive
+
+      - name: Install EDK2 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential uuid-dev acpica-tools git nasm \
+            python3 python3-setuptools gcc-aarch64-linux-gnu
+
+      - name: Clone pinned EDK2 and platform sources
+        run: |
+          git clone --recursive -b edk2-stable202605 https://github.com/tianocore/edk2
+          git clone https://github.com/tianocore/edk2-platforms.git
+          git -C edk2 rev-parse HEAD
+          git -C edk2-platforms rev-parse HEAD
+
+      - name: Build BaseTools and the actual A205W firmware
+        working-directory: edk2-exynos7885
+        run: |
+          chmod +x ./*.sh
+          ./firstrun.sh
+          GCC_AARCH64_PREFIX=aarch64-linux-gnu- build -j"$(nproc)" -s -n 0 \
+            -a AARCH64 -t GCC -p EXYNOS7885Pkg/Devices/a205w.dsc
+          FD="workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd"
+          test -s "$FD"
+          stat -c 'REAL_FD_BYTES=%s' "$FD"
+          test "$(stat -c '%s' "$FD")" -le 2097152
+
+      - name: Locate and validate the PrePi SEC TE entry
+        working-directory: edk2-exynos7885
+        run: |
+          python3 virtual-boot/scripts/inspect_sec_te.py \
+            workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd \
+            --base 0x90000000 | tee workspace/sec-entry-report.json
+
+      - name: Upload real FD and SEC entry report
+        uses: actions/upload-artifact@v4
+        with:
+          name: a205w-real-edk2-fd-sec-entry
+          if-no-files-found: error
+          path: |
+            edk2-exynos7885/workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd
+            edk2-exynos7885/workspace/sec-entry-report.json
