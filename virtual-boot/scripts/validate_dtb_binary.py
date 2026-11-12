@@ -149,6 +149,14 @@ def main():
         device_type = fdtget(dtb, path, "device_type", "s")
         reg = fdtget(dtb, path, "reg", "x")
         if device_type == "memory" and reg:
+            words = cells(reg)
+            stride = root_addr_cells + root_size_cells
+            if len(words) % stride:
+                raise ValueError("{} has malformed memory reg".format(path))
+            for offset in range(0, len(words), stride):
+                size_words = words[offset + root_addr_cells:offset + stride]
+                if not any(size_words):
+                    raise ValueError("{} declares an empty memory range".format(path))
             memory_ranges.extend(decode_reg(reg, root_addr_cells, root_size_cells))
     memory_ranges = merge_ranges(memory_ranges)
     if memory_ranges != reference_banks:
@@ -166,6 +174,21 @@ def main():
     dynamic_reserved = []
     errors = []
     warnings = []
+
+    # The base DTB must not claim a fixed initrd address: ARM64 kexec-tools
+    # chooses the real placement and patches /chosen at load time.
+    for prop in ("linux,initrd-start", "linux,initrd-end"):
+        if fdtget(dtb, "/chosen", prop, "x") is not None:
+            errors.append("/chosen/{} must be supplied by kexec at load time".format(prop))
+
+    # The EDK2 FD is the one fixed handoff address in this phase.
+    uefi_path = "/reserved-memory/uefi-fd@90000000"
+    uefi_reg = fdtget(dtb, uefi_path, "reg", "x")
+    expected_uefi = [(0x90000000, 0x90200000)]
+    if not uefi_reg:
+        errors.append("UEFI FD reservation missing at 0x90000000-0x90200000")
+    elif decode_reg(uefi_reg, reserved_addr_cells, reserved_size_cells) != expected_uefi:
+        errors.append("UEFI FD reservation must be exactly 0x90000000-0x90200000")
 
     for name in reserved_nodes:
         path = "/reserved-memory/" + name
