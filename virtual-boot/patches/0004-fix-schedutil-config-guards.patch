@@ -1,0 +1,39 @@
+diff --git a/kernel/sched/sched.h b/kernel/sched/sched.h
+--- a/kernel/sched/sched.h
++++ b/kernel/sched/sched.h
+@@ -1499,1 +1499,9 @@
+ #define arch_scale_freq_invariant()    (true)
+ #endif
++
++#ifndef arch_scale_freq_invariant
++#ifdef CONFIG_HMP_FREQUENCY_INVARIANT_SCALE
++#define arch_scale_freq_invariant() (true)
++#else
++#define arch_scale_freq_invariant() (false)
++#endif
++#endif
+diff --git a/kernel/sched/cpufreq_schedutil.c b/kernel/sched/cpufreq_schedutil.c
+--- a/kernel/sched/cpufreq_schedutil.c
++++ b/kernel/sched/cpufreq_schedutil.c
+@@ -495,3 +495,5 @@
+ 	if (lat)
+ 		tunables->rate_limit_us *= lat;
+ 
++#ifdef CONFIG_FREQVAR_SCHEDTUNE
+ 	/* init freqvar_boost */
+ 	schedtune_freqvar_boost_init(policy, &tunables->freqvar_boost);
++#endif
+@@ -513,3 +515,5 @@
+ 	fail:
+ 	policy->governor_data = NULL;
++#ifdef CONFIG_FREQVAR_SCHEDTUNE
+ 	schedtune_freqvar_boost_exit(policy, &tunables->freqvar_boost);
++#endif
+ 	sugov_tunables_free(tunables);
+@@ -535,3 +539,5 @@
+ 	policy->governor_data = NULL;
+ 	if (!count) {
++#ifdef CONFIG_FREQVAR_SCHEDTUNE
+ 		schedtune_freqvar_boost_exit(policy, &tunables->freqvar_boost);
++#endif
+ 		sugov_tunables_free(tunables);
