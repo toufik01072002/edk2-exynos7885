@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Validate a compiled DTB against EXYNOS7885Pkg/Include/Configuration/DeviceMemoryMap.h.
+"""Strictly validate a Virtual Boot DTB against DeviceMemoryMap.h.
 
-Uses dtc/fdtget to read the binary FDT. RAM descriptors are merged (including
-reserved subregions) and compared with /memory nodes. Fixed reserved-memory
-reg entries must be contained by matching MEM_RES descriptors; they are not
-incorrectly treated as overlaps with the RAM banks that contain them.
+The reference header is authoritative for EDK2 RAM banks and MEM_RES ranges.
+A dynamic reserved-memory node is not treated as proof of a fixed physical
+reservation unless its alloc-ranges property pins it to that exact range.
 """
 import os
 import re
@@ -39,7 +38,7 @@ def decode_reg(value, address_cells, size_cells):
     words = cells(value)
     stride = address_cells + size_cells
     if not stride or len(words) % stride:
-        raise ValueError("malformed reg property: {!r}".format(value))
+        raise ValueError("malformed reg/alloc-ranges property: {!r}".format(value))
     result = []
     for i in range(0, len(words), stride):
         address = 0
@@ -53,14 +52,16 @@ def decode_reg(value, address_cells, size_cells):
     return result
 
 
-def merge_ranges(ranges):
+def merge_ranges(ranges, reject_overlap=True):
     merged = []
     for start, end in sorted(ranges):
         if end <= start:
             raise ValueError("invalid/empty range 0x{:X}-0x{:X}".format(start, end))
         if merged and start < merged[-1][1]:
-            raise ValueError("reference descriptors overlap at 0x{:X}".format(start))
-        if merged and start == merged[-1][1]:
+            if reject_overlap:
+                raise ValueError("reference descriptors overlap at 0x{:X}".format(start))
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        elif merged and start == merged[-1][1]:
             merged[-1] = (merged[-1][0], end)
         else:
             merged.append((start, end))
@@ -91,6 +92,22 @@ def contained(inner, outer):
     return inner[0] >= outer[0] and inner[1] <= outer[1]
 
 
+def uncovered_parts(target, covers):
+    cursor = target[0]
+    gaps = []
+    for start, end in sorted(covers):
+        if end <= cursor or start >= target[1]:
+            continue
+        if start > cursor:
+            gaps.append((cursor, min(start, target[1])))
+        cursor = max(cursor, end)
+        if cursor >= target[1]:
+            break
+    if cursor < target[1]:
+        gaps.append((cursor, target[1]))
+    return gaps
+
+
 def main():
     if len(sys.argv) != 3:
         print("Usage: validate_dtb_binary.py <dtb> <DeviceMemoryMap.h>")
@@ -110,16 +127,16 @@ def main():
         raise ValueError("invalid DTB totalsize {}".format(total_size))
 
     descriptors = parse_reference(header)
-    reference_banks = merge_ranges([(a, e) for _, a, e, _ in descriptors])
-    expected_banks = [
-        (0x80000000, 0xBBC00000),
-        (0xC0000000, 0x100000000),
-        (0x880000000, 0x8C0000000),
-    ]
-    if reference_banks != expected_banks:
-        raise ValueError("DeviceMemoryMap.h bank spans differ from approved reference: {}".format(
+    all_ranges = [(start, end) for _, start, end, _ in descriptors]
+    reference_banks = merge_ranges(all_ranges)
+    if len(reference_banks) != 3:
+        raise ValueError("expected 3 contiguous reference RAM banks, parsed {}".format(
             [(hex(a), hex(e)) for a, e in reference_banks]))
-    print("PASS: DeviceMemoryMap.h descriptors merge to the 3 approved RAM banks")
+    reference_reserved = [(start, end) for _, start, end, kind in descriptors
+                          if kind == "MEM_RES"]
+    print("Reference RAM banks:")
+    for start, end in reference_banks:
+        print("  0x{:X}-0x{:X} ({} MiB)".format(start, end, (end - start) // 0x100000))
 
     root_addr_cells = int(fdtget(dtb, "/", "#address-cells", "u") or "2", 10)
     root_size_cells = int(fdtget(dtb, "/", "#size-cells", "u") or "1", 10)
@@ -133,69 +150,96 @@ def main():
         reg = fdtget(dtb, path, "reg", "x")
         if device_type == "memory" and reg:
             memory_ranges.extend(decode_reg(reg, root_addr_cells, root_size_cells))
-    memory_ranges = sorted(memory_ranges)
-    if memory_ranges != expected_banks:
-        raise ValueError("DTB /memory ranges do not match DeviceMemoryMap.h: {}".format(
-            [(hex(a), hex(e)) for a, e in memory_ranges]))
-    print("PASS: DTB /memory ranges match DeviceMemoryMap.h exactly")
+    memory_ranges = merge_ranges(memory_ranges)
+    if memory_ranges != reference_banks:
+        raise ValueError("DTB /memory ranges differ from DeviceMemoryMap.h; DTB={} reference={}".format(
+            [(hex(a), hex(e)) for a, e in memory_ranges],
+            [(hex(a), hex(e)) for a, e in reference_banks]))
+    print("PASS: DTB /memory banks match DeviceMemoryMap.h exactly")
 
-    reserved_addr_cells = int(fdtget(dtb, "/reserved-memory", "#address-cells", "u") or str(root_addr_cells), 10)
-    reserved_size_cells = int(fdtget(dtb, "/reserved-memory", "#size-cells", "u") or str(root_size_cells), 10)
+    reserved_addr_cells = int(fdtget(dtb, "/reserved-memory", "#address-cells", "u")
+                              or str(root_addr_cells), 10)
+    reserved_size_cells = int(fdtget(dtb, "/reserved-memory", "#size-cells", "u")
+                              or str(root_size_cells), 10)
     reserved_nodes = run("fdtget", "-l", dtb, "/reserved-memory").splitlines()
     fixed_reserved = []
     dynamic_reserved = []
-    reference_reserved = [(a, e) for _, a, e, kind in descriptors if kind == "MEM_RES"]
+    errors = []
 
     for name in reserved_nodes:
         path = "/reserved-memory/" + name
         reg = fdtget(dtb, path, "reg", "x")
         if reg:
-            regions = decode_reg(reg, reserved_addr_cells, reserved_size_cells)
-            no_map = fdtget(dtb, path, "no-map") is not None
-            for region in regions:
-                if not any(contained(region, bank) for bank in expected_banks):
-                    raise ValueError("{} reservation lies outside reference RAM: {}".format(
+            for region in decode_reg(reg, reserved_addr_cells, reserved_size_cells):
+                if not any(contained(region, bank) for bank in reference_banks):
+                    errors.append("{} reservation outside reference RAM: {}".format(
                         path, tuple(hex(x) for x in region)))
                 if not any(contained(region, ref) for ref in reference_reserved):
-                    raise ValueError("{} reservation is not covered by a MEM_RES descriptor: {}".format(
+                    errors.append("{} reservation is not contained in a MEM_RES descriptor: {}".format(
                         path, tuple(hex(x) for x in region)))
-                fixed_reserved.append((region[0], region[1], path, no_map))
-        else:
-            size = fdtget(dtb, path, "size", "x")
-            if size:
-                words = cells(size)
-                amount = 0
-                for word in words:
-                    amount = (amount << 32) | word
-                if amount <= 0:
-                    raise ValueError("{} has invalid dynamic reservation size".format(path))
-                dynamic_reserved.append((path, amount))
+                fixed_reserved.append((region[0], region[1], path))
+            continue
+
+        size = fdtget(dtb, path, "size", "x")
+        if size:
+            amount = 0
+            for word in cells(size):
+                amount = (amount << 32) | word
+            if amount <= 0:
+                errors.append("{} has invalid dynamic reservation size".format(path))
+                continue
+            alloc = fdtget(dtb, path, "alloc-ranges", "x")
+            alloc_ranges = decode_reg(alloc, reserved_addr_cells, reserved_size_cells) if alloc else []
+            for region in alloc_ranges:
+                if not any(contained(region, bank) for bank in reference_banks):
+                    errors.append("{} alloc-range outside reference RAM: {}".format(
+                        path, tuple(hex(x) for x in region)))
+            dynamic_reserved.append((path, amount, alloc_ranges))
+            print("UNPINNED dynamic reservation: {} size={} bytes alloc-ranges={}".format(
+                path, amount, [(hex(a), hex(e)) for a, e in alloc_ranges]))
 
     fixed_reserved.sort()
     for i, current in enumerate(fixed_reserved):
         for other in fixed_reserved[i + 1:]:
             if other[0] >= current[1]:
                 break
-            raise ValueError("fixed reserved-memory regions overlap: {} and {}".format(
+            errors.append("fixed reserved-memory overlap: {} and {}".format(
                 current[2], other[2]))
-    if not fixed_reserved:
-        raise ValueError("DTB contains no fixed reserved-memory reg entries")
-    print("PASS: {} fixed reservations are inside RAM and covered by MEM_RES descriptors".format(
-        len(fixed_reserved)))
-    print("PASS: fixed reserved-memory regions do not overlap one another")
-    if dynamic_reserved:
-        print("INFO: dynamic reservations: " + ", ".join(
-            "{}={} bytes".format(n, s) for n, s in dynamic_reserved))
 
-    # Samsung's /memreserve/ map is separate from /reserved-memory. It may
-    # legitimately lie inside a RAM bank, so only containment is checked.
+    # Every EDK2 MEM_RES descriptor must be represented by a fixed DT reg.
+    # Dynamic pools count only when their alloc-range pins the exact full range.
+    fixed_ranges = [(a, e) for a, e, _ in fixed_reserved]
+    exact_dynamic_ranges = []
+    for path, amount, alloc_ranges in dynamic_reserved:
+        for alloc_start, alloc_end in alloc_ranges:
+            if alloc_end - alloc_start == amount:
+                exact_dynamic_ranges.append((alloc_start, alloc_end))
+    represented = fixed_ranges + exact_dynamic_ranges
+    for name, start, end, kind in descriptors:
+        if kind != "MEM_RES":
+            continue
+        gaps = uncovered_parts((start, end), represented)
+        for gap_start, gap_end in gaps:
+            errors.append("reference MEM_RES '{}' not fully represented in DTB: 0x{:X}-0x{:X}".format(
+                name, gap_start, gap_end))
+
     decompiled = run("dtc", "-I", "dtb", "-O", "dts", dtb)
     memreserve = re.findall(r"/memreserve/\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s*;", decompiled)
     for address, length in memreserve:
         start, size = int(address, 16), int(length, 16)
         region = (start, start + size)
-        if size <= 0 or not any(contained(region, bank) for bank in expected_banks):
-            raise ValueError("/memreserve/ entry outside reference RAM: {}".format(region))
+        if size <= 0 or not any(contained(region, bank) for bank in reference_banks):
+            errors.append("/memreserve/ entry outside reference RAM: {}".format(
+                tuple(hex(x) for x in region)))
+
+    if errors:
+        print("DTB MEMORY MAP VALIDATION: FAILED", file=sys.stderr)
+        for item in errors:
+            print("  ERROR: " + item, file=sys.stderr)
+        return 1
+
+    print("PASS: all fixed reservations are valid and all MEM_RES descriptors are represented")
+    print("PASS: fixed reserved-memory regions do not overlap")
     print("PASS: {} /memreserve/ entries are contained in reference RAM".format(len(memreserve)))
     print("DTB MEMORY MAP VALIDATION: PASSED")
     return 0
