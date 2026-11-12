@@ -90,6 +90,23 @@ jobs:
         run: |
           cp virtual-boot-project/virtual-boot/kernel/config_virtual_boot kernel-src/arch/arm64/configs/virtual_boot_defconfig
 
+      - name: Build Virtual Boot DTB from authentic DTS source
+        run: |
+          mkdir -p virtual-boot-output
+          sudo apt-get update && sudo apt-get install -y device-tree-compiler
+          cp kernel-src/arch/arm64/boot/dts/exynos/dtbo/exynos7885-pm-domains.dtsi \
+            virtual-boot-project/virtual-boot/dtb/exynos7885-pm-domains.dtsi
+          cpp -nostdinc \
+            -I kernel-src/include \
+            -I kernel-src/arch/arm64/boot/dts \
+            -D__DTS__ -undef -x assembler-with-cpp \
+            virtual-boot-project/virtual-boot/dtb/exynos7885-a205w-virtual.dts \
+            > virtual-boot-output/exynos7885-a205w-virtual.preprocessed.dts
+          dtc -@ -I dts -O dtb \
+            -o virtual-boot-output/exynos7885-a205w-virtual.dtb \
+            virtual-boot-output/exynos7885-a205w-virtual.preprocessed.dts
+          echo "Virtual Boot DTB size: $(wc -c < virtual-boot-output/exynos7885-a205w-virtual.dtb) bytes"
+
       - name: Configure Virtual Boot
         run: |
           cd kernel-src
@@ -124,23 +141,6 @@ jobs:
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-android- \
             Image
-
-      - name: Build Virtual Boot DTB from authentic DTS source
-        run: |
-          mkdir -p virtual-boot-output
-          sudo apt-get update && sudo apt-get install -y device-tree-compiler
-          cp kernel-src/arch/arm64/boot/dts/exynos/dtbo/exynos7885-pm-domains.dtsi \
-            virtual-boot-project/virtual-boot/dtb/exynos7885-pm-domains.dtsi
-          cpp -nostdinc \
-            -I kernel-src/include \
-            -I kernel-src/arch/arm64/boot/dts \
-            -D__DTS__ -undef -x assembler-with-cpp \
-            virtual-boot-project/virtual-boot/dtb/exynos7885-a205w-virtual.dts \
-            > virtual-boot-output/exynos7885-a205w-virtual.preprocessed.dts
-          dtc -@ -I dts -O dtb \
-            -o virtual-boot-output/exynos7885-a205w-virtual.dtb \
-            virtual-boot-output/exynos7885-a205w-virtual.preprocessed.dts
-          echo "Virtual Boot DTB size: $(wc -c < virtual-boot-output/exynos7885-a205w-virtual.dtb) bytes"
 
       - name: Verify kernel and DTB artifacts
         run: |
