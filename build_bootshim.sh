@@ -28,6 +28,13 @@ make UEFI_BASE="$UEFI_BASE" UEFI_SIZE="$FD_SIZE" \
 SHIM_SIZE=$(stat -c '%s' BootShim.bin)
 IMAGE_SIZE=$((SHIM_SIZE + FD_SIZE))
 
+# The appended FD must begin exactly at the _Payload symbol.
+PAYLOAD_OFFSET=$(aarch64-linux-gnu-nm -n BootShim.elf | awk '$3 == "_Payload" { print "0x" $1 }')
+if [[ -z "$PAYLOAD_OFFSET" ]] || (( PAYLOAD_OFFSET != SHIM_SIZE )); then
+  echo "ERROR: _Payload offset ($PAYLOAD_OFFSET) does not match BootShim size ($SHIM_SIZE)" >&2
+  exit 1
+fi
+
 # Second pass writes the exact Linux Image image_size field.
 make clean
 make UEFI_BASE="$UEFI_BASE" UEFI_SIZE="$FD_SIZE" \
