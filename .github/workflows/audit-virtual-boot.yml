@@ -176,9 +176,9 @@ jobs:
                   "validate a minimal device tree and safe console path"
               ]
           }
-          (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\\n")
+          (root / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
           lines = [f"{v['sha256']}  {k}" for k, v in files.items()]
-          (root / "SHA256SUMS").write_text("\\n".join(lines) + "\\n")
+          (root / "SHA256SUMS").write_text("\n".join(lines) + "\n")
           PY
 
           tar -czf a20-virtual-boot-candidate.tar.gz -C candidate .
