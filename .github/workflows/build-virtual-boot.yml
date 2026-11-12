@@ -95,23 +95,20 @@ jobs:
           from pathlib import Path
           sched = Path('kernel-src/include/trace/events/sched.h')
           sched_source = sched.read_text()
-          needle = '#include <linux/binfmts.h>\n'
+          sched_needle = '#include <linux/binfmts.h>\n'
           if 'struct rt_rq;' not in sched_source:
-              if sched_source.count(needle) != 1:
+              if sched_source.count(sched_needle) != 1:
                   raise SystemExit('Cannot locate unique binfmts include in sched trace header')
-              sched_source = sched_source.replace(needle, needle + '\n/* Forward declaration for scheduler tracepoint prototypes. */\nstruct rt_rq;\n', 1)
+              sched_source = sched_source.replace(sched_needle, sched_needle + '\n/* Forward declaration for scheduler tracepoint prototypes. */\nstruct rt_rq;\n', 1)
               sched.write_text(sched_source)
           nmi = Path('kernel-src/include/linux/nmi.h')
           nmi_source = nmi.read_text()
-          broken = 'static inline void void sl_softirq_entry(const char *, void *) { }'
-          fixed = 'static inline void sl_softirq_entry(const char *desc, void *data) { }'
-          if broken in nmi_source:
-              nmi.write_text(nmi_source.replace(broken, fixed, 1))
-          elif fixed not in nmi_source:
+          nmi_broken = 'static inline void void sl_softirq_entry(const char *, void *) { }'
+          nmi_fixed = 'static inline void sl_softirq_entry(const char *desc, void *data) { }'
+          if nmi_broken in nmi_source:
+              nmi.write_text(nmi_source.replace(nmi_broken, nmi_fixed, 1))
+          elif nmi_fixed not in nmi_source:
               raise SystemExit('Cannot locate sl_softirq_entry inline declaration')
-          PY
-          git -C kernel-src diff --check
-          grep -Fq 'struct rt_rq;' kernel-src/include/trace/events/sched.h
           tune = Path('kernel-src/kernel/sched/tune.h')
           tune_source = tune.read_text()
           tune_needle = '#ifdef CONFIG_SCHED_TUNE\n'
@@ -120,7 +117,11 @@ jobs:
                   raise SystemExit('Cannot locate CONFIG_SCHED_TUNE guard in tune.h')
               tune_source = tune_source.replace(tune_needle, tune_needle + '\nstruct cpufreq_policy;\nstruct freqvar_boost_data;\n', 1)
               tune.write_text(tune_source)
+          PY
+          git -C kernel-src diff --check
+          grep -Fq 'struct rt_rq;' kernel-src/include/trace/events/sched.h
           grep -Fq 'static inline void sl_softirq_entry' kernel-src/include/linux/nmi.h
+          grep -Fq 'struct cpufreq_policy;' kernel-src/kernel/sched/tune.h
 
       - name: Copy Virtual Boot kernel config
         run: |
