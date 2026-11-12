@@ -209,6 +209,74 @@ jobs:
               pass
           else:
               raise SystemExit('Cannot locate ECD stack table or verify dynamic allocation fix')
+          # Resolve known vendor-only references for a standalone virtual-boot kernel.
+          ss = Path('kernel-src/drivers/trace/exynos-ss.c')
+          ss_source = ss.read_text()
+          ss_loop = '''        for_each_possible_cpu(cpu) {
+                mpidr = cpu_logical_map(cpu);
+                core = mpidr_cpu_num(mpidr)^4;
+                if (exynos_cpu.power_state(cpu))
+                        exynos_ss_core_power_stat(ESS_SIGN_ALIVE, core);
+                else
+                        exynos_ss_core_power_stat(ESS_SIGN_DEAD, core);
+        }
+'''
+          if ss_loop in ss_source:
+              ss_source = ss_source.replace(ss_loop, '\t\t/* CPU power-state table is not part of the standalone boot target. */\n', 1)
+              ss.write_text(ss_source)
+          elif 'exynos_cpu.power_state(cpu)' in ss_source:
+              raise SystemExit('Cannot isolate optional exynos_ss CPU power-state loop')
+          powermode = Path('kernel-src/drivers/soc/samsung/exynos-powermode.c')
+          powermode_source = powermode.read_text()
+          wait_loop = '\t\t\twhile (exynos_cpu.cluster_state(cpu))\n\t\t\t\tudelay(1);'
+          if wait_loop in powermode_source:
+              powermode_source = powermode_source.replace(wait_loop, '\t\t\t/* No vendor cluster-state table in the virtual-boot target. */', 1)
+              powermode.write_text(powermode_source)
+          elif 'exynos_cpu.cluster_state(cpu)' in powermode_source:
+              raise SystemExit('Cannot isolate optional cpuidle cluster-state wait')
+          gadget = Path('kernel-src/drivers/usb/dwc3/gadget.c')
+          gadget_source = gadget.read_text()
+          gadget_old = 'extern bool acc_dev_status;'
+          gadget_new = 'bool acc_dev_status;'
+          if gadget_old in gadget_source:
+              gadget_source = gadget_source.replace(gadget_old, gadget_new, 1)
+              gadget.write_text(gadget_source)
+          elif gadget_new not in gadget_source:
+              raise SystemExit('Cannot locate DWC3 accessory-state declaration')
+          hid = Path('kernel-src/drivers/hid/hid-input.c')
+          hid_source = hid.read_text()
+          hid_old = 'extern bool lcd_is_on;'
+          hid_new = 'bool lcd_is_on = true;'
+          if hid_old in hid_source:
+              hid_source = hid_source.replace(hid_old, hid_new, 1)
+              hid.write_text(hid_source)
+          elif hid_new not in hid_source:
+              raise SystemExit('Cannot locate HID LCD-state declaration')
+          mct = Path('kernel-src/drivers/clocksource/exynos_mct.c')
+          mct_source = mct.read_text()
+          mct_source = mct_source.replace(
+              'extern struct atomic_notifier_head hardlockup_notifier_list;',
+              '#ifdef CONFIG_HARDLOCKUP_DETECTOR\nextern struct atomic_notifier_head hardlockup_notifier_list;\n#endif', 1)
+          dump_start = mct_source.find('static void exynos4_mct_tick_dump(unsigned int cpu)')
+          handler_start = mct_source.find('static int exynos4_mct_hardlockup_handler', dump_start)
+          handler_end = mct_source.find('\nstatic int exynos4_local_timer_setup', handler_start)
+          if dump_start >= 0 and handler_start > dump_start and handler_end > handler_start:
+              dump_block = mct_source[dump_start:handler_end]
+              mct_source = mct_source[:dump_start] + '#ifdef CONFIG_HARDLOCKUP_DETECTOR\n' + dump_block + '#endif /* CONFIG_HARDLOCKUP_DETECTOR */\n' + mct_source[handler_end:]
+          elif 'static int exynos4_mct_hardlockup_handler' in mct_source and '#ifdef CONFIG_HARDLOCKUP_DETECTOR' not in mct_source:
+              raise SystemExit('Cannot isolate optional MCT hard-lockup callback')
+          notifier = '''static struct notifier_block nb_hardlockup_block = {
+                .notifier_call = exynos4_mct_hardlockup_handler,
+        };
+'''
+          if notifier in mct_source:
+              mct_source = mct_source.replace(notifier, '#ifdef CONFIG_HARDLOCKUP_DETECTOR\n' + notifier + '#endif /* CONFIG_HARDLOCKUP_DETECTOR */\n', 1)
+          register = '\tatomic_notifier_chain_register(&hardlockup_notifier_list, &nb_hardlockup_block);'
+          if register in mct_source:
+              mct_source = mct_source.replace(register, '#ifdef CONFIG_HARDLOCKUP_DETECTOR\n' + register + '\n#endif /* CONFIG_HARDLOCKUP_DETECTOR */', 1)
+          elif 'atomic_notifier_chain_register(&hardlockup_notifier_list' in mct_source:
+              raise SystemExit('Cannot guard MCT hard-lockup notifier registration')
+          mct.write_text(mct_source)
           ehci_hub = Path('kernel-src/drivers/usb/host/ehci-hub.c')
           ehci_source = ehci_hub.read_text()
           ehci_old = '\t\t\t\tehci_vdbg (ehci, "port %d reset\\n", wIndex + 1);'
@@ -226,6 +294,10 @@ jobs:
           grep -Fq 'struct cpufreq_policy;' kernel-src/kernel/sched/tune.h
           grep -Fq '#ifndef arch_scale_freq_invariant' kernel-src/kernel/sched/sched.h
           grep -Fq 'ehci_dbg (ehci, "port %d reset' kernel-src/drivers/usb/host/ehci-hub.c
+          ! grep -Fq 'exynos_cpu.power_state(cpu)' kernel-src/drivers/trace/exynos-ss.c
+          ! grep -Fq 'exynos_cpu.cluster_state(cpu)' kernel-src/drivers/soc/samsung/exynos-powermode.c
+          grep -Fq 'bool acc_dev_status;' kernel-src/drivers/usb/dwc3/gadget.c
+          grep -Fq 'bool lcd_is_on = true;' kernel-src/drivers/hid/hid-input.c
 
       - name: Copy Virtual Boot kernel config
         run: |
@@ -597,6 +669,7 @@ jobs:
           cp virtual-boot-project/virtual-boot/patches/0007-guard-sec-debug-snapshot-calls.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0008-move-exynos-condbg-function-table-off-stack.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0009-fix-ehci-verbose-debug-call.patch virtual-boot-output/patches/
+          cp virtual-boot-project/virtual-boot/patches/0010-fix-virtual-boot-link-dependencies.patch virtual-boot-output/patches/
 
       - name: Generate hardware manifest with REAL data
         env:
@@ -629,7 +702,7 @@ jobs:
               "image": "Image",
               "load_address": "0x80080000",
               "sha256": "$KERNEL_SHA256",
-              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch", "patches/0006-fix-mmc-cmdq-and-itmon.patch", "patches/0007-guard-sec-debug-snapshot-calls.patch", "patches/0008-move-exynos-condbg-function-table-off-stack.patch", "patches/0009-fix-ehci-verbose-debug-call.patch"]
+              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch", "patches/0006-fix-mmc-cmdq-and-itmon.patch", "patches/0007-guard-sec-debug-snapshot-calls.patch", "patches/0008-move-exynos-condbg-function-table-off-stack.patch", "patches/0009-fix-ehci-verbose-debug-call.patch", "patches/0010-fix-virtual-boot-link-dependencies.patch"]
             },
             "dtb": {
               "source": "Virtual Boot-specific DTS derived from Samsung hardware definitions",
@@ -684,7 +757,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd virtual-boot-output
-          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch patches/0006-fix-mmc-cmdq-and-itmon.patch patches/0007-guard-sec-debug-snapshot-calls.patch patches/0008-move-exynos-condbg-function-table-off-stack.patch patches/0009-fix-ehci-verbose-debug-call.patch hardware-manifest.json > SHA256SUMS
+          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch patches/0006-fix-mmc-cmdq-and-itmon.patch patches/0007-guard-sec-debug-snapshot-calls.patch patches/0008-move-exynos-condbg-function-table-off-stack.patch patches/0009-fix-ehci-verbose-debug-call.patch patches/0010-fix-virtual-boot-link-dependencies.patch hardware-manifest.json > SHA256SUMS
           cat SHA256SUMS
 
       - name: Copy documentation
