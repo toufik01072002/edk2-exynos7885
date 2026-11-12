@@ -1,0 +1,6 @@
+diff --git a/include/linux/nmi.h b/include/linux/nmi.h
+--- a/include/linux/nmi.h
++++ b/include/linux/nmi.h
+@@ -94 +94 @@
+-static inline void void sl_softirq_entry(const char *, void *) { }
++static inline void sl_softirq_entry(const char *, void *) { }
