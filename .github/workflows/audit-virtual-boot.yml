@@ -140,6 +140,7 @@ jobs:
           NOT BOOTABLE — ANALYSIS CANDIDATE ONLY
           This archive is not approved for kexec or device boot.
           The DTB still contains fixed linux,initrd-start/end properties.
+          The merged DTB memory banks do not yet match the corrected three-bank SM-A205W RAM map.
           The current kexec relocation path clears x0-x3 before branching.
           No RAM reservation or DMA-quiescence handoff has been implemented.
           EDK2 execution is disabled. No flash partitions are modified.
@@ -170,6 +171,7 @@ jobs:
               "files": files,
               "required_work_remaining": [
                   "remove or dynamically set fixed initrd properties using a verified runtime loader",
+              "align the DTB with the corrected three-bank RAM map and reserve all audited carveouts",
                   "prove memory reservation for all loaded segments",
                   "quiesce DMA-capable devices before handoff",
                   "implement and validate the ARM64 kexec-to-EDK2 register and exception-level contract",
