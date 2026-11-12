@@ -29,7 +29,7 @@
     interrupt-parent = <&gic>;
 
     aliases {
-        serial2 = <&serial_2>;
+        serial2 = &serial_2;
     };
 
     chosen {
