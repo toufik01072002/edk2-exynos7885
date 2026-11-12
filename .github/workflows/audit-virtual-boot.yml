@@ -58,6 +58,7 @@ jobs:
           python3 edk2-exynos7885/virtual-boot/tools/audit_inputs.py \
             --kernel sources/android_device_samsung_a20/prebuilt/kexec/Image \
             --dtb sources/android_device_samsung_a20/prebuilt/kexec/exynos7885.dtb \
+            --a20-overlay sources/Kernel_SM-A205W/arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_can_single_05.dts \
             --kernel-source sources/Kernel_SM-A205W \
             --report virtual-boot-audit.json
 
