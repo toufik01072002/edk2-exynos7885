@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       ANDROID_MAJOR_VERSION: p
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
       - name: Checkout EDK2 development branch
         uses: actions/checkout@v4
@@ -66,10 +66,20 @@ jobs:
             echo "Kernel_SM-A205W=$(git -C sources/Kernel_SM-A205W rev-parse HEAD)"
           } | tee virtual-boot-source-refs.txt
 
-      - name: Build and merge the A20 CAN SINGLE 05 device tree
+      - name: Apply reviewed ARM64 kexec DTB handoff patch
+        run: |
+          python3 edk2-exynos7885/virtual-boot/tools/apply_kexec_dtb_patch.py \
+            --kernel-source sources/Kernel_SM-A205W
+          echo "kexec_dtb_patch_sha256=$(sha256sum edk2-exynos7885/virtual-boot/tools/apply_kexec_dtb_patch.py | cut -d' ' -f1)" \
+            | tee -a virtual-boot-source-refs.txt
+
+
+      - name: Build patched ARM64 kernel and merge A20 CAN SINGLE 05 DTB
         run: |
           make -C sources/Kernel_SM-A205W O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- exynos7885-a20_defconfig
-          make -C sources/Kernel_SM-A205W O=out HOSTCFLAGS=-fcommon ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- dtbs
+          make -C sources/Kernel_SM-A205W O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- olddefconfig
+          make -C sources/Kernel_SM-A205W -j"$(nproc)" O=out HOSTCFLAGS=-fcommon ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- Image dtbs
+          test -s sources/Kernel_SM-A205W/out/arch/arm64/boot/Image
 
           BASE="sources/Kernel_SM-A205W/out/arch/arm64/boot/dts/exynos/dtbo/exynos7885.dtb"
           OVERLAY="sources/Kernel_SM-A205W/out/arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_can_single_05.dtbo"
@@ -131,7 +141,7 @@ jobs:
       - name: Audit kernel, DTB and embedded kernel configuration
         run: |
           python3 edk2-exynos7885/virtual-boot/tools/audit_inputs.py \
-            --kernel sources/android_device_samsung_a20/prebuilt/kexec/Image \
+            --kernel sources/Kernel_SM-A205W/out/arch/arm64/boot/Image \
             --dtb a20-virtual-boot-memory.dtb \
             --a20-overlay sources/Kernel_SM-A205W/arch/arm64/boot/dts/exynos/dtbo/exynos7884B-a20_can_single_05.dts \
             --kernel-source sources/Kernel_SM-A205W \
@@ -177,7 +187,7 @@ jobs:
           gzip -t initramfs.cpio.gz
           gzip -dc initramfs.cpio.gz | cpio --list
 
-          install -m 0644 sources/android_device_samsung_a20/prebuilt/kexec/Image candidate/Image
+          install -m 0644 sources/Kernel_SM-A205W/out/arch/arm64/boot/Image candidate/Image
           install -m 0644 a20-virtual-boot-memory.dtb candidate/a20-virtual-boot-memory.dtb
           install -m 0644 initramfs.cpio.gz candidate/initramfs.cpio.gz
 
@@ -186,7 +196,7 @@ jobs:
           This archive is not approved for kexec or device boot.
           The DTB initrd addresses are cleared for dynamic placement; no verified loader supplies them yet.
           The three-bank RAM map and audited carveouts are patched for analysis, not runtime-validated.
-          The current kexec relocation path clears x0-x3 before branching.
+          The CI-built kernel includes the DTB-in-x0 patch; no device execution has been attempted.
           No RAM reservation or DMA-quiescence handoff has been implemented.
           EDK2 execution is disabled. No flash partitions are modified.
           STATUS
@@ -219,7 +229,8 @@ jobs:
                   "validate the corrected RAM banks and carveout reservations against the live device map",
                   "prove memory reservation for all loaded segments",
                   "quiesce DMA-capable devices before handoff",
-                  "implement and validate the ARM64 kexec-to-EDK2 register and exception-level contract",
+                  "validate the patched Linux ARM64 DTB-in-x0 ABI before any device launch",
+                  "implement the separate BootShim-to-EDK2 CPU-state and firmware-entry contract",
                   "validate a minimal device tree and safe console path"
               ]
           }
