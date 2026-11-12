@@ -92,9 +92,42 @@ def main():
     observed_memory_banks = []
     for node, value in memory_nodes:
         cells = [int(cell, 0) for cell in value.split()]
-        if len(cells) == 3:
+        if len(cells) == 3 and cells[2] > 0:
             observed_memory_banks.append(((cells[0] << 32) | cells[1], cells[2]))
     memory_map_verified = sorted(observed_memory_banks) == sorted(expected_memory_banks)
+
+    expected_reserved = {
+        "edk2_uefi@90000000": (0x90000000, 0x00200000),
+        "cma3_reserved@8ba000000": (0x8BA000000, 0x01400000),
+        "bank2_gap@8bb400000": (0x8BB400000, 0x00400000),
+        "video_frame@8bd800000": (0x8BD800000, 0x02800000),
+    }
+    observed_reserved = {}
+    for node_name in expected_reserved:
+        node_match = re.search(rf'{re.escape(node_name)}\\s*\\{{([^{{}}]*)\\}}', dts, re.S)
+        reg_match = re.search(r'reg\\s*=\\s*<([^>]+)>;', node_match.group(1)) if node_match else None
+        if reg_match:
+            cells = [int(cell, 0) for cell in reg_match.group(1).split()]
+            if len(cells) == 3:
+                observed_reserved[node_name] = ((cells[0] << 32) | cells[1], cells[2])
+    reserved_ranges_verified = observed_reserved == expected_reserved
+
+    def alloc_range(node_name):
+        node_match = re.search(rf'\\b{re.escape(node_name)}\\s*\\{{([^{{}}]*)\\}}', dts, re.S)
+        prop_match = re.search(r'alloc-ranges\\s*=\\s*<([^>]+)>;', node_match.group(1)) if node_match else None
+        if not prop_match:
+            return None
+        cells = [int(cell, 0) for cell in prop_match.group(1).split()]
+        if len(cells) != 3:
+            return None
+        return ((cells[0] << 32) | cells[1], cells[2])
+
+    expected_alloc_ranges = {
+        "crypto": (0x8BB800000, 0x02000000),
+        "video_stream": (0xF0C00000, 0x04800000),
+    }
+    observed_alloc_ranges = {name: alloc_range(name) for name in expected_alloc_ranges}
+    alloc_ranges_verified = observed_alloc_ranges == expected_alloc_ranges
     initrd_start = re.search(r'linux,initrd-start\s*=\s*<([^>]+)>;', dts)
     initrd_end = re.search(r'linux,initrd-end\s*=\s*<([^>]+)>;', dts)
     bootargs = re.search(r'bootargs\s*=\s*"([^"]*)";', dts)
@@ -115,7 +148,15 @@ def main():
     if not memory_map_verified:
         findings.append("DTB RAM banks do not match the corrected SM-A205W memory audit; this DTB must not be booted.")
     if initrd_start or initrd_end:
-        findings.append("DTB contains fixed linux,initrd-start/end properties; these must be removed or rebuilt for a dynamically placed initramfs.")
+        findings.append("DTB still contains fixed linux,initrd-start/end properties.")
+    else:
+        findings.append("DTB initrd addresses are cleared; a verified runtime loader must set the actual initrd range before boot.")
+    if bootargs and "skip_initramfs" in bootargs.group(1):
+        findings.append("DTB bootargs still contain skip_initramfs; the external diagnostic initramfs would be skipped.")
+    if not reserved_ranges_verified:
+        findings.append("EDK2 and Bank 2 carveout reservations do not match the corrected memory audit.")
+    if not alloc_ranges_verified:
+        findings.append("Crypto/video_stream reserved-pool allocation ranges do not match the corrected memory audit.")
     if "CONFIG_DEVTMPFS_MOUNT=y" not in config_lines:
         findings.append("CONFIG_DEVTMPFS_MOUNT is disabled; the future initramfs must mount devtmpfs itself.")
 
@@ -142,6 +183,12 @@ def main():
             "expected_memory_banks": [{"start": hex(start), "size": hex(size)} for start, size in expected_memory_banks],
             "observed_memory_banks": [{"start": hex(start), "size": hex(size)} for start, size in observed_memory_banks],
             "memory_map_verified": memory_map_verified,
+            "expected_reserved_ranges": {name: {"start": hex(value[0]), "size": hex(value[1])} for name, value in expected_reserved.items()},
+            "observed_reserved_ranges": {name: {"start": hex(value[0]), "size": hex(value[1])} for name, value in observed_reserved.items()},
+            "reserved_ranges_verified": reserved_ranges_verified,
+            "expected_alloc_ranges": {name: {"start": hex(value[0]), "size": hex(value[1])} for name, value in expected_alloc_ranges.items()},
+            "observed_alloc_ranges": {name: ({"start": hex(value[0]), "size": hex(value[1])} if value else None) for name, value in observed_alloc_ranges.items()},
+            "alloc_ranges_verified": alloc_ranges_verified,
             "linux_initrd_start_cells": initrd_start.group(1).split() if initrd_start else None,
             "linux_initrd_end_cells": initrd_end.group(1).split() if initrd_end else None,
             "bootargs": bootargs.group(1) if bootargs else None,
