@@ -122,8 +122,8 @@ jobs:
             echo "virtual_dtb_sha256=$(sha256sum a20-virtual-boot-memory.dtb | cut -d' ' -f1)"
             echo "bank0=$(fdtget -t x a20-virtual-boot-memory.dtb /memory@80000000 reg)"
             echo "bank1=$(fdtget -t x a20-virtual-boot-memory.dtb /memory@C0000000 reg)"
-            echo "bank2=$(fdtget a20-virtual-boot-memory.dtb /memory@880000000 reg)"
-            echo "edk2_reserved=$(fdtget a20-virtual-boot-memory.dtb /reserved-memory/edk2_uefi@90000000 reg)"
+            echo "bank2=$(fdtget -t x a20-virtual-boot-memory.dtb /memory@880000000 reg)"
+            echo "edk2_reserved=$(fdtget -t x a20-virtual-boot-memory.dtb /reserved-memory/edk2_uefi@90000000 reg)"
             echo "status=MEMORY_MAP_PATCHED_ANALYSIS_ONLY_NOT_BOOTABLE"
           } | tee a20-virtual-memory-report.txt
 
