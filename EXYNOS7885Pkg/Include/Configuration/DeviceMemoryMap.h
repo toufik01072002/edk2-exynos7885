@@ -98,10 +98,10 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
 //   Gap: 0xED400000 - 0xF0C00000 = 56 MiB
     {"RAM Bank 1 High",   0xED400000, 0x03800000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0xED400000-0xF0C00000 (56 MiB)
 
-// CMA video_stream pool (dynamic, reserved at boot):
+// CMA video_stream reservation (pinned for Virtual Boot):
     {"CMA video_stream",  0xF0C00000, 0x04800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 0xF0C00000-0xF5400000 (72 MiB)
 
-// Modem/CP region (DTBO overlay 3):
+// Samsung modem and CP RAM logging reservations:
     {"Modem Reserved",    0xF5400000, 0x08800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 136 MiB, ends at 0xFDC00000
     {"CP RAM Logging",    0xFDC00000, 0x02000000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 32 MiB, ends at 0xFFC00000
 
