@@ -388,10 +388,10 @@ jobs:
           name: virtual-boot-kernel
           path: kernel-artifacts
 
-      - name: Install libfdt Python bindings
+      - name: Install DTB validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-libfdt
+          sudo apt-get install -y device-tree-compiler
 
       - name: Validate DTB and memory map against EDK2 reference
         run: |
