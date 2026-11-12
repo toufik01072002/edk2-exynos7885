@@ -1,0 +1,49 @@
+#!/bin/sh
+# Diagnostic-only initramfs for the SM-A205W virtual-boot candidate.
+# This stage must never attempt to launch EDK2 or write to flash.
+
+PATH=/bin:/sbin
+export PATH
+
+mkdir -p /dev /proc /sys /run /tmp
+
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mount -t proc proc /proc 2>/dev/null
+mount -t sysfs sysfs /sys 2>/dev/null
+mount -t tmpfs tmpfs /run 2>/dev/null
+
+log() {
+    echo "<6>[7K-VBOOT] $*" > /dev/kmsg 2>/dev/null
+}
+
+fail() {
+    log "BLOCKED: $*"
+    exec /bin/sh
+}
+
+[ -r /proc/device-tree/model ] || fail "device-tree model is unavailable"
+MODEL="$(cat /proc/device-tree/model 2>/dev/null)"
+COMPATIBLE="$(tr '\000' ' ' < /proc/device-tree/compatible 2>/dev/null)"
+
+log "Diagnostic virtual-boot stage started"
+log "Model: $MODEL"
+log "Compatible: $COMPATIBLE"
+
+[ "$MODEL" = "Samsung A20 CAN SINGLE 05 board based on EXYNOS7884B" ] ||
+    fail "unexpected board model"
+
+echo "$COMPATIBLE" | grep -q "samsung,exynos7885" ||
+    fail "Exynos 7885 compatibility missing"
+
+cat /proc/cmdline > /run/cmdline.txt 2>/dev/null
+cat /proc/meminfo > /run/meminfo.txt 2>/dev/null
+cat /proc/iomem > /run/iomem.txt 2>/dev/null
+
+log "Board identity checks passed"
+log "RAM map captured for diagnostics"
+log "EDK2 handoff is intentionally DISABLED"
+log "This initramfs is a build candidate, not approved for device boot"
+
+while :; do
+    sleep 3600
+done
