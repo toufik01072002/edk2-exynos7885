@@ -210,12 +210,13 @@ def main():
                 break
             overlap = (max(current[0], other[0]), min(current[1], other[1]))
             pair = {current[2].rsplit("/", 1)[-1], other[2].rsplit("/", 1)[-1]}
-            # A20 CP logging is an overlapping sub-allocation/view of the
-            # modem interface reservation. Permit only this documented range.
+            # The A20 DTBO places CP logging inside the modem_if address span.
+            # Preserve this exact source-observed overlap as a warning; reject
+            # every other fixed-reservation overlap.
             if (pair == {"modem_if", "cp_ram_logging"}
                     and overlap == (0xFCC00000, 0xFDC00000)):
                 warnings.append(
-                    "documented modem_if/cp_ram_logging overlap: 0x{:X}-0x{:X}".format(
+                    "A20 DTBO modem_if/cp_ram_logging overlap observed: 0x{:X}-0x{:X}".format(
                         overlap[0], overlap[1]))
                 continue
             errors.append("fixed reserved-memory overlap: {} and {} at 0x{:X}-0x{:X}".format(
