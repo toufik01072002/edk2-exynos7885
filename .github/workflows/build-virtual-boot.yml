@@ -315,7 +315,7 @@ jobs:
 
           # Enable providers for the Samsung F2FS and MMC command-queue hooks;
           # omit Trustonic TEE, which depends on unavailable socket internals here.
-          scripts/config --file out/.config --enable SEC_EXT --enable SEC_REBOOT \
+          bash scripts/config --file out/.config --enable SEC_EXT --enable SEC_REBOOT \
             --enable SEC_DEBUG --enable MMC_CQ_HCI \
             --disable TRUSTONIC_TEE --disable TRUSTONIC_TRUSTED_UI \
             --disable SECURE_OS_CONTROL --disable SECURE_OS_BOOSTER_API
