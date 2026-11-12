@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: [PATCH 08/08] trace: exynos-condbg: allocate function table off-stack
+
+The 256-entry function pointer table consumes 2048 bytes on ARM64 before
+the function's other stack usage. Allocate it dynamically to keep
+ecd_start_binary below the kernel frame-size warning threshold.
+
+---
+ drivers/trace/exynos-condbg.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/trace/exynos-condbg.c b/drivers/trace/exynos-condbg.c
+--- a/drivers/trace/exynos-condbg.c
++++ b/drivers/trace/exynos-condbg.c
+@@ -1626,13 +1626,17 @@ int ecd_start_binary(unsigned long jump_addr)
+ {
++	set_param_fn_t *fn;
++	int fw_loaded;
+-	/* address information */
+-	set_param_fn_t fn[SZ_256] = {0, };
+ 
++	fn = kcalloc(SZ_256, sizeof(*fn), GFP_KERNEL);
++	if (!fn)
++		return -ENOMEM;
+ 	/* Set/Get parameter */
+ 	set_param(fn);
+ 
+ 	/* Complete to load the firmware */
+ 	interface->fw_loaded = ((base_fn_t)jump_addr)((void **)fn,
+ 						      (void *)&interface->ops,
+ 						      (void *)&interface->param);
+ 
+-	return interface->fw_loaded;
++	fw_loaded = interface->fw_loaded;
++	kfree(fn);
++	return fw_loaded;
+ }
+-- 
+2.43.0
