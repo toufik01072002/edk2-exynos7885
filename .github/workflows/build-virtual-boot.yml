@@ -133,12 +133,14 @@ jobs:
               cpufreq_source = cpufreq_source.replace(init_call, guarded_init, 1)
           elif guarded_init not in cpufreq_source:
               raise SystemExit('Cannot locate schedutil freqvar init call')
-          exit_call = '\t\tschedtune_freqvar_boost_exit(policy, &tunables->freqvar_boost);\n'
-          guarded_exit = '#ifdef CONFIG_FREQVAR_SCHEDTUNE\n' + exit_call + '#endif\n'
-          if cpufreq_source.count(exit_call) == 2:
-              cpufreq_source = cpufreq_source.replace(exit_call, guarded_exit)
-          elif cpufreq_source.count(guarded_exit) != 2:
-              raise SystemExit('Cannot locate both schedutil freqvar exit calls')
+          exit_one = '\tschedtune_freqvar_boost_exit(policy, &tunables->freqvar_boost);\n'
+          exit_two = '\t\tschedtune_freqvar_boost_exit(policy, &tunables->freqvar_boost);\n'
+          for exit_call in (exit_one, exit_two):
+              guarded_exit = '#ifdef CONFIG_FREQVAR_SCHEDTUNE\n' + exit_call + '#endif\n'
+              if exit_call in cpufreq_source:
+                  cpufreq_source = cpufreq_source.replace(exit_call, guarded_exit, 1)
+              elif guarded_exit not in cpufreq_source:
+                  raise SystemExit('Cannot locate a schedutil freqvar exit call')
           cpufreq.write_text(cpufreq_source)
           PY
           git -C kernel-src diff --check
