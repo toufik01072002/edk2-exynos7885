@@ -211,6 +211,8 @@ def main():
             errors.append("fixed reserved-memory overlap: {} and {}".format(
                 current[2], other[2]))
 
+    fixed_ranges = [(start, end) for start, end, _ in fixed_reserved]
+
     # Report reference reservations that are not represented by fixed DT reg.
     # Dynamic CMA pools are matched by name and size, but remain explicitly
     # unpinned unless alloc-ranges fixes their exact physical location.
