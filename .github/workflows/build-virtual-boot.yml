@@ -226,9 +226,14 @@ jobs:
               i = cmdq_matches[0]
               indent = queue_lines[i][:len(queue_lines[i]) - len(queue_lines[i].lstrip())]
               queue_lines[i] = indent + '/* CMDQ register dump omitted in virtual boot. */\n'
-              queue.write_text(''.join(queue_lines))
           elif len(cmdq_matches) > 1:
               raise SystemExit('MMC CMDQ diagnostic call is not unique')
+          cq_host_matches = [i for i, line in enumerate(queue_lines) if 'struct cmdq_host *cq_host = mmc_cmdq_private' in line]
+          if len(cq_host_matches) == 1:
+              queue_lines.pop(cq_host_matches[0])
+          elif len(cq_host_matches) > 1:
+              raise SystemExit('MMC CMDQ host pointer declaration is not unique')
+          queue.write_text(''.join(queue_lines))
           gadget = Path('kernel-src/drivers/usb/dwc3/gadget.c')
           gadget_source = gadget.read_text()
           gadget_old = 'extern bool acc_dev_status;'
@@ -312,6 +317,7 @@ jobs:
           # Exclude Android-only services that are not part of the EFI boot environment.
           bash scripts/config --file out/.config --disable EXYNOS_SNAPSHOT \
             --disable SEC_DEBUG --disable SEC_EXT --disable F2FS_FS \
+            --disable NET --disable MMC_CQ_HCI \
             --disable TRUSTONIC_TEE --disable TRUSTONIC_TRUSTED_UI \
             --disable SECURE_OS_CONTROL --disable SECURE_OS_BOOSTER_API
 
@@ -319,6 +325,8 @@ jobs:
             olddefconfig
 
           ! grep -qx 'CONFIG_F2FS_FS=y' out/.config || { echo 'ERROR: F2FS must be disabled for standalone target'; exit 1; }
+          ! grep -qx 'CONFIG_NET=y' out/.config || { echo 'ERROR: NET must be disabled for standalone target'; exit 1; }
+          ! grep -qx 'CONFIG_MMC_CQ_HCI=y' out/.config || { echo 'ERROR: MMC CQ HCI must be disabled for standalone target'; exit 1; }
           ! grep -qx 'CONFIG_EXYNOS_SNAPSHOT=y' out/.config || { echo 'ERROR: Exynos snapshot diagnostics must be disabled for standalone target'; exit 1; }
           ! grep -qx 'CONFIG_TRUSTONIC_TEE=y' out/.config || { echo 'ERROR: Trustonic TEE must be disabled for standalone target'; exit 1; }
 
