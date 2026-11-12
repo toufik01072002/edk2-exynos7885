@@ -230,6 +230,16 @@ jobs:
               powermode.write_text(powermode_source)
           elif 'exynos_cpu.cluster_state(cpu)' in powermode_source:
               raise SystemExit('Cannot isolate optional cpuidle cluster-state wait')
+          # MMC command-queue diagnostics are not required for the standalone EFI boot target.
+          queue = Path('kernel-src/drivers/mmc/card/queue.c')
+          queue_source = queue.read_text()
+          cmdq_call = '\\tcmdq_dumpregs(cq_host);'
+          if cmdq_call in queue_source:
+              if queue_source.count(cmdq_call) != 1:
+                  raise SystemExit('MMC CMDQ diagnostic call is not unique')
+              queue.write_text(queue_source.replace(cmdq_call, '\\t/* CMDQ register dump omitted in virtual boot. */', 1))
+          elif 'cmdq_dumpregs(cq_host);' in queue_source:
+              raise SystemExit('Cannot isolate MMC CMDQ diagnostic call')
           gadget = Path('kernel-src/drivers/usb/dwc3/gadget.c')
           gadget_source = gadget.read_text()
           gadget_old = 'extern bool acc_dev_status;'
@@ -313,20 +323,15 @@ jobs:
           make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
             virtual_boot_defconfig
 
-          # Enable providers for the Samsung F2FS and MMC command-queue hooks;
-          # omit Trustonic TEE, which depends on unavailable socket internals here.
-          bash scripts/config --file out/.config --enable STAGING --enable SEC_EXT --enable SEC_REBOOT \
-            --enable SEC_DEBUG --enable MMC_CQ_HCI \
-            --disable TRUSTONIC_TEE --disable TRUSTONIC_TRUSTED_UI \
+          # Exclude Android-only services that are not part of the EFI boot environment.
+          bash scripts/config --file out/.config --disable SEC_DEBUG --disable SEC_EXT \
+            --disable F2FS_FS --disable TRUSTONIC_TEE --disable TRUSTONIC_TRUSTED_UI \
             --disable SECURE_OS_CONTROL --disable SECURE_OS_BOOSTER_API
 
           make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
             olddefconfig
 
-          grep -qx 'CONFIG_STAGING=y' out/.config || { echo 'ERROR: STAGING Kconfig is required for Samsung SEC_DEBUG provider'; exit 1; }
-          grep -qx 'CONFIG_SEC_DEBUG=y' out/.config || { echo 'ERROR: SEC_DEBUG hook provider not enabled'; exit 1; }
-          grep -qx 'CONFIG_SEC_REBOOT=y' out/.config || { echo 'ERROR: SEC_REBOOT dependency not enabled'; exit 1; }
-          grep -qx 'CONFIG_MMC_CQ_HCI=y' out/.config || { echo 'ERROR: MMC CQ HCI provider not enabled'; exit 1; }
+          ! grep -qx 'CONFIG_F2FS_FS=y' out/.config || { echo 'ERROR: F2FS must be disabled for standalone target'; exit 1; }
           ! grep -qx 'CONFIG_TRUSTONIC_TEE=y' out/.config || { echo 'ERROR: Trustonic TEE must be disabled for standalone target'; exit 1; }
 
           echo '=== Effective kernel configuration ==='
