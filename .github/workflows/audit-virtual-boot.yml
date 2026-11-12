@@ -78,6 +78,11 @@ jobs:
         run: |
           make -C sources/Kernel_SM-A205W O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- exynos7885-a20_defconfig
           make -C sources/Kernel_SM-A205W O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- olddefconfig
+          mkdir -p sources/Kernel_SM-A205W/out/init sources/Kernel_SM-A205W/out/firmware
+          cp sources/Kernel_SM-A205W/init/uh.elf sources/Kernel_SM-A205W/out/init/uh.elf
+          cp sources/Kernel_SM-A205W/firmware/exynos7885_acpm_fvp.fw sources/Kernel_SM-A205W/out/firmware/exynos7885_acpm_fvp.fw
+          test -s sources/Kernel_SM-A205W/out/init/uh.elf
+          test -s sources/Kernel_SM-A205W/out/firmware/exynos7885_acpm_fvp.fw
           make -C sources/Kernel_SM-A205W -j"$(nproc)" O=out HOSTCFLAGS=-fcommon ARCH=arm64 CROSS_COMPILE=aarch64-linux-android- Image dtbs
           test -s sources/Kernel_SM-A205W/out/arch/arm64/boot/Image
 
