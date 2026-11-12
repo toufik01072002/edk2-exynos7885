@@ -59,6 +59,14 @@ jobs:
           KERNEL_REF: ${{ github.event.inputs.kernel_ref }}
           EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit }}
         run: |
+          if [ "$KERNEL_REF" != "kexec-arm64-4.4-d-work" ]; then
+            echo "ERROR: Unsupported kernel branch: $KERNEL_REF"
+            exit 1
+          fi
+          if ! [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "ERROR: kernel_commit must be a full 40-character SHA"
+            exit 1
+          fi
           git clone --recursive https://github.com/toufik01072002/Kernel_SM-A205W.git kernel-src
           cd kernel-src
           git checkout "$KERNEL_REF"
