@@ -1,0 +1,11 @@
+diff --git a/include/trace/events/sched.h b/include/trace/events/sched.h
+--- a/include/trace/events/sched.h
++++ b/include/trace/events/sched.h
+@@ -7,4 +7,7 @@
+ #include <linux/sched.h>
+ #include <linux/tracepoint.h>
+ #include <linux/binfmts.h>
+ 
++/* Forward declaration for scheduler tracepoint prototypes. */
++struct rt_rq;
++
