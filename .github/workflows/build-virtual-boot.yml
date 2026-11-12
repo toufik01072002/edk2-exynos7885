@@ -25,7 +25,7 @@ jobs:
     outputs:
       kernel_sha256: ${{ steps.hash_kernel.outputs.sha256 }}
       dtb_sha256: ${{ steps.hash_dtb.outputs.sha256 }}
-      kernel_commit: ${{ steps.verify_commit.outputs.commit }}
+      kernel_commit: ${{ steps.checkout_kernel.outputs.commit }}
     steps:
       - name: Checkout Virtual Boot project
         uses: actions/checkout@v4
@@ -54,6 +54,7 @@ jobs:
           "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc" --version
 
       - name: Clone Kernel_SM-A205W (correct branch)
+        id: checkout_kernel
         env:
           KERNEL_REF: ${{ github.event.inputs.kernel_ref }}
           EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit }}
@@ -95,7 +96,7 @@ jobs:
             olddefconfig
 
           grep -qx 'CONFIG_KEXEC=y' out/.config
-          grep -qx 'CONFIG_ECT=n' out/.config
+          grep -qx '# CONFIG_ECT is not set' out/.config
           grep -qx 'CONFIG_NR_CPUS=8' out/.config
           grep -qx 'CONFIG_SCHED_HMP=y' out/.config
 
@@ -117,13 +118,11 @@ jobs:
             CROSS_COMPILE=aarch64-linux-android- \
             Image
 
-      - name: Build Virtual Boot DTB from authentic DTS source
+      - name: Preprocess and compile Virtual Boot DTB
         run: |
           mkdir -p virtual-boot-output
-          sudo apt-get update && sudo apt-get install -y device-tree-compiler
-          dtc -O dtb -o virtual-boot-output/exynos7885-a205w-virtual.dtb \
-            -I dts \
-            virtual-boot-project/virtual-boot/dtb/exynos7885-a205w-virtual.dts
+          cpp -nostdinc -undef -D__DTS__ -x assembler-with-cpp -I kernel-src/include -I kernel-src/arch/arm64/boot/dts -I kernel-src/arch/arm64/boot/dts/exynos/dtbo -o virtual-boot-output/exynos7885-a205w-virtual.pp.dts virtual-boot-project/virtual-boot/dtb/exynos7885-a205w-virtual.dts
+          dtc -@ -I dts -O dtb -o virtual-boot-output/exynos7885-a205w-virtual.dtb virtual-boot-output/exynos7885-a205w-virtual.pp.dts
           echo "Virtual Boot DTB size: $(wc -c < virtual-boot-output/exynos7885-a205w-virtual.dtb) bytes"
 
       - name: Verify kernel and DTB artifacts
