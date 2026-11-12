@@ -150,6 +150,22 @@ jobs:
               gpu_makefile.write_text(gpu_source.replace(gpu_old, gpu_new, 1))
           elif gpu_new not in gpu_source:
               raise SystemExit('Cannot locate optional ARM GPU directory entry')
+          host_header = Path('kernel-src/include/linux/mmc/host.h')
+          host_source = host_header.read_text()
+          cmdq_anchor = '\tvoid (*pclear)(struct mmc_host *host);\n'
+          crypto_field = '\tint (*crypto_cfg)(struct mmc_host *host, struct mmc_request *mrq, u32 slot);\n'
+          if 'crypto_cfg' not in host_source:
+              if host_source.count(cmdq_anchor) != 1:
+                  raise SystemExit('Cannot locate MMC CMDQ host ops insertion point')
+              host_header.write_text(host_source.replace(cmdq_anchor, cmdq_anchor + crypto_field, 1))
+          itmon = Path('kernel-src/drivers/trace/exynos7885-itmon.c')
+          itmon_source = itmon.read_text()
+          old_itmon = '\tunsigned int val;\n\tint ret;\n\n\tret = exynos_pmu_read(EXYNOS_PMU_BURNIN_CTRL, &val);\n\tret = exynos_pmu_write(EXYNOS_PMU_BURNIN_CTRL, val | BIT_ENABLE_DBGSEL_WDTRESET);'
+          new_itmon = '\tunsigned int val = 0;\n\tint ret;\n\n\tret = exynos_pmu_read(EXYNOS_PMU_BURNIN_CTRL, &val);\n\tif (ret)\n\t\treturn;\n\tret = exynos_pmu_write(EXYNOS_PMU_BURNIN_CTRL, val | BIT_ENABLE_DBGSEL_WDTRESET);'
+          if old_itmon in itmon_source:
+              itmon.write_text(itmon_source.replace(old_itmon, new_itmon, 1))
+          elif new_itmon not in itmon_source:
+              raise SystemExit('Cannot locate ITMON PMU read sequence')
           PY
           git -C kernel-src diff --check
           grep -Fq 'struct rt_rq;' kernel-src/include/trace/events/sched.h
@@ -523,6 +539,7 @@ jobs:
           cp virtual-boot-project/virtual-boot/patches/0003-fix-sched-tune-forward-declarations.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0004-fix-schedutil-config-guards.patch virtual-boot-output/patches/
           cp virtual-boot-project/virtual-boot/patches/0005-gpu-arm-makefile-conditional.patch virtual-boot-output/patches/
+          cp virtual-boot-project/virtual-boot/patches/0006-fix-mmc-cmdq-and-itmon.patch virtual-boot-output/patches/
 
       - name: Generate hardware manifest with REAL data
         env:
@@ -555,7 +572,7 @@ jobs:
               "image": "Image",
               "load_address": "0x80080000",
               "sha256": "$KERNEL_SHA256"
-              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch"],
+              "patches": ["patches/0001-forward-declare-rt-rq.patch", "patches/0002-fix-nmi-inline-declaration.patch", "patches/0003-fix-sched-tune-forward-declarations.patch", "patches/0004-fix-schedutil-config-guards.patch", "patches/0005-gpu-arm-makefile-conditional.patch", "patches/0006-fix-mmc-cmdq-and-itmon.patch"],
             },
             "dtb": {
               "source": "Virtual Boot-specific DTS derived from Samsung hardware definitions",
@@ -609,7 +626,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd virtual-boot-output
-          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch hardware-manifest.json > SHA256SUMS
+          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch patches/0006-fix-mmc-cmdq-and-itmon.patch hardware-manifest.json > SHA256SUMS
           cat SHA256SUMS
 
       - name: Copy documentation
