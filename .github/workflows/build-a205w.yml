@@ -34,7 +34,6 @@ jobs:
           sudo apt-get install -y build-essential uuid-dev acpica-tools git nasm \
             python3 python3-setuptools gcc-aarch64-linux-gnu \
             device-tree-compiler
-          sudo sed -i '/^from gki\.generate_gki_certificate import generate_gki_certificate$/d' /usr/bin/mkbootimg
 
       - name: Cloner EDK2 et edk2-platforms
         env:
