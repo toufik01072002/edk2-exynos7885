@@ -15,6 +15,7 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/sysmmu/sysmmu.h>
 #include <dt-bindings/thermal/thermal.h>
+#include "exynos7885-pm-domains.dtsi"
 
 /dts-v1/;
 
@@ -35,7 +36,7 @@
     /* Memory regions from exynos7885.dts, refined with A20 overlay knowledge */
     memory@80000000 {
         device_type = "memory";
-        reg = <0x0 0x80000000 0x3DA00000>;  /* 986 MiB - Bank 0 */
+        reg = <0x0 0x80000000 0x3BC00000>;  /* 956 MiB - Bank 0, DeviceMemoryMap.h */
     };
 
     memory@C0000000 {
