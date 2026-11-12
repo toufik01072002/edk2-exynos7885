@@ -53,9 +53,16 @@ def main():
         ["sh", str(extractor), str(args.kernel)],
         check=False, capture_output=True
     )
-    if extracted.returncode != 0 or b"CONFIG_" not in extracted.stdout:
-        raise SystemExit("BLOCKED: cannot extract the actual configuration embedded in the prebuilt kernel")
-    config_text = extracted.stdout.decode("utf-8", errors="replace")
+    binary_config_verified = extracted.returncode == 0 and b"CONFIG_" in extracted.stdout
+    if binary_config_verified:
+        config_text = extracted.stdout.decode("utf-8", errors="replace")
+        config_evidence = "embedded_kernel_image"
+    else:
+        source_defconfig = args.kernel_source / "arch/arm64/configs/exynos7885-a20_defconfig"
+        if not source_defconfig.is_file():
+            raise SystemExit("BLOCKED: neither embedded kernel config nor A20 source defconfig is available")
+        config_text = source_defconfig.read_text(encoding="utf-8", errors="replace")
+        config_evidence = "source_defconfig_only"
     config_lines = set(config_text.splitlines())
     missing = [item for item in REQUIRED_CONFIG if item not in config_lines]
     if missing:
@@ -80,6 +87,8 @@ def main():
         "The EDK2 handoff is not implemented or enabled.",
         "Physical RAM reservation and DMA quiescence have not been proven for this boot path.",
     ]
+    if not binary_config_verified:
+        findings.append("The prebuilt Image has no extractable IKCONFIG; required options are confirmed only in the source defconfig, not in this binary.")
     compatible_text = " | ".join(compatibles)
     if "samsung,exynos7885" not in compatible_text:
         findings.append("DTB does not declare samsung,exynos7885 compatibility.")
@@ -99,7 +108,9 @@ def main():
             "dtb": {"path": str(args.dtb), "size": args.dtb.stat().st_size, "sha256": sha256(args.dtb), "fdt_magic": True},
         },
         "kernel_config": {
-            "extracted_from_prebuilt_image": True,
+            "extracted_from_prebuilt_image": binary_config_verified,
+            "evidence": config_evidence,
+            "binary_config_verified": binary_config_verified,
             "required_options": list(REQUIRED_CONFIG),
             "required_options_present": True,
             "devtmpfs_mount": "CONFIG_DEVTMPFS_MOUNT=y" in config_lines,
@@ -112,7 +123,7 @@ def main():
             "bootargs": bootargs.group(1) if bootargs else None,
         },
         "blocking_findings": findings,
-        "status": "INPUTS_VALIDATED_HANDOFF_BLOCKED",
+        "status": "INPUTS_VALIDATED_HANDOFF_BLOCKED" if binary_config_verified else "INPUTS_FORMATS_VALIDATED_BINARY_CONFIG_UNVERIFIED",
     }
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
