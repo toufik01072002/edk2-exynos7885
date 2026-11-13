@@ -20,7 +20,7 @@
 #if UEFI_SIZE != 0x00200000
 #error "Unexpected EDK2 FD size"
 #endif
-#if SEC_ENTRY != 0x90008278
+#if SEC_ENTRY != 0x90008280
 #error "Unexpected PrePi SEC entry"
 #endif
 #if (UEFI_SIZE % 16) != 0
@@ -39,7 +39,7 @@ _Head:
 	.quad	0
 	.quad	0
 	.quad	0
-	.ascii	"ARM\x64"
+	.ascii	"ARM\\x64"
 	.long	0
 
 _Start:
