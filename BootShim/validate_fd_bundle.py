@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
-"""Validate the EDK2 FD, its PrePi SEC entry, and the BootShim bundle.
+"""Validate the EDK2 FD and the static BootShim+FD package.
 
-The checks are static packaging/entrypoint checks only. They do not prove
-physical placement, processor state, or a runtime Linux-to-UEFI handoff.
+These checks validate file layout and the built PrePi SEC entry only. They do
+not prove kexec physical placement, processor state, or a runtime UEFI handoff.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import re
-import subprocess
 import struct
+import sys
+import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 FD = ROOT / "workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd"
 SHIM = ROOT / "BootShim/BootShim.bin"
 COMBINED = ROOT / "workspace/UEFI"
+MANIFEST = ROOT / "workspace/phase2-fd-manifest.json"
 FDF = ROOT / "EXYNOS7885Pkg/EXYNOS7885Pkg.fdf"
+
 EXPECTED_BASE = 0x90000000
+EXPECTED_SIZE = 0x00200000
+EXPECTED_TEXT_OFFSET = 0x80000
+HEADER_SIZE = 64
+IMAGE_MAGIC = b"ARM\x64"
 
 SEC_PREPI_GUID = "3e401783-cc94-4fcd-97bc-bd35ac369d2f"
 EFI_FV_SIGNATURE = b"_FVH"
@@ -31,12 +38,35 @@ AARCH64_BL_MASK = 0xFC000000
 AARCH64_BL_OPCODE = 0x94000000
 
 
+def fail(message: str) -> None:
+    raise SystemExit(f"ERROR: {message}")
+
+
 def align(value: int, alignment: int) -> int:
     return (value + alignment - 1) & ~(alignment - 1)
 
 
+def sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def inspect_fdf() -> tuple[int, int]:
+    text = FDF.read_text(encoding="utf-8")
+    base_match = re.search(r"(?im)^\s*BaseAddress\s*=\s*(0x[0-9a-f]+)", text)
+    size_match = re.search(r"(?im)^\s*Size\s*=\s*(0x[0-9a-f]+)", text)
+    if not base_match or not size_match:
+        fail("could not read BaseAddress and Size from the EDK2 FDF")
+    base = int(base_match.group(1), 16)
+    size = int(size_match.group(1), 16)
+    if base != EXPECTED_BASE:
+        fail(f"FDF base is 0x{base:X}, expected 0x{EXPECTED_BASE:X}")
+    if size != EXPECTED_SIZE:
+        fail(f"FDF size is 0x{size:X}, expected 0x{EXPECTED_SIZE:X}")
+    return base, size
+
+
 def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
-    """Find the PrePi SEC TE image and verify its XIP entry address."""
+    """Find PrePi SEC's TE image and validate its XIP entry-point mapping."""
     if len(fd) < 0x38 or fd[0x28:0x2C] != EFI_FV_SIGNATURE:
         fail("FD does not begin with a valid EFI firmware-volume header")
     fv_length = struct.unpack_from("<Q", fd, 0x20)[0]
@@ -44,8 +74,6 @@ def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
     if fv_length != len(fd) or not 0x38 <= fv_header_length <= len(fd):
         fail("invalid EFI firmware-volume length/header length")
 
-    # EFI FFS GUIDs are stored in UEFI mixed-endian byte order.
-    import uuid
     target_guid_le = uuid.UUID(SEC_PREPI_GUID).bytes_le
     file_pos = align(fv_header_length, 8)
     prepi = None
@@ -99,20 +127,20 @@ def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
     te_offset, te_size = te_image
     if te_size < 40:
         fail("truncated PrePi TE image header")
+
     signature, machine, section_count, _subsystem, stripped_size = struct.unpack_from(
         "<HHBBH", fd, te_offset
     )
     entry_rva, _base_of_code = struct.unpack_from("<II", fd, te_offset + 8)
     image_base = struct.unpack_from("<Q", fd, te_offset + 16)[0]
     if signature != TE_SIGNATURE or machine != IMAGE_FILE_MACHINE_ARM64:
-        fail("PrePi TE image is not a valid AArch64 TE image")
+        fail("PrePi SEC TE image is not valid AArch64")
     if stripped_size < 40 or section_count == 0:
         fail("invalid PrePi TE stripped size or section count")
-    section_table_end = 40 + section_count * 40
-    if section_table_end > te_size:
+    if 40 + section_count * 40 > te_size:
         fail("PrePi TE section table exceeds its section bounds")
 
-    executable_matches = []
+    matches = []
     for index in range(section_count):
         section = te_offset + 40 + index * 40
         name = fd[section:section + 8].rstrip(b"\x00").decode("ascii", "replace")
@@ -123,37 +151,117 @@ def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
         extent = max(virtual_size, raw_size)
         if virtual_address <= entry_rva < virtual_address + extent:
             if not characteristics & IMAGE_SCN_MEM_EXECUTE:
-                fail("PrePi TE entry point is not inside an executable section")
-            raw_file_offset = te_offset + raw_pointer - (stripped_size - 40)
-            entry_file_offset = raw_file_offset + (entry_rva - virtual_address)
+                fail("PrePi TE entry point is not in an executable section")
+            raw_offset = te_offset + raw_pointer - (stripped_size - 40)
+            entry_file_offset = raw_offset + (entry_rva - virtual_address)
             if entry_file_offset < te_offset or entry_file_offset + 4 > te_offset + te_size:
                 fail("PrePi TE entry-point bytes fall outside the TE image")
-            executable_matches.append((name, entry_file_offset))
+            matches.append({
+                "section": name,
+                "section_rva": virtual_address,
+                "section_virtual_size": virtual_size,
+                "entry_file_offset": entry_file_offset,
+            })
 
-    if len(executable_matches) != 1:
-        fail(f"PrePi TE entry point maps to {len(executable_matches)} executable sections")
-    section_name, entry_file_offset = executable_matches[0]
+    if len(matches) != 1:
+        fail(f"PrePi SEC entry maps to {len(matches)} executable sections")
+    match = matches[0]
     entry_address = image_base + entry_rva
-    entry_instruction = struct.unpack_from("<I", fd, entry_file_offset)[0]
-    if entry_instruction & AARCH64_BL_MASK != AARCH64_BL_OPCODE:
+    expected_xip_address = fd_base + match["entry_file_offset"]
+    if entry_address != expected_xip_address:
         fail(
-            "PrePi SEC entry does not begin with the expected AArch64 BL "
-            f"instruction (found 0x{entry_instruction:08X})"
+            f"PrePi SEC entry XIP mismatch: TE gives 0x{entry_address:X}, "
+            f"FD offset gives 0x{expected_xip_address:X}"
         )
-    branch_imm = entry_instruction & 0x03FFFFFF
+
+    instruction = struct.unpack_from("<I", fd, match["entry_file_offset"])[0]
+    if instruction & AARCH64_BL_MASK != AARCH64_BL_OPCODE:
+        fail(f"PrePi SEC entry does not begin with AArch64 BL (0x{instruction:08X})")
+    branch_imm = instruction & 0x03FFFFFF
     if branch_imm & (1 << 25):
         branch_imm -= 1 << 26
     branch_target = entry_address + (branch_imm << 2)
-    section_rva_start = next(
-        struct.unpack_from("<I", fd, te_offset + 40 + i * 40 + 12)[0]
-        for i in range(section_count)
-        if fd[te_offset + 40 + i * 40:te_offset + 40 + i * 40 + 8].rstrip(b"\x00").decode("ascii", "replace") == section_name
-    )
-    section_virtual_size = next(
-        struct.unpack_from("<I", fd, te_offset + 40 + i * 40 + 8)[0]
-        for i in range(section_count)
-        if fd[te_offset + 40 + i * 40:te_offset + 40 + i * 40 + 8].rstrip(b"\x00").decode("ascii", "replace") == section_name
-    )
-    if not image_base + section_rva_start <= branch_target < image_base + section_rva_start + section_virtual_size:
+    section_start = image_base + match["section_rva"]
+    section_end = section_start + match["section_virtual_size"]
+    if not section_start <= branch_target < section_end:
         fail("PrePi SEC entry BL target is outside its executable section")
 
+    return {
+        "te_file_offset": te_offset,
+        "te_image_base": f"0x{image_base:08X}",
+        "entry_rva": f"0x{entry_rva:X}",
+        "entry_address": f"0x{entry_address:08X}",
+        "entry_fd_offset": f"0x{match['entry_file_offset']:X}",
+        "entry_instruction": instruction.to_bytes(4, "little").hex(" "),
+        "entry_branch_target": f"0x{branch_target:08X}",
+        "executable_section": match["section"],
+    }
+
+
+def main() -> None:
+    for path in (FDF, FD, SHIM, COMBINED):
+        if not path.is_file():
+            fail(f"required build output is missing: {path.relative_to(ROOT)}")
+
+    fd_base, fd_size = inspect_fdf()
+    fd = FD.read_bytes()
+    shim = SHIM.read_bytes()
+    combined = COMBINED.read_bytes()
+
+    if len(fd) != fd_size:
+        fail(f"FD length is 0x{len(fd):X}, expected exactly 0x{fd_size:X}")
+    if len(shim) < HEADER_SIZE:
+        fail("BootShim is shorter than the 64-byte ARM64 Image header")
+    if len(combined) != len(shim) + len(fd):
+        fail("combined image length does not equal BootShim length plus FD length")
+    if combined[:len(shim)] != shim:
+        fail("combined image does not begin with the exact BootShim binary")
+    if combined[len(shim):] != fd:
+        fail("FD payload is not concatenated immediately after BootShim")
+
+    if combined[56:60] != IMAGE_MAGIC:
+        fail("combined image is missing ARM64 Image magic at offset 0x38")
+    text_offset, image_size, flags = struct.unpack_from("<QQQ", combined, 8)
+    if text_offset != EXPECTED_TEXT_OFFSET:
+        fail(f"ARM64 text_offset is 0x{text_offset:X}, expected 0x{EXPECTED_TEXT_OFFSET:X}")
+    if image_size != len(combined):
+        fail(f"ARM64 image_size is {image_size}, actual length is {len(combined)}")
+    if flags != 0:
+        fail(f"ARM64 Image flags are 0x{flags:X}, expected zero")
+
+    sec = inspect_prepi_sec_entry(fd, fd_base)
+    manifest = {
+        "format": "A205W-BOOTSHIM-FD-STATIC-MANIFEST",
+        "validation_scope": (
+            "static file layout and PrePi SEC TE entry only; no kexec physical "
+            "placement, CPU-state, or runtime UEFI handoff validation"
+        ),
+        "handoff_enabled": False,
+        "fd": {
+            "path": str(FD.relative_to(ROOT)),
+            "base": f"0x{fd_base:08X}",
+            "length_bytes": len(fd),
+            "sha256": sha256(fd),
+        },
+        "bootshim": {
+            "path": str(SHIM.relative_to(ROOT)),
+            "length_bytes": len(shim),
+            "sha256": sha256(shim),
+        },
+        "combined_image": {
+            "path": str(COMBINED.relative_to(ROOT)),
+            "length_bytes": len(combined),
+            "text_offset": f"0x{text_offset:X}",
+            "image_size": image_size,
+            "fd_offset": len(shim),
+            "sha256": sha256(combined),
+        },
+        "prepi_sec": sec,
+    }
+    MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+    MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(manifest, indent=2))
+
+
+if __name__ == "__main__":
+    main()
