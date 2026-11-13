@@ -242,7 +242,7 @@ def main() -> None:
     expected_entry = int(sec["entry_address"], 16)
     entry_sources = {
         ROOT / "BootShim/BootShim.S": r"(?m)^#if SEC_ENTRY != (0x[0-9a-fA-F]+)$",
-        ROOT / "BootShim/Makefile": r"(?m)^SEC_ENTRY\\s*\\?=\\s*(0x[0-9a-fA-F]+)$",
+        ROOT / "BootShim/Makefile": r"(?m)^SEC_ENTRY\s*\?=\s*(0x[0-9a-fA-F]+)$",
         ROOT / "build_bootshim.sh": r"SEC_ENTRY=(0x[0-9a-fA-F]+)",
     }
     for source_path, pattern in entry_sources.items():
