@@ -1,13 +1,10 @@
 /*
  * ARM64 Linux Image wrapper for the SM-A205W Virtual Boot handoff.
- *
- * ENABLE_HANDOFF is forced to 0 by build_bootshim.sh. The enabled branch is
- * compiled separately as a candidate only; it is never packaged or launched.
+ * ENABLE_HANDOFF is forced to 0 by build_bootshim.sh.
  */
 #ifndef ENABLE_HANDOFF
 #define ENABLE_HANDOFF 0
 #endif
-
 #ifndef UEFI_BASE
 #error "UEFI_BASE must be supplied by the build"
 #endif
@@ -17,7 +14,6 @@
 #ifndef SEC_ENTRY
 #error "SEC_ENTRY must be supplied by the build"
 #endif
-
 #if UEFI_BASE != 0x90000000
 #error "Unexpected fixed EDK2 FD base"
 #endif
@@ -36,27 +32,21 @@ _Head:
 	adr	x1, _Payload
 	b	_Start
 
-	/* ARM64 Linux Image header. image_size is finalized after concatenation. */
+	/* ARM64 Linux Image header: exactly 64 bytes. */
 	.quad	0x00080000	/* text_offset */
 	.quad	0		/* image_size */
 	.quad	0		/* flags */
 	.quad	0
 	.quad	0
 	.quad	0
-	.ascii	"ARM\\x64"
+	.ascii	"ARM\x64"
 	.long	0
 
 _Start:
 #if ENABLE_HANDOFF
-	/*
-	 * Candidate path only. The normal build forces ENABLE_HANDOFF=0.
-	 * Keep a private stack in the upper half of the 64 KiB prefix.
-	 * The stack grows down; the FD source starts exactly at its top.
-	 */
+	/* Candidate path only; normal packaged build forces ENABLE_HANDOFF=0. */
 	mov	x9, x1
 	mov	sp, x9
-
-	/* Copy the complete FD to its fixed, reserved physical address. */
 	ldr	x10, =UEFI_BASE
 	ldr	x11, =UEFI_SIZE
 1:
@@ -64,14 +54,10 @@ _Start:
 	stp	x12, x13, [x10], #16
 	subs	x11, x11, #16
 	b.ne	1b
-
-	/* Stores are complete; make the copied SEC instructions executable. */
 	dsb	sy
 	ic	iallu
 	dsb	sy
 	isb
-
-	/* Enter PrePi SEC, not the FD base. */
 	ldr	x16, =SEC_ENTRY
 	br	x16
 #else
@@ -84,11 +70,7 @@ _HandoffBlocked:
 	b	_HandoffBlocked
 
 	.ltorg
-	/*
-	 * The following .org is also the assembler-enforced upper bound:
-	 * assembly fails if code/literals extend beyond the 64 KiB prefix.
-	 */
-	/* 0x8000..0x10000 is the private 32 KiB stack; payload begins at 0x10000. */
+	/* Prefix is fixed at 64 KiB; overflow is an assembly error. */
 	.org	0x10000
 _Payload:
 	/* The 2 MiB EDK2 FD is concatenated here by build.sh. */
