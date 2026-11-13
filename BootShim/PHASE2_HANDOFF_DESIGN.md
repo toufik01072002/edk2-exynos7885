@@ -336,3 +336,29 @@ the TWRP recovery, resolve the final merged memory map, and verify that the
 range is reserved before kexec loads any segments. If it is not reserved,
 the kernel/DTB build must be updated and validated in CI before any handoff
 code is considered. Do not infer safety from the EDK2 memory map alone.
+
+
+### Binary DTB/DTBO inspection update
+
+The binary prebuilt inputs in the A20 device tree were also decoded read-only:
+
+- `prebuilt/recoverydtbo` (295,272 bytes; Git blob
+  `7e179fa149f9aedf759808e6975376103d043531`) is an Android DTBO table
+  with three overlay entries. None of the three entries contains a
+  `0x90000000` FD reservation, a matching `no-map` node, or an FDT
+  memreserve entry for the FD window.
+- `prebuilt/kexec/exynos7885.dtb` (90,300 bytes; Git blob
+  `dd590b86a1b90b4c786947d8ede16de29c698124`) has an FDT memreserve entry
+  only at `0xE0000000` for `0x00D00000`. Its RAM node
+  `0x80000000 + 0x3DA00000` includes the UEFI destination
+  `0x90000000-0x90200000`. Its `reserved-memory` nodes do not reserve
+  that destination.
+- The separately packaged `exynos7885.dtb` is the DTB input copied to
+  `/system/etc/kexec/exynos7885.dtb`; it is not by itself proof of the
+  active recovery kernel's memblock map. The final merged live recovery DTB
+  still needs to be captured or reconstructed from the exact recovery
+  kernel/DTBO pair before concluding whether Linux has reserved the range.
+
+This binary inspection confirms that neither supplied overlay nor the
+packaged kexec DTB independently provides the required UEFI FD reservation.
+The active recovery kernel's final memory map remains a hard precondition.
