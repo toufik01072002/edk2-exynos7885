@@ -184,6 +184,71 @@ jobs:
           print("Added file-scope forward declarations for tune.h stubs")
           PY
 
+      - name: Fix RT scheduler and task_mmu API compatibility
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          nl = chr(10)
+
+          p = Path("kernel-src/kernel/sched/rt.c")
+          s = p.read_text()
+
+          duplicate = nl.join([
+              "static inline struct task_struct *rt_task_of(struct sched_rt_entity *rt_se)",
+              "{",
+              "\treturn container_of(rt_se, struct task_struct, rt);",
+              "}",
+          ])
+          if s.count(duplicate) != 1:
+              raise SystemExit("Expected exactly one duplicate rt_task_of fallback in rt.c")
+          s = s.replace(duplicate + nl + nl, "", 1)
+
+          old_macro = "#define entity_is_task(se)\t(!se->my_q)"
+          new_macro = "#define entity_is_task(se)\trt_entity_is_task(se)"
+          if old_macro in s:
+              s = s.replace(old_macro, new_macro, 1)
+          elif new_macro not in s:
+              raise SystemExit("Unexpected entity_is_task macro in rt.c")
+
+          old_rq = "\tstruct rq *rq = rt_rq->rq;"
+          new_rq = "\tstruct rq *rq = rq_of_rt_rq(rt_rq);"
+          if old_rq in s:
+              s = s.replace(old_rq, new_rq, 1)
+          elif new_rq not in s:
+              raise SystemExit("Unexpected rq lookup in update_rt_rq_load_avg")
+
+          attach = nl.join([
+              "static void attach_task_rt_rq(struct task_struct *p)",
+              "{",
+              "\tstruct sched_rt_entity *rt_se = &p->rt;",
+              "\tstruct rt_rq *rt_rq = rt_rq_of_se(rt_se);",
+              "\tu64 now = rq_clock_task(rq_of_rt_rq(rt_rq));",
+              "",
+              "\tupdate_rt_load_avg(now, rt_se, rt_rq, cpu_of(rq_of_rt_rq(rt_rq)));",
+              "",
+              "\tattach_entity_load_avg(rt_rq, rt_se);",
+              "}",
+          ])
+          guarded_attach = "#ifdef CONFIG_RT_GROUP_SCHED" + nl + attach + nl + "#endif"
+          if attach in s:
+              s = s.replace(attach, guarded_attach, 1)
+          elif guarded_attach not in s:
+              raise SystemExit("Cannot locate attach_task_rt_rq for RT_GROUP_SCHED guard")
+          p.write_text(s)
+          print("Fixed RT scheduler helpers for CONFIG_RT_GROUP_SCHED=n")
+
+          p = Path("kernel-src/fs/proc/task_mmu.c")
+          s = p.read_text()
+          old_call = "split_huge_page_pmd(vma, pmd, addr);"
+          new_call = "split_huge_page_pmd(vma, addr, pmd);"
+          if old_call in s:
+              s = s.replace(old_call, new_call, 1)
+              p.write_text(s)
+          elif new_call not in s:
+              raise SystemExit("Cannot locate split_huge_page_pmd call in task_mmu.c")
+          print("Fixed split_huge_page_pmd argument order")
+          PY
+
       - name: Prepare embedded binaries for out-of-tree build
         run: |
           cd kernel-src
