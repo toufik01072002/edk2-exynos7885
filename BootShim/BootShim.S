@@ -29,4 +29,7 @@ _Disabled:
  */
 .space 244, 0
 
+/* Fixed bundle contract: FD begins at offset 0x10000. */
+.org 0x10000, 0
+
 .size _Head, . - _Head
