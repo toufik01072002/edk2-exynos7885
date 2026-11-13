@@ -7,6 +7,7 @@ validate live /proc/iomem, or authorize a firmware handoff.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 MIB = 0x100000
 KEXEC_ALIGN = 2 * MIB
@@ -32,6 +33,12 @@ STACK_TOP_OFFSET = PREFIX_SIZE
 # The actual kexec -d -l trace must still confirm the selected hole.
 KEXEC_HOLE_CANDIDATE = 0x80000000
 
+BOOTSHIM_BIN = Path(__file__).with_name("BootShim.bin")
+CANDIDATE_BIN = Path(__file__).with_name("BootShim-handoff-candidate.bin")
+BUILD_SCRIPT = Path(__file__).resolve().parents[1] / "build_bootshim.sh"
+MAKEFILE = Path(__file__).with_name("Makefile")
+WFE_OPCODE = bytes.fromhex("5f 20 03 d5")
+
 
 def fail(message: str) -> None:
     raise SystemExit(f"ERROR: {message}")
@@ -46,6 +53,35 @@ def overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
 
 
 def main() -> None:
+    for path in (BOOTSHIM_BIN, CANDIDATE_BIN, BUILD_SCRIPT, MAKEFILE):
+        if not path.is_file():
+            fail(f"required BootShim build output or control file is missing: {path}")
+
+    shim_bytes = BOOTSHIM_BIN.read_bytes()
+    candidate_bytes = CANDIDATE_BIN.read_bytes()
+    if len(shim_bytes) != PREFIX_SIZE:
+        fail(f"packaged BootShim prefix is 0x{len(shim_bytes):X}, expected 0x{PREFIX_SIZE:X}")
+    if len(candidate_bytes) != PREFIX_SIZE:
+        fail(f"handoff candidate prefix is 0x{len(candidate_bytes):X}, expected 0x{PREFIX_SIZE:X}")
+    if WFE_OPCODE not in shim_bytes:
+        fail("packaged BootShim does not contain the WFE safety gate")
+    if "ENABLE_HANDOFF=0" not in BUILD_SCRIPT.read_text(encoding="utf-8"):
+        fail("build_bootshim.sh does not force the packaged handoff path off")
+    if "ENABLE_HANDOFF    ?= 0" not in MAKEFILE.read_text(encoding="utf-8"):
+        fail("Makefile default does not keep handoff disabled")
+
+    # Verify the first instruction after the 64-byte Image header branches
+    # directly to the WFE instruction in the packaged (disabled) image.
+    branch = int.from_bytes(shim_bytes[64:68], "little")
+    if branch & 0xFC000000 != 0x14000000:
+        fail("packaged BootShim entry does not begin with an unconditional safety branch")
+    immediate = branch & 0x03FFFFFF
+    if immediate & (1 << 25):
+        immediate -= 1 << 26
+    blocked_target = 64 + (immediate << 2)
+    if shim_bytes[blocked_target:blocked_target + 4] != WFE_OPCODE:
+        fail("packaged BootShim entry does not branch directly to WFE")
+
     image_size = PREFIX_SIZE + FD_SIZE
     hole_size = TEXT_OFFSET + image_size
     image_start = KEXEC_HOLE_CANDIDATE + TEXT_OFFSET
