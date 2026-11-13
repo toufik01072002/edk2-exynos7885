@@ -175,11 +175,11 @@ jobs:
           p = Path("kernel-src/kernel/sched/tune.h")
           s = p.read_text()
           anchor = "#ifdef CONFIG_FREQVAR_SCHEDTUNE"
-          declarations = "struct cpufreq_policy;\\nstruct freqvar_boost_data;\\n"
+          declarations = "struct cpufreq_policy;" + chr(10) + "struct freqvar_boost_data;"
           if declarations not in s:
               if anchor not in s:
                   raise SystemExit("Cannot locate CONFIG_FREQVAR_SCHEDTUNE in tune.h")
-              s = s.replace(anchor, declarations + "\\n" + anchor, 1)
+              s = s.replace(anchor, declarations + chr(10) + chr(10) + anchor, 1)
               p.write_text(s)
           print("Added file-scope forward declarations for tune.h stubs")
           PY
