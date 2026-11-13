@@ -16,6 +16,14 @@ The Phase 1 kernel, DTB, initramfs and bundle build passed in GitHub Actions run
 - `EXYNOS7885Pkg/EXYNOS7885Pkg.fdf` defines an EDK2 FD at base 0x90000000 with size 0x00200000. `DeviceMemoryMap.h` reserves the same 2 MiB as `BootShim/FD`, and the Virtual Boot DTB marks that range no-map.
 - The selected kernel branch's `arch/arm64/kernel/machine_kexec.c` includes a guard that BUGs if more than one CPU is online for a normal kexec. SMP shutdown requirements must therefore be resolved explicitly before any launch attempt.
 
+## Phase 2 progress (2026-11-13)
+
+- The FD packaging gate is integrated in CI and passed in EDK2 build run 19.
+- The BootShim now emits the 64-byte ARM64 Image header with a provisional, protocol-valid 0x80000 text offset; the finalizer writes image_size to the complete concatenated BootShim+FD length.
+- CI checks the ARM64 magic, text_offset, image_size, flags, FD window and exact concatenation.
+- The current assembly deliberately stops in a WFE loop. It does not copy the FD or branch to 0x90000000. This is an intentional safety gate until the EDK2 entry point and complete handoff ABI are established.
+- These checks are static/package validation only. They do not yet prove the image can be loaded by the target kernel's kexec path.
+
 ## Phase 2 work sequence
 
 ### 2.1 Define and validate the firmware input
