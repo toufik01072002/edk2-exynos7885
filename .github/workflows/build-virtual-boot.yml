@@ -374,6 +374,7 @@ jobs:
           	}
           }
           """
+          replacement = replacement.replace(chr(92) * 2, chr(92))
           p.write_text(s[:start] + replacement + s[end:])
           print("Removed 1.25 KiB stack buffers from dump_batcher_register")
           PY
