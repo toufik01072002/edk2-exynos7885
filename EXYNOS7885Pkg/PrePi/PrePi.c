@@ -175,8 +175,10 @@ CEntryPoint (
   // Enable Instruction Caches on all cores.
   ArmEnableInstructionCache ();
 
-  // Wait the Primary core has defined the address of the Global Variable region (event: ARM_CPU_EVENT_DEFAULT)
-  ArmCallWFE ();
+  // A single-core target has no secondary core to signal this event.
+  if (FixedPcdGet32 (PcdCoreCount) > 1) {
+    ArmCallWFE ();
+  }
 
   PrePiMain (UefiMemoryBase, StacksBase, StartTimeStamp);
 
