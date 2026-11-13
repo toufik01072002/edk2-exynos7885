@@ -20,7 +20,7 @@
 #if UEFI_SIZE != 0x00200000
 #error "Unexpected EDK2 FD size"
 #endif
-#if SEC_ENTRY != 0x90008280
+#if SEC_ENTRY != 0x90008278
 #error "Unexpected PrePi SEC entry"
 #endif
 #if (UEFI_SIZE % 16) != 0
