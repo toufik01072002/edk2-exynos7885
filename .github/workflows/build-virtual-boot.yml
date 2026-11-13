@@ -388,13 +388,13 @@ jobs:
           p = Path("kernel-src/drivers/mmc/host/sdhci.c")
           s = p.read_text()
           s, count = re.subn(
-              r"static int sdhci_cmdq_crypto_cfg\\(struct mmc_host \\*mmc,\\s*"
-              r"struct mmc_request \\*mrq, u32 slot\\)\\s*\\{.*?\\n\\}\\n",
+              r"static int sdhci_cmdq_crypto_cfg\(struct mmc_host \*mmc,\s*"
+              r"struct mmc_request \*mrq, u32 slot\)\s*\{.*?\n\}\n",
               "", s, flags=re.S)
           if count != 2:
               raise SystemExit("Expected two obsolete sdhci_cmdq_crypto_cfg stubs, found %d" % count)
           s, ops_count = re.subn(
-              r"^\\s*\\.crypto_cfg\\s*=\\s*sdhci_cmdq_crypto_cfg,\\s*\\n",
+              r"^\s*\.crypto_cfg\s*=\s*sdhci_cmdq_crypto_cfg,\s*\n",
               "", s, flags=re.M)
           if ops_count != 1:
               raise SystemExit("Expected one obsolete CMDQ crypto_cfg ops entry, found %d" % ops_count)
