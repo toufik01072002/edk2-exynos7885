@@ -54,6 +54,11 @@ jobs:
           ./firstrun.sh
           ./build.sh
 
+      - name: Verifier garde WFE mono-coeur
+        working-directory: edk2-exynos7885
+        run: |
+          python3 BootShim/test_single_core_wfe.py
+
       - name: Verifier le placement physique de reference
         working-directory: edk2-exynos7885
         run: |
