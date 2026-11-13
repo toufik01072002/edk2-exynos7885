@@ -379,6 +379,91 @@ jobs:
           print("Removed 1.25 KiB stack buffers from dump_batcher_register")
           PY
 
+      - name: Fix MMC CMDQ and Exynos trace compile compatibility
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("kernel-src/drivers/mmc/host/sdhci.c")
+          s = p.read_text()
+          s, count = re.subn(
+              r"static int sdhci_cmdq_crypto_cfg\\(struct mmc_host \\*mmc,\\s*"
+              r"struct mmc_request \\*mrq, u32 slot\\)\\s*\\{.*?\\n\\}\\n",
+              "", s, flags=re.S)
+          if count != 2:
+              raise SystemExit("Expected two obsolete sdhci_cmdq_crypto_cfg stubs, found %d" % count)
+          s = s.replace("\\t.crypto_cfg\\t= sdhci_cmdq_crypto_cfg,\\n", "")
+          if "sdhci_cmdq_crypto_cfg" in s or ".crypto_cfg" in s:
+              raise SystemExit("Obsolete CMDQ crypto callback remains")
+          p.write_text(s)
+          print("Removed stale CMDQ crypto callback incompatible with cmdq_host_ops")
+
+          p = Path("kernel-src/drivers/trace/exynos7885-itmon.c")
+          s = p.read_text()
+          old = """static void itmon_switch_scandump(void)
+          {
+          	unsigned int val;
+          	int ret;
+
+          	ret = exynos_pmu_read(EXYNOS_PMU_BURNIN_CTRL, &val);
+          	ret = exynos_pmu_write(EXYNOS_PMU_BURNIN_CTRL, val | BIT_ENABLE_DBGSEL_WDTRESET);
+          	s3c2410wdt_set_emergency_reset(5);
+          }"""
+          new = """static void itmon_switch_scandump(void)
+          {
+          	unsigned int val = 0;
+          	int ret;
+
+          	ret = exynos_pmu_read(EXYNOS_PMU_BURNIN_CTRL, &val);
+          	if (ret) {
+          		pr_err("%s: failed to read PMU burn-in control: %d\\n",
+          		       __func__, ret);
+          		return;
+          	}
+
+          	ret = exynos_pmu_write(EXYNOS_PMU_BURNIN_CTRL,
+          				val | BIT_ENABLE_DBGSEL_WDTRESET);
+          	if (ret)
+          		pr_err("%s: failed to write PMU burn-in control: %d\\n",
+          		       __func__, ret);
+
+          	s3c2410wdt_set_emergency_reset(5);
+          }"""
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif new not in s:
+              raise SystemExit("Unexpected itmon_switch_scandump implementation")
+          p.write_text(s)
+          print("Checked PMU read result before using the register value")
+
+          p = Path("kernel-src/drivers/trace/exynos-ss.c")
+          s = p.read_text()
+          old = """#ifdef CONFIG_SEC_EXT
+          #include <linux/sec_ext.h>
+          #ifdef CONFIG_SEC_DEBUG
+          #include <linux/sec_debug.h>
+          #include <linux/sec_debug_hard_reset_hook.h>
+          #endif /* CONFIG_SEC_DEBUG */
+          #endif /* CONFIG_SEC_EXT */"""
+          new = """#ifdef CONFIG_SEC_DEBUG
+          #include <linux/sec_debug.h>
+          #endif /* CONFIG_SEC_DEBUG */
+
+          #ifdef CONFIG_SEC_EXT
+          #include <linux/sec_ext.h>
+          #ifdef CONFIG_SEC_DEBUG
+          #include <linux/sec_debug_hard_reset_hook.h>
+          #endif /* CONFIG_SEC_DEBUG */
+          #endif /* CONFIG_SEC_EXT */"""
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif new not in s:
+              raise SystemExit("Unexpected sec_debug include guards in exynos-ss.c")
+          p.write_text(s)
+          print("Made sec_debug declarations visible whenever CONFIG_SEC_DEBUG is enabled")
+          PY
+
       - name: Prepare embedded binaries for out-of-tree build
         run: |
           cd kernel-src
