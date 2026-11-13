@@ -50,6 +50,7 @@ The entry chain is:
 The BootShim now reserves an 8 KiB stack inside its own 64 KiB image:
 
 - stack bottom: image-relative offset `0xE000`;
+- stack size: `0x2000` bytes (8 KiB);
 - stack top: image-relative offset `0x10000`;
 - FD start: bundle-relative offset `0x10000`.
 
