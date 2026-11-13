@@ -208,3 +208,93 @@ relocatable EDK2 SEC image. Add a CI test for the chosen address equation.
 
 Until that is resolved, the SEC entry address `0x90008280` is an artifact
 address only. The WFE handoff gate must remain in place.
+
+
+## Exact TWRP kexec-tools loader audit (2026-11-13)
+
+The userspace kexec implementation is now identified from the device-tree build
+workflow and the exact upstream source used by that workflow.
+
+### TWRP packaging evidence
+
+- Device-tree repository:
+  `toufik01072002/android_device_samsung_a20`, branch `android-11`,
+  audited head `d3d504eb42df66653d38bfc7e0da6b64e4c3932f`.
+- Build workflow: `.github/workflows/twrp-a20-build.yml`.
+- The workflow downloads the official `kexec-tools-2.0.32.tar.xz`, builds
+  for AArch64 Android with NDK `27.2.12479018`, and installs the binary as
+  `prebuilt/kexec/kexec`.
+- `device.mk` copies that binary to `/system/bin/kexec` in the recovery
+  ramdisk. The same packaging rule installs
+  `prebuilt/kexec/exynos7885.dtb` at
+  `/system/etc/kexec/exynos7885.dtb`.
+- The exact upstream release tag resolves to commit
+  `15d78e5799eea7ec5ea9c5897ae95aaa0ce8970c`
+  (`horms/kexec-tools`, tag `v2.0.32`).
+- Modified recovery repository:
+  `toufik01072002/android_bootable_recovery`, branch `edk2-integration`,
+  audited head `8074981c47302e56ccdddeab68bd7a013317b803`.
+  Its `apply_edk2_ui.py` currently adds an explicitly disabled status page;
+  that script does not execute `/system/bin/kexec`. The actual launcher
+  command and argument list therefore remain unimplemented/unverified.
+
+### Exact ARM64 Image loader behavior in v2.0.32
+
+Reviewed from the release-tagged sources:
+
+- `kexec/arch/arm64/kexec-arm64.c`:
+  `arm64_process_image_header()` reads `text_offset` and `image_size`
+  from the 64-byte ARM64 Image header when `image_size` is nonzero.
+- `arm64_locate_kernel_segment()` asks `locate_hole()` for a region of
+  `text_offset + image_size`, with `MiB(2)` alignment.
+- `kexec/arch/arm64/kexec-image-arm64.c` then loads the image segment at
+  `kernel_segment + text_offset`, with `image_size` as the segment memory
+  size.
+- `kexec/kexec.c` defaults to trying `kexec_file_load` first and allows
+  fallback. When the file syscall is unavailable (including `ENOSYS`), it
+  falls back to the userspace image loader and legacy `kexec_load`.
+  The explicit `--kexec-file-syscall` option disables that fallback.
+- The reviewed A205W kernel branch
+  `Kernel_SM-A205W:kexec-arm64-4.4-d-work` does not implement the ARM64
+  `kexec_file_load` path, so the expected compatible route is the
+  kexec-tools userspace ARM64 loader followed by legacy `kexec_load`.
+  The exact runtime command still must not be assumed until the launcher is
+  implemented and its arguments are reviewed.
+
+### Confirmed placement equation and consequence
+
+For the current BootShim package:
+
+- `text_offset = 0x80000`.
+- The FD begins at byte offset `0x50` in the combined image.
+- The legacy userspace loader places the combined image at
+  `aligned_2MiB_hole + text_offset`.
+- Therefore the FD begins at
+  `aligned_2MiB_hole + 0x80050`, not at the EDK2 linked base
+  `0x90000000`.
+
+Because the selected hole is 2 MiB aligned, this loader cannot place the
+current FD directly at `0x90000000`. This confirms the physical-placement
+blocker from the prior section using the exact TWRP kexec-tools release rather
+than only upstream development-branch code.
+
+No assembly handoff change is authorized by this finding. Keep the WFE gate.
+The next implementation decision must be one of: a fixed-address segment
+loader, a carefully bounded copy/relocation of the FD into
+`0x90000000-0x90200000` after proving that destination is reserved and does
+not overlap live memory, or a genuinely relocatable EDK2 SEC build. The
+chosen strategy needs a CI address-equation test before any branch-to-firmware
+code is enabled.
+
+### Source references
+
+- Device build workflow:
+  https://github.com/toufik01072002/android_device_samsung_a20/blob/d3d504eb42df66653d38bfc7e0da6b64e4c3932f/.github/workflows/twrp-a20-build.yml
+- Recovery launcher integration:
+  https://github.com/toufik01072002/android_bootable_recovery/blob/8074981c47302e56ccdddeab68bd7a013317b803/apply_edk2_ui.py
+- kexec-tools ARM64 loader:
+  https://github.com/horms/kexec-tools/blob/15d78e5799eea7ec5ea9c5897ae95aaa0ce8970c/kexec/arch/arm64/kexec-arm64.c
+- kexec-tools ARM64 Image segment:
+  https://github.com/horms/kexec-tools/blob/15d78e5799eea7ec5ea9c5897ae95aaa0ce8970c/kexec/arch/arm64/kexec-image-arm64.c
+- kexec-tools syscall selection/fallback:
+  https://github.com/horms/kexec-tools/blob/15d78e5799eea7ec5ea9c5897ae95aaa0ce8970c/kexec/kexec.c
