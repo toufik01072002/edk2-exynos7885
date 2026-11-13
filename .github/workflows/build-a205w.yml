@@ -78,15 +78,17 @@ jobs:
           python3 BootShim/validate_fd_bundle.py
           test -s workspace/phase2-fd-manifest.json
 
-      - name: Preparer les images a flasher
+      - name: Preparer les artefacts EDK2
         working-directory: edk2-exynos7885/workspace
         run: |
-          ls -l
-          cp boot.img recovery.img
-          tar -c recovery.img -f recovery.tar
-          ls -l
+          set -euo pipefail
+          test -s UEFI
+          test -s boot.img
+          test -s boot.tar
+          echo "===== EDK2 artifacts only ====="
+          ls -lh UEFI boot.img boot.tar phase2-fd-manifest.json
 
-      - name: Publier les fichiers
+      - name: Publier les fichiers EDK2
         uses: actions/upload-artifact@v4
         with:
           name: a205w-edk2
@@ -96,5 +98,3 @@ jobs:
             edk2-exynos7885/workspace/boot.img
             edk2-exynos7885/workspace/boot.tar
             edk2-exynos7885/workspace/phase2-fd-manifest.json
-            edk2-exynos7885/workspace/recovery.img
-            edk2-exynos7885/workspace/recovery.tar
