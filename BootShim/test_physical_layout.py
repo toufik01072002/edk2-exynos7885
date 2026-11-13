@@ -20,7 +20,7 @@ RAM_RANGES = (RAM0_LOW, RAM0_MID)
 
 FD_BASE = FD_RANGE[0]
 FD_SIZE = FD_RANGE[1] - FD_RANGE[0]
-SEC_ENTRY = 0x90008280
+SEC_ENTRY = 0x90008278
 SEC_ENTRY_OFFSET = SEC_ENTRY - FD_BASE
 
 # Reserve a 64 KiB prefix for position-independent BootShim code and stack.
