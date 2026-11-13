@@ -39,6 +39,7 @@ _StackFault:
 
 /*
  * Reserve an 8 KiB writable stack in the tail of the 64 KiB BootShim.
+ * Exact reservation size: 0x2000 bytes (from 0xE000 through 0xFFFF).
  * Stack grows downward from _BootShimStackTop. The FD begins immediately
  * after the top boundary at bundle offset 0x10000.
  */
