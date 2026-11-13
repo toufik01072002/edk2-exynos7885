@@ -208,3 +208,50 @@ relocatable EDK2 SEC image. Add a CI test for the chosen address equation.
 
 Until that is resolved, the SEC entry address `0x90008280` is an artifact
 address only. The WFE handoff gate must remain in place.
+
+
+## TWRP kexec binary evidence (2026-11-13)
+
+The TWRP workflow source and successful build run 26 were inspected:
+
+- TWRP device repository: `toufik01072002/android_device_samsung_a20`, branch
+  `android-11`, commit `d3d504eb42df66653d38bfc7e0da6b64e4c3932f`.
+- `.github/workflows/twrp-a20-build.yml` downloads the upstream
+  `kexec-tools-2.0.32.tar.xz` release from kernel.org and builds it for
+  Android ARM64 with Android NDK `27.2.12479018`, Clang target
+  `aarch64-linux-android24`, and PIE flags.
+- Successful TWRP run 26 (run ID `43109123257`) produced
+  `prebuilt/kexec/kexec` as a stripped, dynamically linked AArch64 ELF PIE
+  using interpreter `/system/bin/linker64`.
+- The exact binary SHA-256 printed by that run was
+  `a1d11d8be9caad87dfd5289588468470ab3cff9a6c71f73f53b4ca22abca018d`.
+- The build log confirms the binary was copied into
+  `out/target/product/a20/recovery/root/system/bin/kexec`; the device
+  `device.mk` maps the generated prebuilt into `/system/bin/kexec`.
+  The binary is generated during CI and is not committed in the device
+  repository tree.
+- The workflow verifies only that the ELF is AArch64 and executable. It
+  does not record `kexec --version`, the upstream tarball checksum, or a
+  reproducible source commit. The actual runtime command line and loader
+  mode used for EDK2 are not implemented or verified.
+- The recovery UI integration currently adds an explicitly disabled
+  “EDK2 Launcher (not enabled)” status page. It does not invoke kexec.
+
+This closes the question of which kexec-tools release the successful TWRP
+build generated, but does **not** establish the exact runtime loader behavior
+of the installed binary or prove that it can place the current combined
+BootShim+FD image at the required physical addresses.
+
+### Next required work before any handoff code
+
+1. Audit the ARM64 loader implementation in the exact kexec-tools 2.0.32
+   source release used by CI, including image segment placement, DTB handling,
+   and all relevant `kexec -l` options.
+2. Add a pinned SHA-256 check for the upstream source tarball and emit
+   `kexec --version`, ELF interpreter, build flags, and binary SHA-256 into
+   the TWRP CI evidence.
+3. Define a supported, testable way to provide the DTB and required handoff
+   metadata to the BootShim; do not rely on incoming x0-x3.
+4. Resolve the 2 MiB physical-placement mismatch between the 80-byte
+   BootShim prefix and the fixed-linked FD at `0x90000000`.
+5. Keep the WFE gate and disabled TWRP UI until these checks are complete.
