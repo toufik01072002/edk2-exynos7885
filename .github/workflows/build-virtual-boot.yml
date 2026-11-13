@@ -137,38 +137,35 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          # The selected kernel branch contains a duplicated return type.
           p = Path("kernel-src/include/linux/nmi.h")
           s = p.read_text()
           bad = "static inline void void sl_softirq_entry(const char *, void *) { }"
           good = "static inline void sl_softirq_entry(const char *, void *) { }"
           if bad in s:
-              s = s.replace(bad, good, 1)
-              p.write_text(s)
+              p.write_text(s.replace(bad, good, 1))
               print("Fixed duplicated void in nmi.h")
-          elif good not in s:
-              raise SystemExit("Unexpected nmi.h sl_softirq_entry declaration")
-          else:
+          elif good in s:
               print("nmi.h declaration already valid")
+          else:
+              raise SystemExit("Unexpected nmi.h sl_softirq_entry declaration")
 
-          # Without RT_GROUP_SCHED, sched_rt_entity has no my_q member.
-          # In that configuration every RT entity represents a task.
           p = Path("kernel-src/kernel/sched/sched.h")
           s = p.read_text()
           bad = "#define rt_entity_is_task(rt_se) (!(rt_se)->my_q)"
-          good = ("#ifdef CONFIG_RT_GROUP_SCHED" + chr(10)
-                  "#define rt_entity_is_task(rt_se) (!(rt_se)->my_q)" + chr(10)
-                  "#else" + chr(10)
-                  "#define rt_entity_is_task(rt_se) (1)" + chr(10)
-                  "#endif")
+          good = "\\n".join([
+              "#ifdef CONFIG_RT_GROUP_SCHED",
+              "#define rt_entity_is_task(rt_se) (!(rt_se)->my_q)",
+              "#else",
+              "#define rt_entity_is_task(rt_se) (1)",
+              "#endif",
+          ])
           if bad in s:
-              s = s.replace(bad, good, 1)
-              p.write_text(s)
+              p.write_text(s.replace(bad, good, 1))
               print("Guarded rt_entity_is_task for non-group RT scheduling")
-          elif good not in s:
-              raise SystemExit("Unexpected rt_entity_is_task definition")
-          else:
+          elif good in s:
               print("rt_entity_is_task compatibility guard already present")
+          else:
+              raise SystemExit("Unexpected rt_entity_is_task definition")
           PY
 
       - name: Prepare embedded binaries for out-of-tree build
