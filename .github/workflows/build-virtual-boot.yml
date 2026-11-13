@@ -25,7 +25,7 @@ jobs:
     outputs:
       kernel_sha256: ${{ steps.hash_kernel.outputs.sha256 }}
       dtb_sha256: ${{ steps.hash_dtb.outputs.sha256 }}
-      kernel_commit: ${{ steps.verify_commit.outputs.commit }}
+      kernel_commit: ${{ steps.clone_kernel.outputs.commit }}
     steps:
       - name: Checkout Virtual Boot project
         uses: actions/checkout@v4
@@ -54,6 +54,7 @@ jobs:
           "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc" --version
 
       - name: Clone Kernel_SM-A205W (correct branch)
+        id: clone_kernel
         env:
           KERNEL_REF: ${{ github.event.inputs.kernel_ref }}
           EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit }}
@@ -121,9 +122,15 @@ jobs:
         run: |
           mkdir -p virtual-boot-output
           sudo apt-get update && sudo apt-get install -y device-tree-compiler
-          dtc -O dtb -o virtual-boot-output/exynos7885-a205w-virtual.dtb \
-            -I dts \
-            virtual-boot-project/virtual-boot/dtb/exynos7885-a205w-virtual.dts
+          cpp -nostdinc \
+            -I "$GITHUB_WORKSPACE/kernel-src/include" \
+            -I "$GITHUB_WORKSPACE/kernel-src/arch/arm64/boot/dts" \
+            -undef -D__DTS__ -x assembler-with-cpp \
+            virtual-boot-project/virtual-boot/dtb/exynos7885-a205w-virtual.dts \
+            > /tmp/exynos7885-a205w-virtual.pp.dts
+          dtc -Wno-unit_address_vs_reg -I dts -O dtb \
+            -o virtual-boot-output/exynos7885-a205w-virtual.dtb \
+            /tmp/exynos7885-a205w-virtual.pp.dts
           echo "Virtual Boot DTB size: $(wc -c < virtual-boot-output/exynos7885-a205w-virtual.dtb) bytes"
 
       - name: Verify kernel and DTB artifacts
@@ -377,10 +384,10 @@ jobs:
           name: virtual-boot-kernel
           path: kernel-artifacts
 
-      - name: Install libfdt Python bindings
+      - name: Install DTB validation tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-libfdt
+          sudo apt-get install -y device-tree-compiler
 
       - name: Run binary DTB validation
         run: |
@@ -502,7 +509,7 @@ jobs:
               "note": "Phase 1 only - trampoline not assigned"
             },
             "validation": {
-              "dtb_memory_map": "PASSED - binary DTB validated via libfdt",
+              "dtb_memory_map": "PASSED - binary FDT validated with fdtget",
               "dtb_source_authentic": "YES - built from Samsung DTS/DTBO chain",
               "dtb_validation_method": "libfdt-based binary DTB parsing"
             }
