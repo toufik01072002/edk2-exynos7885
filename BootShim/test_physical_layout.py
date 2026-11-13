@@ -124,7 +124,7 @@ def main() -> None:
         fail("FD destination does not match the reserved 2 MiB window")
     if not FD_BASE <= SEC_ENTRY < FD_BASE + FD_SIZE:
         fail("SEC entry is outside the FD")
-    if SEC_ENTRY_OFFSET != 0x8280:
+    if SEC_ENTRY_OFFSET != 0x8278:
         fail(f"unexpected SEC entry offset: 0x{SEC_ENTRY_OFFSET:X}")
 
     # Reject the earlier direct-placement proposal: a 0x180000 prefix makes
