@@ -7,6 +7,14 @@ on:
         description: "Tag ou branche EDK2 (vide = branche par defaut)"
         required: false
         default: ""
+  pull_request:
+    branches: [main]
+    paths:
+      - "EXYNOS7885Pkg/**"
+      - "BootShim/**"
+      - "build*.sh"
+      - "firstrun.sh"
+      - ".github/workflows/build-a205w.yml"
   push:
     branches: [main]
     paths:
