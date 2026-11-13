@@ -49,22 +49,25 @@ Trampoline:       NOT ASSIGNED (Phase 2)
 - CMA crypto: 0x8BB800000-0x8BD800000
 - CMA video_frame: 0x8BD800000-0x8C0000000
 
-## Loading from TWRP (kexec) - Phase 1
-```bash
-# In TWRP recovery shell:
-kexec -l /sdcard/virtual-boot/Image \
-  --initrd=/sdcard/virtual-boot/initramfs.cpio.gz \
-  --dtb=/sdcard/virtual-boot/exynos7885-a205w-virtual.dtb \
-  --command-line="console=ttySAC2,115200 earlycon=exynos4210_serial,0x13820000 rootwait ro clk_ignore_unused"
-kexec -e
-```
+## Loading from TWRP (kexec) - NOT ENABLED
 
-## Boot Flow (Phase 1)
-1. TWRP loads Virtual Boot kernel + initramfs + DTB via kexec
-2. Virtual Boot kernel boots, mounts initramfs
-3. init script runs diagnostics, shows hardware info
-4. User can run `hwinfo`, inspect `/proc/*`, `/sys/*`
-5. **Phase 2 will add**: Automated UEFI handoff via trampoline
+**Do not execute a kexec load or execute command on the SM-A205W yet.**
+The example below was removed because the Phase 1 bundle is diagnostic-only and
+the end-to-end runtime path has not been validated.
+
+Outstanding blockers for a safe launch:
+
+- The exact physical placement of the combined BootShim + FD image is unresolved.
+- The target kernel's ordinary kexec path clears x0-x3 before branching; the
+  incoming FDT pointer therefore cannot be assumed to reach BootShim.
+- The EDK2 SEC entry address and its required execution state are known from
+  static artifact inspection, but have not been executed on hardware.
+- The target kernel requires secondary CPUs to be quiesced for ordinary kexec.
+- DMA-capable devices must be quiesced before ownership of memory is transferred.
+
+The TWRP “Démarrer EDK2” action must remain disabled until these blockers have
+a reviewed implementation and validation evidence. CI packaging success is
+not runtime boot evidence.
 
 ## Available Commands in initramfs
 - `hwinfo` - Display hardware information (CPU, memory, DTB, kernel cmdline)
