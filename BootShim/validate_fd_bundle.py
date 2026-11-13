@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 import subprocess
+import struct
 import sys
 from pathlib import Path
 
@@ -75,13 +76,25 @@ def main() -> None:
     if suffix_hash != sha256(FD):
         fail("combined image does not contain the exact FD bytes after BootShim.bin")
 
+    with COMBINED.open("rb") as stream:
+        header = stream.read(64)
+    if len(header) != 64 or header[56:60] != b"ARM\\x64":
+        fail("combined image does not have a valid ARM64 Image magic/header")
+    text_offset, image_size = struct.unpack_from("<QQ", header, 8)
+    if text_offset != 0x80000:
+        fail(f"ARM64 Image text_offset is 0x{text_offset:x}, expected 0x80000")
+    if image_size != combined_size:
+        fail(f"ARM64 Image image_size is {image_size}, expected {combined_size}")
+    if header[24:32] != b"\\x00" * 8:
+        fail("ARM64 Image flags are not the expected zero/default encoding")
+
     edk2_dir = ROOT.parent / "edk2"
     if not edk2_dir.is_dir():
         fail("EDK2 checkout directory not found beside project")
     manifest = {
         "format": "SM-A205W-UEFI-PACKAGING",
         "format_version": 1,
-        "validation_scope": "FD size/base and exact BootShim+FD concatenation only",
+        "validation_scope": "FD size/base, exact concatenation, and ARM64 Image header only; no handoff validation",
         "fd": {
             "path": str(FD.relative_to(ROOT)),
             "base_address": f"0x{base:08X}",
