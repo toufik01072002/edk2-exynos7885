@@ -61,6 +61,7 @@ jobs:
           sha256sum -c SHA256SUMS
           python3 ../tools/verify_bundle.py
           python3 ../BootShim/validate_prepi_entry.py
+          python3 ../BootShim/test_prepi_entry_abi.py
           test -s UEFI
 
       - name: Publier les fichiers
