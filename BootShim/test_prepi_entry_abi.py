@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Check the built PrePi SEC entry's initial-stack and CPU-state contract.
+"""Check the built PrePi SEC entry and BootShim's fail-closed stack setup.
 
-This is a static source/build test. It does not validate live EL, MMU, cache,
-DMA, or kexec state and must never be used to enable the firmware branch.
+Static source/build checks only. They do not validate live EL, MMU, cache,
+DMA, physical placement, or a runtime UEFI handoff.
 """
 from __future__ import annotations
 
@@ -17,6 +17,10 @@ INF = ROOT / "EXYNOS7885Pkg/PrePi/PrePi.inf"
 SHIM = ROOT / "BootShim/BootShim.S"
 MANIFEST = ROOT / "workspace/UEFI.sec-manifest.json"
 ABI_DOC = ROOT / "virtual-boot/docs/ARM64_SEC_ENTRY_ABI.md"
+
+STACK_BOTTOM = 0xE000
+STACK_SIZE = 0x2000
+SHIM_SIZE = 0x10000
 
 
 def require(condition: bool, message: str) -> None:
@@ -36,10 +40,10 @@ def main() -> None:
     abi_doc = ABI_DOC.read_text(encoding="utf-8")
 
     early_call = re.search(r"(?im)^\s*bl\s+ASM_PFX\(ArmPlatformPeiBootAction\)", asm)
-    stack_install = re.search(r"(?im)^\s*mov\s+sp,\s*x1\s*$", asm)
+    prepi_stack = re.search(r"(?im)^\s*mov\s+sp,\s*x1\s*$", asm)
     require(early_call is not None, "SEC entry no longer calls ArmPlatformPeiBootAction")
-    require(stack_install is not None, "PrePi's own stack installation was not found")
-    require(early_call.start() < stack_install.start(),
+    require(prepi_stack is not None, "PrePi's own stack installation was not found")
+    require(early_call.start() < prepi_stack.start(),
             "entry ordering changed: review the initial-stack ABI before updating this test")
     require("PcdSystemMemoryUefiRegionSize" in asm and "PcdFdBaseAddress" in asm,
             "PrePi stack placement no longer derives from the configured FD/memory layout")
@@ -54,21 +58,42 @@ def main() -> None:
             "secondary-core WFE is no longer guarded by PcdCoreCount > 1")
     require(re.search(r"MODULE_TYPE\s*=\s*SEC", inf, re.IGNORECASE),
             "PrePi module is no longer typed as SEC")
-    require(re.search(r"(?m)^\s*_Head:\s*$", shim) and "_Disabled" in shim
-            and re.search(r"(?im)^\s*wfe\s*$", shim),
-            "BootShim is not the expected disabled WFE stub")
+
+    require(re.search(r"(?m)^\s*_Head:\s*$", shim) is not None,
+            "BootShim entry label is missing")
+    require(re.search(r"(?m)^\s*adr\s+x9,\s*_BootShimStackTop\s*$", shim) is not None,
+            "BootShim does not derive its private stack position-independently")
+    require(re.search(r"(?m)^\s*mov\s+sp,\s*x9\s*$", shim) is not None,
+            "BootShim does not install its private stack")
+    require(re.search(r"(?m)^\s*and\s+x10,\s*x9,\s*#0xF\s*$", shim) is not None
+            and re.search(r"(?m)^\s*cbnz\s+x10,\s*_StackFault\s*$", shim) is not None,
+            "BootShim does not fail closed on a misaligned stack")
+    require(re.search(r"(?m)^\.org\s+0xE000,\s*0\s*$", shim) is not None
+            and re.search(r"(?m)^\.space\s+0x2000,\s*0\s*$", shim) is not None
+            and re.search(r"(?m)^_BootShimStackBottom:\s*$", shim) is not None
+            and re.search(r"(?m)^_BootShimStackTop:\s*$", shim) is not None,
+            "BootShim's reserved 8 KiB stack region or its fixed offsets changed")
+    stack_setup = shim.index("mov     sp, x9")
+    first_wait = shim.index("wfe")
+    require(stack_setup < first_wait, "BootShim must install SP before entering its WFE guard")
     require(not re.search(r"(?im)^\s*br\s+x\d+", shim),
             "active register-indirect branch detected in BootShim")
+    require(not re.search(r"(?im)^\s*blr\s+x\d+", shim),
+            "active register-indirect call detected in BootShim")
+    require(f"0x{STACK_BOTTOM:X}" in abi_doc and f"0x{STACK_SIZE:X}" in abi_doc,
+            "SEC ABI document does not describe the reserved BootShim stack")
+    require(SHIM_SIZE == STACK_BOTTOM + STACK_SIZE,
+            "internal stack layout constants do not fill the 64 KiB BootShim")
     require(manifest.get("handoff_enabled") is False,
             "SEC manifest must keep handoff_enabled=false")
 
-    print("PASS: PrePi's first platform call occurs before its own stack setup")
-    print("PASS: initial writable, mapped, 16-byte-aligned stack is a mandatory entry precondition")
+    print("PASS: PrePi calls ArmPlatformPeiBootAction before installing its own stack")
+    print("PASS: BootShim installs a position-independent, 16-byte-checked 8 KiB stack")
+    print("PASS: private stack occupies BootShim offsets 0xE000-0x10000; FD starts at 0x10000")
     print("PASS: PrePi CEntryPoint argument and cache-init sequence are present")
     print("PASS: secondary-core WFE remains multi-core gated")
-    print("PASS: pinned recovery kexec ABI records zeroed entry registers and inherited SP")
-    print("PASS: BootShim remains fail-closed; handoff_enabled=false")
-    print("LIMIT: live EL/MMU/cache/register/DMA state is not proven by this static test")
+    print("PASS: BootShim remains fail-closed; no SEC branch; handoff_enabled=false")
+    print("LIMIT: live EL/MMU/cache/register/DMA state and physical reservation are not proven")
 
 
 if __name__ == "__main__":
