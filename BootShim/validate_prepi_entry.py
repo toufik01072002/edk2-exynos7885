@@ -212,7 +212,7 @@ def main() -> None:
     csrc = (ROOT / "EXYNOS7885Pkg/PrePi/PrePi.c").read_text(encoding="utf-8")
     if not re.search(r"(?m)^\\s*MODULE_TYPE\\s*=\\s*SEC\\s*$", inf): fail("PrePi.inf is not MODULE_TYPE = SEC")
     if "_ModuleEntryPoint" not in asm or "CEntryPoint" not in asm: fail("SEC assembly entry chain is incomplete")
-    if not re.search(r"(?m)^CEntryPoint\\s*\\(", csrc): fail("PrePi.c does not define CEntryPoint")
+    if not re.search(r"\\bCEntryPoint\\s*\\(", csrc): fail("PrePi.c does not define CEntryPoint")
     shim, combined = SHIM.read_bytes(), COMBINED.read_bytes()
     if len(shim) != 0x10000: fail("BootShim must be exactly 64 KiB")
     if combined[:len(shim)] != shim: fail("BootShim prefix mismatch")
