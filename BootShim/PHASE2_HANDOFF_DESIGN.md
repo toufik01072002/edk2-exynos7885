@@ -128,3 +128,83 @@ Reviewed directly from `toufik01072002/Kernel_SM-A205W`, branch
    host-side harness. Do not infer this from the kernel's
    `machine_kexec_prepare()` because that function does not parse the
    Image header.
+
+## PrePi entry contract and physical-placement blocker (2026-11-13)
+
+### Artifact-backed SEC entry
+
+Build #29 produced and passed the static PrePi SEC TE parser. Its manifest
+records:
+
+- FD linked base: `0x90000000`, length: `0x200000`.
+- SEC TE image base: `0x90001000`.
+- SEC entry RVA: `0x7280`.
+- SEC entry address: `0x90008280`.
+- SEC entry file offset in the FD: `0x8280`.
+- First instruction bytes: `e6 01 00 94` (AArch64 `BL`).
+- Decoded branch destination: `0x90008A18`.
+
+The CI parser now checks that the entry point lies in an executable TE section,
+that its XIP address matches its FD file offset, and that its first BL target
+remains inside that executable section. This is static validation, not proof
+that the CPU can execute the entry at runtime.
+
+### Actual PrePi entry ABI
+
+The built `PrePi/AArch64/ModuleEntryPoint.S` does not consume an incoming DTB
+pointer. It calls `ArmPlatformPeiBootAction`, calculates its own stack and UEFI
+memory region from PCD values, reads MPIDR with `ArmReadMpidr`, then calls
+`CEntryPoint(MpId, UefiMemoryBase, StacksBase)`. Thus the PrePi C entry gets
+MPIDR in x0, not the Linux DTB pointer. The current platform library's
+`ArmPlatformInitialize()` is a no-op returning success, and the DSC sets
+`PcdCoreCount=1`. The present SEC code is not an FDT handoff consumer.
+
+For the current A205W DSC:
+- System RAM base: `0x80000000`.
+- First contiguous system-memory size: `0x38000000`, ending at
+  `0xB8000000` (exclusive).
+- SEC/PEI UEFI region size: `0x03000000` (48 MiB).
+- FD link base/range: `0x90000000-0x90200000`.
+
+With the FD below the top of this memory range, the assembly's stack-selection
+logic chooses the top of system memory, and places the UEFI region immediately
+below it. The exact primary stack size remains controlled by the resolved
+`PcdCPUCorePrimaryStackSize` value and must be included in the handoff review.
+
+### New blocker: FD link address versus standard ARM64 Image placement
+
+The current concatenation places the FD at byte offset `0x50` (80 bytes)
+inside the ARM64 Image wrapper. The header advertises `text_offset=0x80000`.
+For the standard kexec-tools ARM64 Image loader, the image segment is placed
+at an address of the form:
+
+`aligned_2MiB_hole + text_offset`
+
+and the FD therefore starts at:
+
+`aligned_2MiB_hole + 0x80000 + 0x50`
+
+The offset from the aligned 2 MiB hole is `0x80050`, which is not 2 MiB
+aligned. But the EDK2 FD is linked for the fixed 2 MiB-aligned address
+`0x90000000`. Therefore **no 2 MiB-aligned hole can make the current
+80-byte-prefix bundle's FD land at its linked base under that standard
+placement rule**. The current successful CI package does not detect this
+physical-address mismatch.
+
+The upstream kexec-tools ARM64 loader reference uses a 2 MiB-aligned hole and
+adds `text_offset` to the kernel segment address before loading the image:
+https://kernel.googlesource.com/pub/scm/utils/kernel/kexec/kexec-tools/+/refs/heads/main/kexec/arch/arm64/kexec-arm64.c
+See `arm64_locate_kernel_segment()` and the ARM64 image-loading path. This
+reference is not yet proof of the exact kexec-tools binary (or loader mode)
+present in the user's TWRP image; that binary and version must be identified.
+
+Do not fix this by merely changing `text_offset` or padding the shim. The
+selected physical hole is dynamic, and the EDK2 TE image is linked at an
+absolute base. First identify the actual TWRP kexec executable/version and
+loading path. Then choose and implement one explicit placement strategy:
+fixed-address kexec segments, a validated copy/relocation of the FD into its
+linked address with a reserved non-overlapping destination, or a genuinely
+relocatable EDK2 SEC image. Add a CI test for the chosen address equation.
+
+Until that is resolved, the SEC entry address `0x90008280` is an artifact
+address only. The WFE handoff gate must remain in place.
