@@ -468,6 +468,42 @@ jobs:
           print("Made sec_debug declarations visible whenever CONFIG_SEC_DEBUG is enabled")
           PY
 
+      - name: Fix Exynos trace debug declarations and console debugger stack usage
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("kernel-src/drivers/trace/exynos-ss.c")
+          s = p.read_text()
+          include = "#include <linux/sec_debug.h>"
+          anchor = "#include <linux/exynos-ss.h>"
+          if include not in s:
+              if anchor not in s:
+                  raise SystemExit("Cannot locate exynos-ss Linux include anchor")
+              s = s.replace(anchor, anchor + "\\n" + include, 1)
+              p.write_text(s)
+          print("Made sec_debug declarations available independently of CONFIG_SEC_EXT")
+
+          p = Path("kernel-src/drivers/trace/exynos-condbg.c")
+          s = p.read_text()
+          typedef = "typedef void(*set_param_fn_t)(void);"
+          local = "\\tset_param_fn_t fn[SZ_256] = {0, };"
+          if "static set_param_fn_t ecd_fn_table[SZ_256];" not in s:
+              if s.count(typedef) != 1:
+                  raise SystemExit("Cannot uniquely locate set_param_fn_t typedef")
+              s = s.replace(typedef, typedef + "\\nstatic set_param_fn_t ecd_fn_table[SZ_256];", 1)
+          if local in s:
+              s = s.replace(local, "", 1)
+          elif local.strip() not in s and "set_param_fn_t fn[SZ_256]" in s:
+              raise SystemExit("Unexpected local ECD function table declaration")
+          s = s.replace("set_param(fn);", "set_param(ecd_fn_table);", 1)
+          s = s.replace("((void **)fn,", "((void **)ecd_fn_table,", 1)
+          if "set_param_fn_t fn[SZ_256]" in s or "((void **)fn," in s:
+              raise SystemExit("Local ECD function table still present")
+          p.write_text(s)
+          print("Moved persistent ECD callback table from 2 KiB stack to static storage")
+          PY
+
       - name: Prepare embedded binaries for out-of-tree build
         run: |
           cd kernel-src
