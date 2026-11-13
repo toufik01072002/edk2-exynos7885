@@ -249,6 +249,42 @@ jobs:
           print("Fixed split_huge_page_pmd argument order")
           PY
 
+      - name: Fix schedutil freqvar and frequency-invariant compatibility
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("kernel-src/kernel/sched/cpufreq_schedutil.c")
+          s = p.read_text()
+          nl = chr(10)
+
+          include_anchor = '#include "tune.h"'
+          fallback = nl.join([
+              "",
+              "#ifndef arch_scale_freq_invariant",
+              "#define arch_scale_freq_invariant() (true)",
+              "#endif",
+          ])
+          if "#ifndef arch_scale_freq_invariant" not in s:
+              if include_anchor not in s:
+                  raise SystemExit("Cannot locate cpufreq_schedutil include anchor")
+              s = s.replace(include_anchor, include_anchor + fallback, 1)
+
+          replacements = [
+              ("\tschedtune_freqvar_boost_init(policy, &tunables->freqvar_boost);",
+               "#ifdef CONFIG_FREQVAR_SCHEDTUNE\n\tschedtune_freqvar_boost_init(policy, &tunables->freqvar_boost);\n#endif"),
+              ("\tschedtune_freqvar_boost_exit(policy, &tunables->freqvar_boost);",
+               "#ifdef CONFIG_FREQVAR_SCHEDTUNE\n\tschedtune_freqvar_boost_exit(policy, &tunables->freqvar_boost);\n#endif"),
+          ]
+          for old, new in replacements:
+              count = s.count(old)
+              if count:
+                  s = s.replace(old, new)
+              elif new not in s:
+                  raise SystemExit("Cannot locate expected freqvar call: " + old.strip())
+          p.write_text(s)
+          print("Guarded schedutil freqvar calls and supplied frequency-invariant fallback")
+          PY
+
       - name: Prepare embedded binaries for out-of-tree build
         run: |
           cd kernel-src
