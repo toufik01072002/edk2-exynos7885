@@ -70,3 +70,69 @@ and the exact kexec trampoline contract.
    transition requirements are independently satisfied.
 
 No flash, partition write, or device-side execution is part of this stage.
+
+
+## Verified recovery-kernel transition contract
+
+The recovery-side reference is pinned to
+`toufik01072002/Kernel_SM-A205W`, commit
+`1e70ef871acb9ea0cd79a531b18e98f61debfc71` on the
+`kexec-arm64-4.4-d-work` development line. The relevant source files are
+`arch/arm64/kernel/machine_kexec.c`,
+`arch/arm64/kernel/cpu-reset.S`,
+`arch/arm64/kernel/cpu-reset.h`,
+`arch/arm64/kernel/relocate_kernel.S`,
+`arch/arm64/mm/mmu.c`, and
+`arch/arm64/kernel/hyp-stub.S`.
+
+The actual ordinary-kexec sequence in that source is:
+
+1. `machine_kexec()` copies `arm64_relocate_new_kernel` to the physical
+   control-code page and flushes its data and instruction cache lines.
+2. It masks DAIF with `msr daifset, #0xf`, calls
+   `setup_mm_for_reboot()` (which calls `cpu_install_idmap()`), then invokes
+   `cpu_soft_restart(is_hyp_mode_available(), reboot_code_buffer_phys,
+   kimage->head, kimage_start, 0)`.
+3. `__cpu_soft_restart` clears `SCTLR_EL1` flags. If the kernel recorded
+   EL2 boot mode, it uses `HVC #3` and the EL2 stub to call the physical
+   relocation entry; otherwise it branches to that entry without the HVC
+   transition.
+4. `arm64_relocate_new_kernel` receives `x0 = kimage->head` and
+   `x1 = kimage_start`. It clears the relevant `SCTLR_EL2` flags when
+   executing at EL2, performs the physical image relocation, then performs
+   `dsb nsh; ic iallu; dsb nsh; isb`.
+5. Immediately before the final branch, the relocator sets
+   `x0 = x1 = x2 = x3 = 0` and executes `br x18` to `kimage_start`.
+
+### Consequences for the BootShim-to-SEC adapter
+
+- The final image entry may be reached at **EL1 or EL2**. The branch is
+  selected by `is_hyp_mode_available()`, which reflects the kernel's
+  recorded boot mode. The live recovery instance's value has not been proven.
+- DAIF is masked at the start of `machine_kexec()`. The transition installs
+  an identity map before `cpu_soft_restart`; the ARM64 soft-restart path
+  shuts down the MMU and data cache before executing the relocation code.
+- The final image entry receives `x0-x3 = 0`; it must not interpret them as
+  a DTB pointer or as PrePi's internal `CEntryPoint` arguments.
+- **The kernel trampoline does not assign SP.** Neither
+  `__cpu_soft_restart` nor `arm64_relocate_new_kernel` establishes a new
+  stack before branching to the image entry. Therefore the incoming SP is
+  inherited and is not a proven SEC-safe stack.
+- Since PrePi calls `ArmPlatformPeiBootAction` before installing its own
+  stack, the BootShim adapter must establish a dedicated writable,
+  identity-accessible, 16-byte-aligned stack before branching to SEC. Its
+  physical bounds must be reserved inside the actual kexec-loaded image or
+  another proven safe RAM allocation; no address is selected in this change.
+
+### TWRP launch gate
+
+In `toufik01072002/android_bootable_recovery`, branch
+`edk2-integration`, `GUIAction::edk2boot()` in `gui/action.cpp` still
+returns a fail-closed error after image validation. It does not invoke
+`kexec` or the kernel trampoline. This is intentional: the transition ABI
+is now source-derived, but the stack placement, live EL mode, exact recovery
+kernel identity/configuration, and DMA shutdown guarantees are not yet
+proven.
+
+No `kexec -e`, hardware transfer, flash, or partition write was performed.
+Keep `handoff_enabled = false` and the TWRP launch action blocked.
