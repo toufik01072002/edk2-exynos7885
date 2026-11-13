@@ -8,9 +8,10 @@ on:
         required: false
         default: ""
   push:
-    branches: [main]
+    branches: [main, feature/kexec-arm64-virtual-boot, integrate/fd-sec-contract]
     paths:
       - "EXYNOS7885Pkg/**"
+      - "tools/**"
       - "BootShim/**"
       - "build*.sh"
       - "firstrun.sh"
@@ -59,6 +60,7 @@ jobs:
         run: |
           sha256sum -c SHA256SUMS
           python3 ../tools/verify_bundle.py
+          python3 ../BootShim/validate_prepi_entry.py
           test -s UEFI
 
       - name: Publier les fichiers
@@ -70,3 +72,4 @@ jobs:
             edk2-exynos7885/workspace/UEFI
             edk2-exynos7885/workspace/UEFI.manifest.json
             edk2-exynos7885/workspace/SHA256SUMS
+            edk2-exynos7885/workspace/UEFI.sec-manifest.json
