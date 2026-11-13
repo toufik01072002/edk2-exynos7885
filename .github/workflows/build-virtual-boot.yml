@@ -5,6 +5,8 @@ on:
     branches: [feature/kexec-arm64-virtual-boot]
     paths:
       - 'virtual-boot/**'
+      - 'twrp-uefi-loader/**'
+      - 'BootShim/**'
       - '.github/workflows/build-virtual-boot.yml'
   workflow_dispatch:
     inputs:
@@ -986,3 +988,30 @@ jobs:
           ls -la virtual-boot-output/
           echo ""
           cat virtual-boot-output/SHA256SUMS
+
+  validate-twrp-loader:
+    name: Verify TWRP loader fails closed
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout Virtual Boot project
+        uses: actions/checkout@v4
+
+      - name: Compile standalone loader safety test
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Wno-unused-function \
+            -D__user= -DUEFI_LOADER_STANDALONE \
+            twrp-uefi-loader/uefi_loader.c -o /tmp/uefi_loader_test
+
+      - name: Assert kexec handoff remains blocked
+        run: |
+          set +e
+          /tmp/uefi_loader_test > /tmp/uefi_loader_test.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/uefi_loader_test.log
+          test "$status" -ne 0
+          grep -F "EDK2 launch blocked: ARM64 handoff is not implemented and validated" \
+            /tmp/uefi_loader_test.log
+          echo "PASS: standalone loader refuses the unvalidated handoff"
+
