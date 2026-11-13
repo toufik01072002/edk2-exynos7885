@@ -54,6 +54,12 @@ jobs:
           ./firstrun.sh
           ./build.sh
 
+      - name: Valider le FD et le bundle BootShim
+        working-directory: edk2-exynos7885
+        run: |
+          python3 BootShim/validate_fd_bundle.py
+          test -s workspace/phase2-fd-manifest.json
+
       - name: Preparer les images a flasher
         working-directory: edk2-exynos7885/workspace
         run: |
@@ -71,5 +77,6 @@ jobs:
             edk2-exynos7885/workspace/UEFI
             edk2-exynos7885/workspace/boot.img
             edk2-exynos7885/workspace/boot.tar
+            edk2-exynos7885/workspace/phase2-fd-manifest.json
             edk2-exynos7885/workspace/recovery.img
             edk2-exynos7885/workspace/recovery.tar
