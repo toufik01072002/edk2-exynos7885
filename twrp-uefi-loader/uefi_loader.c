@@ -481,7 +481,7 @@ int main(int argc, char **argv) {
     (void)argc; (void)argv;
     result = uefi_loader_main();
     if (result != 0)
-        fprintf(stderr, "%s\\n", uefi_loader_get_error());
+        fprintf(stderr, "%s\n", uefi_loader_get_error());
     return result;
 }
 #endif
