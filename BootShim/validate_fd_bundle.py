@@ -214,8 +214,13 @@ def main() -> None:
         fail("BootShim is shorter than the 64-byte ARM64 Image header")
     if len(combined) != len(shim) + len(fd):
         fail("combined image length does not equal BootShim length plus FD length")
-    if combined[:len(shim)] != shim:
-        fail("combined image does not begin with the exact BootShim binary")
+    # finalize_linux_image.py patches only the Linux Image header fields at
+    # offsets 8..23 (text_offset and image_size). Keep every other BootShim
+    # byte identical to the assembled BootShim.bin.
+    if combined[:8] != shim[:8]:
+        fail("BootShim initial instructions mismatch")
+    if combined[24:len(shim)] != shim[24:]:
+        fail("BootShim payload mismatch outside the finalized Linux Image header")
     if combined[len(shim):] != fd:
         fail("FD payload is not concatenated immediately after BootShim")
 
