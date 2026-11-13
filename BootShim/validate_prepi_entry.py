@@ -219,7 +219,7 @@ def main() -> None:
     if combined[len(shim):len(shim)+len(fd)] != fd: fail("FD is not at bundle offset 0x10000")
     if len(combined) != len(shim) + EXPECTED_SIZE: fail("bundle must contain 64 KiB BootShim plus 2 MiB FD")
     manifest = {"format":"7K-EDK2-BUNDLE-SEC-MANIFEST", "handoff_enabled":False, "validation_scope":"static SEC entry and bundle layout only; no runtime handoff validation", "fd":{"base":f"0x{fd_base:08X}","size":len(fd),"sha256":sha256(fd),"bundle_offset":len(shim),"sec_entry":sec}, "bootshim":{"size":len(shim),"sha256":sha256(shim)}, "bundle":{"size":len(combined),"sha256":sha256(combined)}}
-    (ROOT / "workspace/UEFI.sec-manifest.json").write_text(json.dumps(manifest, indent=2) + "\\n")
+    (ROOT / "workspace/UEFI.sec-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps(manifest, indent=2))
 
 
