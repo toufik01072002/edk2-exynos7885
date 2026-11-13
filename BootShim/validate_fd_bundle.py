@@ -235,6 +235,26 @@ def main() -> None:
         fail(f"ARM64 Image flags are 0x{flags:X}, expected zero")
 
     sec = inspect_prepi_sec_entry(fd, fd_base)
+
+    # Keep the BootShim branch target synchronized with the actual TE entry
+    # extracted from this build's FD. A stale hard-coded address would branch
+    # into the wrong instruction even though the FD itself validates.
+    expected_entry = int(sec["entry_address"], 16)
+    entry_sources = {
+        ROOT / "BootShim/BootShim.S": r"(?m)^#if SEC_ENTRY != (0x[0-9a-fA-F]+)$",
+        ROOT / "BootShim/Makefile": r"(?m)^SEC_ENTRY\\s*\\?=\\s*(0x[0-9a-fA-F]+)$",
+        ROOT / "build_bootshim.sh": r"SEC_ENTRY=(0x[0-9a-fA-F]+)",
+    }
+    for source_path, pattern in entry_sources.items():
+        source_text = source_path.read_text(encoding="utf-8")
+        values = re.findall(pattern, source_text)
+        if not values:
+            fail(f"SEC_ENTRY is not declared in {source_path.relative_to(ROOT)}")
+        if any(int(value, 16) != expected_entry for value in values):
+            fail(
+                f"SEC_ENTRY in {source_path.relative_to(ROOT)} does not match "
+                f"the built PrePi SEC entry 0x{expected_entry:08X}"
+            )
     manifest = {
         "format": "A205W-BOOTSHIM-FD-STATIC-MANIFEST",
         "validation_scope": (
