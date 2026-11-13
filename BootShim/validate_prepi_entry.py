@@ -218,7 +218,73 @@ def main() -> None:
     if combined[:len(shim)] != shim: fail("BootShim prefix mismatch")
     if combined[len(shim):len(shim)+len(fd)] != fd: fail("FD is not at bundle offset 0x10000")
     if len(combined) != len(shim) + EXPECTED_SIZE: fail("bundle must contain 64 KiB BootShim plus 2 MiB FD")
-    manifest = {"format":"7K-EDK2-BUNDLE-SEC-MANIFEST", "handoff_enabled":False, "validation_scope":"static SEC entry and bundle layout only; no runtime handoff validation", "fd":{"base":f"0x{fd_base:08X}","size":len(fd),"sha256":sha256(fd),"bundle_offset":len(shim),"sec_entry":sec}, "bootshim":{"size":len(shim),"sha256":sha256(shim)}, "bundle":{"size":len(combined),"sha256":sha256(combined)}}
+    stack_offset = 0xE000
+    stack_size = 0x2000
+    stack_top = stack_offset + stack_size
+    if stack_top != len(shim):
+        fail("BootShim stack contract does not end at the FD boundary")
+    if len(shim) != 0x10000:
+        fail("BootShim image size changed; refusing to emit the SEC entry contract")
+
+    manifest = {
+        "format": "7K-EDK2-BUNDLE-SEC-MANIFEST",
+        "handoff_enabled": False,
+        "validation_scope": "static SEC entry and bundle layout only; no runtime handoff validation",
+        "entry_contract": {
+            "version": 1,
+            "handoff_enabled": False,
+            "bootshim_stack": {
+                "image_offset": f"0x{stack_offset:X}",
+                "size": f"0x{stack_size:X}",
+                "top_offset": f"0x{stack_top:X}",
+                "alignment": 16,
+                "physical_address": None,
+                "physical_address_status": "must_be_resolved_by_runtime_loader"
+            },
+            "sec_entry": {
+                "address": sec["entry_address"],
+                "fd_offset": sec["entry_fd_offset"],
+                "requires_executable_mapping": True
+            },
+            "initial_stack": {
+                "source": "BootShim private stack",
+                "requires_writable_mapping": True,
+                "requires_ram_reservation": True,
+                "alignment": 16,
+                "runtime_verified": False
+            },
+            "runtime_requirements": [
+                "resolve the BootShim physical load range",
+                "prove the complete BootShim and FD ranges are reserved and non-overlapping",
+                "prove the BootShim stack range is writable RAM",
+                "prove SEC entry and early platform accesses are executable/readable",
+                "capture the live exception level and security state",
+                "capture MMU, cache, DAIF, and relevant system-register state",
+                "verify secondary-core quiescence before SEC entry"
+            ]
+        },
+        "fd": {
+            "base": f"0x{fd_base:08X}",
+            "size": len(fd),
+            "sha256": sha256(fd),
+            "bundle_offset": len(shim),
+            "sec_entry": sec
+        },
+        "bootshim": {
+            "size": len(shim),
+            "sha256": sha256(shim),
+            "stack": {
+                "offset": stack_offset,
+                "size": stack_size,
+                "top_offset": stack_top,
+                "alignment": 16
+            }
+        },
+        "bundle": {
+            "size": len(combined),
+            "sha256": sha256(combined)
+        }
+    }
     (ROOT / "workspace/UEFI.sec-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(json.dumps(manifest, indent=2))
 
