@@ -54,6 +54,11 @@ jobs:
           ./firstrun.sh
           ./build.sh
 
+      - name: Verifier le placement physique de reference
+        working-directory: edk2-exynos7885
+        run: |
+          python3 BootShim/test_physical_layout.py
+
       - name: Valider le FD et le bundle BootShim
         working-directory: edk2-exynos7885
         run: |

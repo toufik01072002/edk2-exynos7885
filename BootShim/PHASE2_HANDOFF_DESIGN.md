@@ -365,3 +365,94 @@ and installed binary SHA-256 as build evidence. An attempt to update
 `toufik01072002/android_device_samsung_a20/.github/workflows/twrp-a20-build.yml`
 on branch `android-11` was rejected by the connected GitHub integration with
 HTTP 403 (write permission unavailable); no TWRP workflow change was made.
+
+
+## Placement decision and SEC entry contract (2026-11-13, after Build #38)
+
+### Reject direct placement by a 0x180000 BootShim prefix
+
+The earlier aligned-prefix arithmetic is correct but is not a usable placement
+strategy with the current platform memory map. A \`0x180000\` prefix and
+\`text_offset=0x80000\` require kexec-tools to find a contiguous
+\`0x400000\` hole at \`0x8FE00000-0x90200000\`. The reference map divides this
+span at \`0x90000000\`: usable RAM Bank 0 Low ends there, and the fixed FD
+reservation begins there. The span is therefore not one usable RAM range.
+The ordinary ARM64 Image loader adds the whole combined file as one segment;
+it does not split the BootShim and FD payload into separate physical segments.
+Do not use this direct-placement candidate.
+
+### Selected layout for the next implementation step: load low, then copy FD
+
+Keep the kexec-loadable image wholly inside ordinary usable RAM and copy the
+2 MiB FD from the image payload into its fixed reserved window only after
+BootShim starts:
+
+| Item | Address / size |
+|---|---:|
+| ARM64 \`text_offset\` | \`0x80000\` |
+| BootShim prefix (code + private stack) | \`0x10000\` |
+| FD payload offset in combined Image | \`0x10000\` |
+| FD payload size | \`0x200000\` |
+| Combined Image \`image_size\` | \`0x210000\` |
+| First-fit 2 MiB-aligned kexec hole candidate | \`0x80000000\` |
+| BootShim entry candidate (\`hole + text_offset\`) | \`0x80080000\` |
+| FD source candidate | \`0x80090000-0x80290000\` |
+| Fixed FD destination | \`0x90000000-0x90200000\` |
+| PrePi SEC entry | \`0x90008280\` |
+
+The candidate kexec hole requires \`0x290000\` bytes from \`0x80000000\`,
+which fits wholly inside the reference usable RAM range
+\`0x80000000-0x90000000\`. The payload source and fixed FD destination do not
+overlap. The code must remain position-independent and derive its source and
+scratch-stack addresses from its runtime PC; the candidate entry address is
+not to be hard-coded into the shim.
+
+The \`0x10000\` prefix reserves \`0x8000-0x10000\` for a private 32 KiB stack.
+Set \`sp\` to the aligned prefix end before branching to SEC. This is mandatory:
+the actual \`EXYNOS7885Pkg/PrePi/AArch64/ModuleEntryPoint.S\` begins by calling
+\`ArmPlatformPeiBootAction\`, and the platform helper
+\`EXYNOS7885PkgHelper.S\` saves \`x29/x30\` to \`[sp, #-16]!\` before doing its
+first operation. The kernel's incoming stack pointer must not be trusted.
+
+### SEC entry findings from the actual platform sources
+
+- Build #38's artifact parser identifies the fixed-linked PrePi SEC entry at
+  \`0x90008280\`, with the first instruction \`BL\` targeting \`0x90008A18\`.
+- The current PrePi entry does not consume the incoming Linux FDT pointer or
+  require incoming \`x0-x3\`: it calls the platform boot action, computes its
+  UEFI memory and stack ranges from fixed PCDs, reads MPIDR, then calls
+  \`CEntryPoint(MpId, UefiMemoryBase, StacksBase)\`.
+- Therefore the target kernel's clearing of \`x0-x3\` is not by itself a blocker
+  for this exact SEC entry. This conclusion applies to the current built
+  PrePi module, not to arbitrary future EDK2 SEC implementations.
+- \`ArchPrePi.c\` sets \`HCR_EL2.TGE\` only when execution is already at EL2; it
+  does not perform an EL transition. The handoff must preserve a supported
+  EL and verify it from the target kexec path.
+- The kexec path disables DAIF exceptions and clears the relevant SCTLR flags;
+  the relocation stub executes DSB/I-cache invalidation barriers before
+  branching. The BootShim copy routine must finish with explicit ordering
+  and instruction-cache synchronization before entering the copied FD.
+- The platform boot action accesses the DECON MMIO register and uses the
+  stack before PrePi establishes its own stack. The BootShim-owned stack is
+  consequently part of the entry ABI, not an optional convenience.
+
+### Required implementation and validation gates
+
+1. Pad the BootShim prefix to exactly \`0x10000\`, place a private stack in its
+   upper \`0x8000\` bytes, and place the FD payload at offset \`0x10000\`.
+2. Keep \`text_offset=0x80000\`; set \`image_size\` to the full \`0x210000\`
+   combined image size.
+3. Copy exactly \`0x200000\` bytes from the position-independent payload source
+   to \`0x90000000\`; verify source/destination bounds and non-overlap.
+4. Set a valid aligned \`sp\` before entering SEC, synchronize instruction
+   fetch after the copy, and branch to \`0x90008280\` (not to the FD base).
+5. Add the host-side address test \`BootShim/test_physical_layout.py\` to CI.
+6. Before any real handoff, prove the actual kexec loader's selected
+   \`kernel_segment\` from a load-only debug trace, prove the live memory-range
+   view agrees with the reference map, and separately resolve CPU quiescence,
+   DMA quiescence, and exception-level requirements.
+
+The address test is a reference-map arithmetic proof only. It does not
+execute kexec, prove the live \`/proc/iomem\` parser result, validate cache/DMA
+ownership, or authorize an on-device load or execution. Keep \`handoff_enabled\`
+false, the WFE gate intact, and the TWRP button disabled.
