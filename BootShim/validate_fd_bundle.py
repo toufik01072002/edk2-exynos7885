@@ -49,7 +49,7 @@ def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
     file_pos = align(fv_header_length, 8)
     prepi = None
     while file_pos + 24 <= fv_length:
-        if fd[file_pos:file_pos + 24] == b"\\xff" * 24:
+        if fd[file_pos:file_pos + 24] == b"\xff" * 24:
             file_pos = align(file_pos + 8, 8)
             continue
         file_guid = fd[file_pos:file_pos + 16]
@@ -114,7 +114,7 @@ def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
     executable_matches = []
     for index in range(section_count):
         section = te_offset + 40 + index * 40
-        name = fd[section:section + 8].rstrip(b"\\x00").decode("ascii", "replace")
+        name = fd[section:section + 8].rstrip(b"\x00").decode("ascii", "replace")
         virtual_size, virtual_address, raw_size, raw_pointer = struct.unpack_from(
             "<IIII", fd, section + 8
         )
@@ -144,7 +144,7 @@ def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
             f"file offset 0x{entry_file_offset:x})"
         )
     entry_bytes = fd[entry_file_offset:entry_file_offset + 4]
-    if entry_bytes in (b"\\x00" * 4, b"\\xff" * 4):
+    if entry_bytes in (b"\x00" * 4, b"\xff" * 4):
         fail("PrePi SEC entry point contains erased/empty bytes")
 
     return {
