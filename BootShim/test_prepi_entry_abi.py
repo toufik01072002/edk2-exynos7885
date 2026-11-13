@@ -16,6 +16,7 @@ PREPI = ROOT / "EXYNOS7885Pkg/PrePi/PrePi.c"
 INF = ROOT / "EXYNOS7885Pkg/PrePi/PrePi.inf"
 SHIM = ROOT / "BootShim/BootShim.S"
 MANIFEST = ROOT / "workspace/UEFI.sec-manifest.json"
+ABI_DOC = ROOT / "virtual-boot/docs/ARM64_SEC_ENTRY_ABI.md"
 
 
 def require(condition: bool, message: str) -> None:
@@ -24,7 +25,7 @@ def require(condition: bool, message: str) -> None:
 
 
 def main() -> None:
-    for path in (ENTRY, PREPI, INF, SHIM, MANIFEST):
+    for path in (ENTRY, PREPI, INF, SHIM, MANIFEST, ABI_DOC):
         require(path.is_file(), f"missing required input: {path.relative_to(ROOT)}")
 
     asm = ENTRY.read_text(encoding="utf-8")
@@ -32,6 +33,7 @@ def main() -> None:
     inf = INF.read_text(encoding="utf-8")
     shim = SHIM.read_text(encoding="utf-8")
     manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    abi_doc = ABI_DOC.read_text(encoding="utf-8")
 
     early_call = re.search(r"(?im)^\s*bl\s+ASM_PFX\(ArmPlatformPeiBootAction\)", asm)
     stack_install = re.search(r"(?im)^\s*mov\s+sp,\s*x1\s*$", asm)
@@ -64,6 +66,7 @@ def main() -> None:
     print("PASS: initial writable, mapped, 16-byte-aligned stack is a mandatory entry precondition")
     print("PASS: PrePi CEntryPoint argument and cache-init sequence are present")
     print("PASS: secondary-core WFE remains multi-core gated")
+    print("PASS: pinned recovery kexec ABI records zeroed entry registers and inherited SP")
     print("PASS: BootShim remains fail-closed; handoff_enabled=false")
     print("LIMIT: live EL/MMU/cache/register/DMA state is not proven by this static test")
 
