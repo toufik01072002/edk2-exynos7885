@@ -2,7 +2,9 @@ name: Build Virtual Boot ARM64 (SM-A205W)
 
 on:
   push:
-    branches: [feature/kexec-arm64-virtual-boot]
+    branches:
+      - feature/kexec-arm64-virtual-boot
+      - integrate/fd-sec-contract
     paths:
       - 'virtual-boot/**'
       - 'twrp-uefi-loader/**'
