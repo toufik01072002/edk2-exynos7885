@@ -255,3 +255,96 @@ BootShim+FD image at the required physical addresses.
 4. Resolve the 2 MiB physical-placement mismatch between the 80-byte
    BootShim prefix and the fixed-linked FD at `0x90000000`.
 5. Keep the WFE gate and disabled TWRP UI until these checks are complete.
+
+
+## Exact kexec-tools v2.0.32 ARM64 loader audit (2026-11-13)
+
+The TWRP CI build uses the upstream 2.0.32 release. The tagged source was
+reviewed at https://github.com/horms/kexec-tools/tree/v2.0.32, specifically
+`kexec/arch/arm64/kexec-arm64.c`, `kexec/arch/arm64/kexec-image-arm64.c`,
+and `kexec/kexec.c`.
+
+### Confirmed loader behavior
+
+- The default ARM64 `Image` file type is handled by
+  `image_arm64_load()`. In legacy segment mode it parses the 64-byte ARM64
+  header, computes a 2 MiB-aligned hole using
+  `arm64_locate_kernel_segment()`, then adds the complete input buffer as
+  one segment at `kernel_segment + text_offset`, with `image_size` as the
+  segment memory size.
+- The ARM64 loader's `arm64_locate_kernel_segment()` calls
+  `locate_hole()` with a 2 MiB alignment. Although it passes generic
+  arguments `0` and `ULONG_MAX`, `locate_hole()` also clamps candidate
+  ranges against the global `mem_min` and `mem_max`. The command-line
+  `--mem-min` and `--mem-max` options therefore affect the legacy ARM64
+  Image allocation.
+- The legacy ARM64 path honors `--dtb`: it reads that file, validates and
+  adjusts the FDT, and loads the resulting DTB as a separate segment after
+  the kernel image. Without `--dtb`, it tries `/sys/firmware/fdt`, then
+  `/proc/device-tree`. It rejects a DTB larger than 2 MiB.
+- The ARM64 path also places an optional initrd after the image, then places
+  the DTB and purgatory after the image. The DTB physical address is written
+  into the ARM64 purgatory symbol `arm64_dtb_addr`; it is not a guarantee
+  that a DTB pointer will be delivered to an arbitrary custom BootShim in
+  x0.
+- With `--kexec-file-syscall`, `arch_process_options()` deliberately clears
+  the user-supplied `--dtb` option and the ARM64 Image loader's file-mode
+  path delegates kernel parsing to the kernel syscall. The intended custom
+  DTB path therefore requires the legacy `kexec_load()` segment loader, not
+  the file-based syscall.
+- `--mem-min` and `--mem-max` are global allocator bounds, not a fixed
+  kernel-base option. A narrow upper bound that fits only the kernel image
+  can prevent the later initrd/DTB/purgatory allocations, because those
+  segments are also allocated through `locate_hole()`.
+
+### Candidate aligned-prefix layout
+
+The current 80-byte prefix cannot place the fixed-linked FD at 0x90000000
+when the ARM64 hole is 2 MiB aligned and `text_offset=0x80000`. A
+mathematically aligned candidate is to make the BootShim prefix exactly
+`0x180000` bytes, including padding after its code:
+
+| Item | Physical address / size |
+|---|---:|
+| 2 MiB-aligned kexec hole | `0x8FE00000` |
+| BootShim entry (`hole + 0x80000`) | `0x8FE80000` |
+| FD offset within combined Image | `0x180000` |
+| FD linked base | `0x90000000` |
+| FD end (2 MiB FD) | `0x90200000` |
+| Combined image size | `0x380000` |
+| Loader hole requirement (`text_offset + image_size`) | `0x400000` |
+
+This arithmetic makes the FD land at its linked base only if the loader
+actually selects hole `0x8FE00000`. It is not yet an approved layout:
+the target recovery's live `/proc/iomem` map must show the complete required
+range available to kexec, and the loader's debug output must prove the
+selected `kernel_segment` equals `0x8FE00000`. The fixed destination must
+also be protected from later allocations and from device DMA.
+
+The loader selects the first eligible free range at or above `mem_min`
+that satisfies the image size and alignment; `--mem-min` alone does not
+prove that the resulting base equals the requested address if the target
+range is unavailable. A candidate `--mem-max` must leave enough room after
+the kernel image for the DTB and purgatory; do not cap it at the kernel
+image end. The actual memory map and debug trace are required before
+accepting any values.
+
+### Required validation before implementation
+
+1. Add a host-side layout test for the proposed `0x180000` prefix and
+   `0x8FE00000` hole equation; keep the current 80-byte bundle unchanged
+   until the test and design are reviewed.
+2. Capture the target recovery's `/proc/iomem` and `/proc/device-tree`
+   or `/sys/firmware/fdt` availability as read-only evidence.
+3. Exercise only the load phase in a controlled test harness; capture
+   `kexec -d -l` output and require the reported ARM64 `kernel_segment`
+   to be exactly `0x8FE00000`. Do not execute the loaded image.
+4. Verify the separate DTB and purgatory segment addresses are above the
+   combined image, within usable RAM, and do not overlap the fixed FD.
+5. Keep the TWRP launcher disabled and BootShim's WFE gate intact until
+   physical placement, DTB transport, CPU state, DMA quiescence, and the
+   EDK2 SEC entry contract are independently proven.
+
+These findings are based on the exact upstream v2.0.32 source, not a
+runtime trace from the SM-A205W. They do not authorize an on-device load,
+execution, reboot, or partition write.
