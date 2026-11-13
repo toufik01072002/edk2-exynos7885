@@ -43,6 +43,14 @@ CONFIG_INET=y
 CONFIG_NETFILTER=y
 CONFIG_NETFILTER_XTABLES=y
 # Samsung vendor providers referenced by built-in drivers
+# Enable the Samsung Exynos trace/power providers required by built-in callers
+CONFIG_TRACE=y
+CONFIG_EXYNOS_SNAPSHOT=y
+CONFIG_EXYNOS_PMU=y
+# lcd_is_on is defined by the built-in UHID provider referenced from hid-input.o
+CONFIG_INPUT=y
+CONFIG_HID=y
+CONFIG_UHID=y
 CONFIG_SEC_EXT=y
 CONFIG_SEC_REBOOT=y
 CONFIG_SEC_DEBUG=y
