@@ -54,13 +54,12 @@ jobs:
           ./firstrun.sh
           ./build.sh
 
-      - name: Preparer les images a flasher
+      - name: Verifier le bundle EDK2
         working-directory: edk2-exynos7885/workspace
         run: |
-          ls -l
-          cp boot.img recovery.img
-          tar -c recovery.img -f recovery.tar
-          ls -l
+          sha256sum -c SHA256SUMS
+          python3 ../tools/verify_bundle.py
+          test -s UEFI
 
       - name: Publier les fichiers
         uses: actions/upload-artifact@v4
@@ -69,7 +68,5 @@ jobs:
           if-no-files-found: error
           path: |
             edk2-exynos7885/workspace/UEFI
-            edk2-exynos7885/workspace/boot.img
-            edk2-exynos7885/workspace/boot.tar
-            edk2-exynos7885/workspace/recovery.img
-            edk2-exynos7885/workspace/recovery.tar
+            edk2-exynos7885/workspace/UEFI.manifest.json
+            edk2-exynos7885/workspace/SHA256SUMS
