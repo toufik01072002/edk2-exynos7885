@@ -303,6 +303,23 @@ jobs:
               raise SystemExit("Unexpected drivers/gpu/Makefile layout")
           PY
 
+      - name: Force Linux headers in Samsung CAL interface
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("kernel-src/drivers/soc/samsung/cal-if/pwrcal-env.h")
+          s = p.read_text()
+          old = "#ifdef CONFIG_CAL_IF"
+          new = "#if defined(CONFIG_CAL_IF) || defined(__KERNEL__)"
+          if new in s:
+              print("Samsung CAL interface already selects Linux headers for kernel builds")
+          elif old in s:
+              p.write_text(s.replace(old, new, 1))
+              print("Forced Linux header branch for kernel compilation")
+          else:
+              raise SystemExit("Unexpected pwrcal-env.h CONFIG_CAL_IF guard")
+          PY
+
       - name: Prepare embedded binaries for out-of-tree build
         run: |
           cd kernel-src
