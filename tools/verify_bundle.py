@@ -11,6 +11,7 @@ BUNDLE = WORKSPACE / "UEFI"
 MANIFEST = WORKSPACE / "UEFI.manifest.json"
 
 EXPECTED_COPY_SIZE = 0x00200000
+EXPECTED_BOOTSHIM_SIZE = 0x10000
 EXPECTED_LOAD_ADDRESS = "0x90000000"
 
 def fail(message):
@@ -56,11 +57,11 @@ except (KeyError, TypeError):
 if bs_offset != 0:
     fail("BootShim offset must be zero")
 
-if not 256 <= bs_size <= 65536:
-    fail("BootShim size outside accepted limits")
+if bs_size != EXPECTED_BOOTSHIM_SIZE:
+    fail("BootShim must occupy exactly 64 KiB")
 
-if fd_offset != bs_size:
-    fail("Firmware offset does not follow BootShim")
+if fd_offset != EXPECTED_BOOTSHIM_SIZE:
+    fail("Firmware must begin at bundle offset 0x10000")
 
 if fd_padded_size != EXPECTED_COPY_SIZE:
     fail("Unexpected padded firmware size")
