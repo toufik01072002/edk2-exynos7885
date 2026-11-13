@@ -43,7 +43,6 @@ def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
     if fv_length != len(fd) or not 0x38 <= fv_header_length <= len(fd):
         fail("invalid EFI firmware-volume length/header length")
 
-    target_guid = bytes.fromhex(SEC_PREPI_GUID.replace("-", ""))
     # EFI FFS GUIDs are stored in UEFI mixed-endian byte order.
     import uuid
     target_guid_le = uuid.UUID(SEC_PREPI_GUID).bytes_le
