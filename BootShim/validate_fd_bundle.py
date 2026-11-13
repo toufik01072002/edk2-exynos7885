@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Validate the EDK2 FD and the existing BootShim+FD concatenation.
+"""Validate the EDK2 FD, its PrePi SEC entry, and the BootShim bundle.
 
-This is a packaging gate only. It does not validate the Linux Image header,
-the EDK2 entry point, or a Linux-to-UEFI handoff.
+The checks are static packaging/entrypoint checks only. They do not prove
+physical placement, processor state, or a runtime Linux-to-UEFI handoff.
 """
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ import json
 import re
 import subprocess
 import struct
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,6 +27,8 @@ EFI_SECTION_TE = 0x12
 TE_SIGNATURE = 0x5A56
 IMAGE_FILE_MACHINE_ARM64 = 0xAA64
 IMAGE_SCN_MEM_EXECUTE = 0x20000000
+AARCH64_BL_MASK = 0xFC000000
+AARCH64_BL_OPCODE = 0x94000000
 
 
 def align(value: int, alignment: int) -> int:
@@ -133,6 +134,30 @@ def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
         fail(f"PrePi TE entry point maps to {len(executable_matches)} executable sections")
     section_name, entry_file_offset = executable_matches[0]
     entry_address = image_base + entry_rva
+    entry_instruction = struct.unpack_from("<I", fd, entry_file_offset)[0]
+    if entry_instruction & AARCH64_BL_MASK != AARCH64_BL_OPCODE:
+        fail(
+            "PrePi SEC entry does not begin with the expected AArch64 BL "
+            f"instruction (found 0x{entry_instruction:08X})"
+        )
+    branch_imm = entry_instruction & 0x03FFFFFF
+    if branch_imm & (1 << 25):
+        branch_imm -= 1 << 26
+    branch_target = entry_address + (branch_imm << 2)
+    section_rva_start = next(
+        struct.unpack_from("<I", fd, te_offset + 40 + i * 40 + 12)[0]
+        for i in range(section_count)
+        if fd[te_offset + 40 + i * 40:te_offset + 40 + i * 40 + 8]
+        .rstrip(b"\\x00").decode("ascii", "replace") == section_name
+    )
+    section_virtual_size = next(
+        struct.unpack_from("<I", fd, te_offset + 40 + i * 40 + 8)[0]
+        for i in range(section_count)
+        if fd[te_offset + 40 + i * 40:te_offset + 40 + i * 40 + 8]
+        .rstrip(b"\\x00").decode("ascii", "replace") == section_name
+    )
+    if not image_base + section_rva_start <= branch_target < image_base + section_rva_start + section_virtual_size:
+        fail("PrePi SEC entry BL target is outside its executable section")
     if not fd_base <= image_base < fd_base + len(fd):
         fail("PrePi TE image base is outside the reserved FD window")
     if not fd_base <= entry_address <= fd_base + len(fd) - 4:
@@ -158,7 +183,10 @@ def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
         "entrypoint_offset_bytes": entry_file_offset,
         "entrypoint_section": section_name,
         "entrypoint_bytes_hex": entry_bytes.hex(),
-        "entrypoint_mode": "XIP address/file-offset match; runtime ABI not validated",
+        "entry_instruction": f"0x{entry_instruction:08X}",
+        "entry_instruction_mnemonic": "BL",
+        "entry_branch_target": f"0x{branch_target:016X}",
+        "entrypoint_mode": "XIP address/file-offset match; static BL target validated; runtime ABI not validated",
     }
 
 
