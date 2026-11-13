@@ -140,7 +140,7 @@ jobs:
           p = Path("kernel-src/include/linux/nmi.h")
           s = p.read_text()
           bad = "static inline void void sl_softirq_entry(const char *, void *) { }"
-          good = "static inline void sl_softirq_entry(const char *, void *) { }"
+          good = "static inline void sl_softirq_entry(const char *ip, void *data) { }"
           if bad in s:
               p.write_text(s.replace(bad, good, 1))
               print("Fixed duplicated void in nmi.h")
@@ -152,7 +152,7 @@ jobs:
           p = Path("kernel-src/kernel/sched/sched.h")
           s = p.read_text()
           bad = "#define rt_entity_is_task(rt_se) (!(rt_se)->my_q)"
-          good = "\\n".join([
+          good = chr(10).join([
               "#ifdef CONFIG_RT_GROUP_SCHED",
               "#define rt_entity_is_task(rt_se) (!(rt_se)->my_q)",
               "#else",
