@@ -1,61 +1,31 @@
 _Head:
-	/* Set _Entry address */
-	adr		x1, _Payload
+	/* Linux arm64 Image entry: x0 carries the FDT pointer. */
+	adr	x1, _Payload
+	b	_Start
 
-	/* Jump to the real code */
-	b		_Start
-
-	/* Fake Linux kernel header */
-
-_StackBase:
-	/* Text Offset */
-	.quad UEFI_BASE
-
-_StackSize:
-	/* Image Size */
-	.quad UEFI_SIZE
-
-	/* Flags */
+	/* Linux arm64 Image header (image_size is patched after concatenation). */
+	.quad 0x00080000	/* text_offset: valid 2 MiB-window offset */
+	.quad 0		/* image_size: finalized by finalize_linux_image.py */
+	.quad 0		/* flags: little-endian, default page-size encoding */
 	.quad 0
-
-	/* Reserved */
 	.quad 0
-
-	/* Reserved */
 	.quad 0
-
-	/* Reserved */
-	.quad 0
-
-	/* ARM64 Magic */
 	.ascii "ARM\x64"
-
-	/* Reserved */
 	.long 0
 
 _Start:
-	mov		x4, x1
-	ldr		x5, _StackBase
-	cmp		x4, x5
-	beq		_Entry
-	ldr		x6,  _StackSize
+	/*
+	 * Phase 2 safety gate:
+	 * Do not copy or branch into the FD until the EDK2 entry ABI,
+	 * exception level, cache/MMU state, FDT handoff and CPU shutdown
+	 * contract have been implemented and reviewed.
+	 */
+	b	_HandoffBlocked
 
-_CopyLoop:
-	ldp		x2, x3, [x4], #16
-	stp		x2, x3, [x5], #16
-	subs	x6, x6, #16
-	b.ne	_CopyLoop
-	ldr		x5, _StackBase
+_HandoffBlocked:
+	wfe
+	b	_HandoffBlocked
 
-_Entry:
-	br		x5
-
-_Dead:
-	/* We should never get here */
-	b		_Dead
-
-.text
-.align 4
-
+	.align 4
 _Payload:
-	/* Your code will get ran right after this binary */
+	/* The FD payload is concatenated here by build.sh. */
