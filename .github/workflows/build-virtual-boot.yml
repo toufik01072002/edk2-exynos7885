@@ -100,10 +100,25 @@ jobs:
           make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
             olddefconfig
 
-          grep -qx 'CONFIG_KEXEC=y' out/.config
-          grep -qx 'CONFIG_ECT=n' out/.config
-          grep -qx 'CONFIG_NR_CPUS=8' out/.config
-          grep -qx 'CONFIG_SCHED_HMP=y' out/.config
+          echo "=== Resolved Virtual Boot kernel configuration ==="
+          grep -E '^(CONFIG_KEXEC=|CONFIG_ECT=|# CONFIG_ECT is not set|CONFIG_NR_CPUS=|CONFIG_SCHED_HMP=)' out/.config || true
+
+          grep -qx 'CONFIG_KEXEC=y' out/.config || {
+            echo "ERROR: CONFIG_KEXEC is not enabled"
+            exit 1
+          }
+          if grep -qx 'CONFIG_ECT=y' out/.config; then
+            echo "ERROR: CONFIG_ECT must remain disabled for Virtual Boot"
+            exit 1
+          fi
+          grep -qx 'CONFIG_NR_CPUS=8' out/.config || {
+            echo "ERROR: CONFIG_NR_CPUS must equal 8"
+            exit 1
+          }
+          grep -qx 'CONFIG_SCHED_HMP=y' out/.config || {
+            echo "ERROR: CONFIG_SCHED_HMP is not enabled"
+            exit 1
+          }
 
       - name: Prepare embedded binaries for out-of-tree build
         run: |
