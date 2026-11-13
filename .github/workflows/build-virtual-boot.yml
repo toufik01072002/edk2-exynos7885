@@ -104,6 +104,34 @@ jobs:
           make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
             olddefconfig
 
+          echo "=== Verify Samsung provider configuration ==="
+          required_configs=(
+            CONFIG_ARCH_EXYNOS CONFIG_TRACE CONFIG_EXYNOS_SNAPSHOT CONFIG_EXYNOS_PMU
+            CONFIG_SEC_EXT CONFIG_SEC_REBOOT CONFIG_SEC_DEBUG
+            CONFIG_INPUT CONFIG_HID CONFIG_UHID
+            CONFIG_USB_GADGET CONFIG_USB_F_ACC
+            CONFIG_MMC_CQ_HCI CONFIG_LOCKUP_DETECTOR
+            CONFIG_HARDLOCKUP_DETECTOR_OTHER_CPU
+          )
+          for symbol in "${required_configs[@]}"; do
+            grep -qx "${symbol}=y" out/.config || {
+              echo "ERROR: required Samsung provider config missing after olddefconfig: ${symbol}"
+              exit 1
+            }
+          done
+
+          echo "=== Verify authentic provider Makefile wiring ==="
+          grep -Fq 'obj-$(CONFIG_EXYNOS_PMU)' drivers/soc/samsung/Makefile
+          grep -Fq 'obj-$(CONFIG_ARCH_EXYNOS)' drivers/soc/samsung/Makefile
+          grep -Fq 'obj-$(CONFIG_EXYNOS_SNAPSHOT)' drivers/trace/Makefile
+          grep -Fq 'obj-$(CONFIG_UHID)' drivers/hid/Makefile
+          grep -Fq 'obj-$(CONFIG_USB_F_ACC)' drivers/usb/gadget/function/Makefile
+          grep -Fq 'obj-$(CONFIG_MMC_CQ_HCI)' drivers/mmc/host/Makefile
+          grep -Fq 'obj-$(CONFIG_SEC_DEBUG)' drivers/staging/samsung/Makefile
+          grep -Fq 'ATOMIC_NOTIFIER_HEAD(hardlockup_notifier_list)' kernel/watchdog.c
+          grep -Fq 'atomic_notifier_chain_register(&hardlockup_notifier_list' drivers/clocksource/exynos_mct.c
+          echo "PASS: all real Samsung provider objects and dependencies are selected"
+
           echo "=== Resolved Virtual Boot kernel configuration ==="
           grep -E '^(CONFIG_KEXEC=|CONFIG_ECT=|# CONFIG_ECT is not set|CONFIG_NR_CPUS=)' out/.config || true
 
