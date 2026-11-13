@@ -1,6 +1,11 @@
 name: Build Virtual Boot ARM64 (SM-A205W)
 
 on:
+  push:
+    branches: [feature/kexec-arm64-virtual-boot]
+    paths:
+      - 'virtual-boot/**'
+      - '.github/workflows/build-virtual-boot.yml'
   workflow_dispatch:
     inputs:
       kernel_ref:
