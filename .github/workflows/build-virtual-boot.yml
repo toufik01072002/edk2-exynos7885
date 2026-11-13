@@ -285,6 +285,24 @@ jobs:
           print("Guarded schedutil freqvar calls and supplied frequency-invariant fallback")
           PY
 
+      - name: Fix optional ARM GPU driver directory recursion
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("kernel-src/drivers/gpu/Makefile")
+          s = p.read_text()
+          old = "obj-y\t\t\t+= drm/ vga/ arm/"
+          new = "obj-y\t\t\t+= drm/ vga/\nobj-$(CONFIG_MALI_TMIX)\t+= arm/"
+          if old in s:
+              s = s.replace(old, new, 1)
+              p.write_text(s)
+              print("Made ARM Mali driver recursion conditional on CONFIG_MALI_TMIX")
+          elif new in s:
+              print("ARM Mali driver recursion already conditional")
+          else:
+              raise SystemExit("Unexpected drivers/gpu/Makefile layout")
+          PY
+
       - name: Prepare embedded binaries for out-of-tree build
         run: |
           cd kernel-src
