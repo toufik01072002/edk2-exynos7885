@@ -1,226 +1,99 @@
 #!/usr/bin/env python3
-"""
-Binary DTB Validator using libfdt (Python bindings)
-Validates compiled DTB against reference memory map and Samsung reservations.
-"""
-
+"""Validate the compiled SM-A205W Virtual Boot DTB using dtc's fdtget."""
+import argparse
+import subprocess
 import sys
-import struct
-import os
 
-try:
-    import fdt
-    HAS_LIBFDT = True
-except ImportError:
-    HAS_LIBFDT = False
-    print("WARNING: python3-libfdt not available, using manual parsing")
-    # Fallback: we'll implement basic parsing
+def prop(dtb, node, name, kind="x"):
+    p = subprocess.run(["fdtget", "-t", kind, dtb, node, name],
+                       text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return p.stdout.strip() if p.returncode == 0 else None
 
-def parse_fdt_header(data):
-    """Parse FDT header"""
-    if len(data) < 40:
-        return None
-    magic, totalsize, off_dt_struct, off_dt_strings, off_mem_rsvmap, version, last_comp_version, boot_cpuid_phys, size_dt_strings, size_dt_struct = struct.unpack('>10I', data[:40])
-    if magic != 0xD00DFEED:
-        return None
-    return {
-        'magic': magic,
-        'totalsize': totalsize,
-        'off_dt_struct': off_dt_struct,
-        'off_dt_strings': off_dt_strings,
-        'off_mem_rsvmap': off_mem_rsvmap,
-        'version': version,
-        'last_comp_version': last_comp_version,
-        'boot_cpuid_phys': boot_cpuid_phys,
-        'size_dt_strings': size_dt_strings,
-        'size_dt_struct': size_dt_struct
-    }
+def cells(dtb, node, name):
+    value = prop(dtb, node, name)
+    return [] if not value else [int(x, 16) for x in value.split()]
 
-def parse_mem_rsvmap(data, offset):
-    """Parse memory reservation map"""
-    reservations = []
-    pos = offset
-    while pos + 16 <= len(data):
-        addr = struct.unpack('>Q', data[pos:pos+8])[0]
-        size = struct.unpack('>Q', data[pos+8:pos+16])[0]
-        if addr == 0 and size == 0:
-            break
-        reservations.append((addr, size))
-        pos += 16
-    return reservations
+def value(words):
+    result = 0
+    for word in words:
+        result = (result << 32) | word
+    return result
 
-def find_node_property(fdt_data, strings_data, struct_offset, target_path, prop_name):
-    """Find a property in a specific node - simplified parser"""
-    # This is a very simplified parser for demonstration
-    # A real implementation would need full libfdt
-    return None
+def children(dtb, node):
+    p = subprocess.run(["fdtget", "-l", dtb, node], text=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if p.returncode:
+        raise RuntimeError("Cannot enumerate " + node + ": " + p.stderr.strip())
+    return [x.strip() for x in p.stdout.splitlines() if x.strip()]
 
-def validate_dtb_file(dtb_path):
-    """Main validation function"""
-    print(f"=== Binary DTB Validation: {dtb_path} ===\n")
-    
-    if not os.path.exists(dtb_path):
-        print(f"ERROR: DTB file not found: {dtb_path}")
-        return False
-    
-    with open(dtb_path, 'rb') as f:
-        data = f.read()
-    
-    # Parse header
-    header = parse_fdt_header(data)
-    if not header:
-        print("ERROR: Invalid DTB magic")
-        return False
-    
-    print(f"DTB Header:")
-    print(f"  Total size: {header['totalsize']} bytes")
-    print(f"  Struct offset: 0x{header['off_dt_struct']:X}")
-    print(f"  Strings offset: 0x{header['off_dt_strings']:X}")
-    print(f"  Mem reserve offset: 0x{header['off_mem_rsvmap']:X}")
-    print(f"  Version: {header['version']}")
-    print()
-    
-    # Parse memory reservations (/memreserve/)
-    print("Memory Reservations (/memreserve/):")
-    reservations = parse_mem_rsvmap(data, header['off_mem_rsvmap'])
-    for addr, size in reservations:
-        end = addr + size - 1
-        print(f"  0x{addr:012X} - 0x{end:012X} ({size / (1024*1024):.1f} MiB)")
-    print()
-    
-    if not HAS_LIBFDT:
-        print("WARNING: Full validation requires python3-libfdt (libfdt Python bindings)")
-        print("Install with: apt-get install python3-libfdt")
-        print("Falling back to basic checks only.\n")
-        
-        # Basic checks we can do without libfdt
-        checks_passed = True
-        
-        # Check total size matches
-        if len(data) != header['totalsize']:
-            print(f"ERROR: File size ({len(data)}) != header total size ({header['totalsize']})")
-            checks_passed = False
-        else:
-            print("✓ File size matches header")
-        
-        # Check for expected reservations in /memreserve/
-        expected_memreserve = [
-            (0xE0000000, 0xD00000),  # From exynos7885-rmem.dtsi
-        ]
-        
-        for exp_addr, exp_size in expected_memreserve:
-            found = False
-            for addr, size in reservations:
-                if addr == exp_addr and size == exp_size:
-                    print(f"✓ Found expected /memreserve/: 0x{addr:X} size 0x{size:X}")
-                    found = True
-                    break
-            if not found:
-                print(f"⚠ Expected /memreserve/ not found: 0x{exp_addr:X} size 0x{exp_size:X}")
-        
-        return checks_passed
-    
-    # Full validation with libfdt
-    try:
-        dtb = fdt.Fdt(data)
-        
-        # Get #address-cells and #size-cells for root
-        root_addr_cells = dtb.getprop('/', '#address-cells') or [2]
-        root_size_cells = dtb.getprop('/', '#size-cells') or [1]
-        
-        print(f"Root #address-cells: {root_addr_cells[0]}, #size-cells: {root_size_cells[0]}")
-        
-        # Validate memory nodes
-        print("\n--- Memory Nodes ---")
-        memory_nodes = []
-        for node in dtb.walk('/'):
-            if node.name.startswith('memory@'):
-                reg = dtb.getprop(node.path, 'reg')
-                if reg:
-                    memory_nodes.append((node.path, reg))
-        
-        for path, reg in memory_nodes:
-            print(f"  {path}: reg = {reg}")
-        
-        # Validate reserved-memory
-        print("\n--- Reserved Memory ---")
-        reserved_node = dtb.findnode('/reserved-memory')
-        if reserved_node:
-            for child in dtb.walk(reserved_node.path):
-                if child.path != reserved_node.path:
-                    reg = dtb.getprop(child.path, 'reg')
-                    compatible = dtb.getprop(child.path, 'compatible')
-                    no_map = dtb.getprop(child.path, 'no-map')
-                    reusable = dtb.getprop(child.path, 'reusable')
-                    print(f"  {child.path}: compatible={compatible}, reg={reg}, no-map={bool(no_map)}, reusable={bool(reusable)}")
-        
-        # Check for overlaps
-        print("\n--- Overlap Check ---")
-        all_regions = []
-        
-        # Add memory regions
-        for path, reg in memory_nodes:
-            # Parse reg based on address/size cells
-            addr_cells = root_addr_cells[0]
-            size_cells = root_size_cells[0]
-            for i in range(0, len(reg), addr_cells + size_cells):
-                if i + addr_cells + size_cells <= len(reg):
-                    addr = 0
-                    for j in range(addr_cells):
-                        addr = (addr << 32) | reg[i + j]
-                    size = 0
-                    for j in range(size_cells):
-                        size = (size << 32) | reg[i + addr_cells + j]
-                    all_regions.append(('memory', path, addr, size))
-        
-        # Add reserved regions
-        if reserved_node:
-            for child in dtb.walk(reserved_node.path):
-                if child.path != reserved_node.path:
-                    reg = dtb.getprop(child.path, 'reg')
-                    if reg:
-                        addr_cells = root_addr_cells[0]
-                        size_cells = root_size_cells[0]
-                        for i in range(0, len(reg), addr_cells + size_cells):
-                            if i + addr_cells + size_cells <= len(reg):
-                                addr = 0
-                                for j in range(addr_cells):
-                                    addr = (addr << 32) | reg[i + j]
-                                size = 0
-                                for j in range(size_cells):
-                                    size = (size << 32) | reg[i + addr_cells + j]
-                                all_regions.append(('reserved', child.path, addr, size))
-        
-        # Check overlaps
-        all_regions.sort(key=lambda x: x[2])
-        overlaps = []
-        for i in range(len(all_regions) - 1):
-            t1, n1, a1, s1 = all_regions[i]
-            t2, n2, a2, s2 = all_regions[i + 1]
-            if a1 + s1 > a2:
-                overlaps.append((t1, n1, a1, a1+s1-1, t2, n2, a2, a2+s2-1))
-        
-        if overlaps:
-            print("❌ OVERLAPS DETECTED:")
-            for o in overlaps:
-                print(f"  {o[0]}:{o[1]} (0x{o[2]:X}-0x{o[3]:X}) overlaps {o[4]}:{o[5]} (0x{o[6]:X}-0x{o[7]:X})")
-        else:
-            print("✓ No overlaps detected")
-        
-        # Validate against reference
-        print("\n--- Reference Validation ---")
-        # ... reference checks would go here ...
-        
-        return len(overlaps) == 0
-        
-    except Exception as e:
-        print(f"ERROR during libfdt validation: {e}")
-        return False
+def entries(dtb, node, ac, sc):
+    raw = cells(dtb, node, "reg")
+    stride = ac + sc
+    if not raw or len(raw) % stride:
+        return []
+    out = []
+    for i in range(0, len(raw), stride):
+        addr, size = value(raw[i:i+ac]), value(raw[i+ac:i+stride])
+        if size:
+            out.append((addr, size))
+    return out
+
+def check_nonoverlap(regions, label):
+    ordered = sorted(regions, key=lambda x: x[1])
+    for a, b in zip(ordered, ordered[1:]):
+        if a[1] + a[2] > b[1]:
+            raise RuntimeError(f"{label} overlap: {a[0]} and {b[0]}")
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("dtb")
+    dtb = ap.parse_args().dtb
+    ac, sc = prop(dtb, "/", "#address-cells"), prop(dtb, "/", "#size-cells")
+    if ac is None or sc is None:
+        raise RuntimeError("DTB root lacks address/size cells")
+    ac, sc = int(ac, 16), int(sc, 16)
+    if ac not in (1, 2) or sc not in (1, 2):
+        raise RuntimeError(f"Unsupported root cells {ac}/{sc}")
+    model = prop(dtb, "/", "model", "s")
+    compatible = prop(dtb, "/", "compatible", "s") or ""
+    if not model or "SM-A205W" not in model or "exynos7885" not in compatible:
+        raise RuntimeError(f"Wrong platform identity: {model!r} {compatible!r}")
+
+    ram = []
+    for name in children(dtb, "/"):
+        if name.startswith("memory@"):
+            ram.extend((name, a, s) for a, s in entries(dtb, "/" + name, ac, sc))
+    if len(ram) < 3:
+        raise RuntimeError(f"Expected at least 3 non-empty RAM banks, got {len(ram)}")
+    check_nonoverlap(ram, "RAM bank")
+
+    parent = "/reserved-memory"
+    rac, rsc = prop(dtb, parent, "#address-cells"), prop(dtb, parent, "#size-cells")
+    if rac is None or rsc is None:
+        raise RuntimeError("Missing reserved-memory cell declarations")
+    rac, rsc = int(rac, 16), int(rsc, 16)
+    reserved = []
+    for name in children(dtb, parent):
+        reserved.extend((name, a, s) for a, s in entries(dtb, parent + "/" + name, rac, rsc))
+    if not reserved:
+        raise RuntimeError("No fixed reserved-memory regions found")
+    check_nonoverlap(reserved, "Reserved region")
+    for name, addr, size in reserved:
+        if not any(addr >= base and addr + size <= base + length for _, base, length in ram):
+            raise RuntimeError(f"{name} at 0x{addr:x}+0x{size:x} is outside RAM")
+    if sum(1 for _, a, s in reserved if a == 0x90000000 and s == 0x200000) != 1:
+        raise RuntimeError("Expected exactly one 2 MiB UEFI reservation at 0x90000000")
+
+    print(f"DTB identity: {model}")
+    print(f"RAM banks: {len(ram)}; fixed reserved regions: {len(reserved)}")
+    for n, a, s in sorted(ram + reserved, key=lambda x: x[1]):
+        print(f"{n}: 0x{a:x}-0x{a+s-1:x}")
+    print("PASS: binary FDT identity, RAM ranges, reserved ranges and UEFI reservation")
+    return 0
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: validate_dtb_binary.py <dtb_file>")
+    try:
+        sys.exit(main())
+    except Exception as exc:
+        print(f"DTB VALIDATION FAILED: {exc}", file=sys.stderr)
         sys.exit(1)
-    
-    ok = validate_dtb_file(sys.argv[1])
-    sys.exit(0 if ok else 1)
