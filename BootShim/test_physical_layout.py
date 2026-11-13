@@ -20,7 +20,7 @@ RAM_RANGES = (RAM0_LOW, RAM0_MID)
 
 FD_BASE = FD_RANGE[0]
 FD_SIZE = FD_RANGE[1] - FD_RANGE[0]
-SEC_ENTRY = 0x90008280
+SEC_ENTRY = 0x90008278
 SEC_ENTRY_OFFSET = SEC_ENTRY - FD_BASE
 
 # Reserve a 64 KiB prefix for position-independent BootShim code and stack.
@@ -124,7 +124,7 @@ def main() -> None:
         fail("FD destination does not match the reserved 2 MiB window")
     if not FD_BASE <= SEC_ENTRY < FD_BASE + FD_SIZE:
         fail("SEC entry is outside the FD")
-    if SEC_ENTRY_OFFSET != 0x8280:
+    if SEC_ENTRY_OFFSET != 0x8278:
         fail(f"unexpected SEC entry offset: 0x{SEC_ENTRY_OFFSET:X}")
 
     # Reject the earlier direct-placement proposal: a 0x180000 prefix makes
