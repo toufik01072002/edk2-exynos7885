@@ -132,6 +132,45 @@ jobs:
           print("Applied sched.h rt_rq forward declaration")
           PY
 
+      - name: Fix legacy kernel header build defects
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # The selected kernel branch contains a duplicated return type.
+          p = Path("kernel-src/include/linux/nmi.h")
+          s = p.read_text()
+          bad = "static inline void void sl_softirq_entry(const char *, void *) { }"
+          good = "static inline void sl_softirq_entry(const char *, void *) { }"
+          if bad in s:
+              s = s.replace(bad, good, 1)
+              p.write_text(s)
+              print("Fixed duplicated void in nmi.h")
+          elif good not in s:
+              raise SystemExit("Unexpected nmi.h sl_softirq_entry declaration")
+          else:
+              print("nmi.h declaration already valid")
+
+          # Without RT_GROUP_SCHED, sched_rt_entity has no my_q member.
+          # In that configuration every RT entity represents a task.
+          p = Path("kernel-src/kernel/sched/sched.h")
+          s = p.read_text()
+          bad = "#define rt_entity_is_task(rt_se) (!(rt_se)->my_q)"
+          good = ("#ifdef CONFIG_RT_GROUP_SCHED" + chr(10)
+                  "#define rt_entity_is_task(rt_se) (!(rt_se)->my_q)" + chr(10)
+                  "#else" + chr(10)
+                  "#define rt_entity_is_task(rt_se) (1)" + chr(10)
+                  "#endif")
+          if bad in s:
+              s = s.replace(bad, good, 1)
+              p.write_text(s)
+              print("Guarded rt_entity_is_task for non-group RT scheduling")
+          elif good not in s:
+              raise SystemExit("Unexpected rt_entity_is_task definition")
+          else:
+              print("rt_entity_is_task compatibility guard already present")
+          PY
+
       - name: Prepare embedded binaries for out-of-tree build
         run: |
           cd kernel-src
