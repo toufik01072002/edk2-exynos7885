@@ -510,6 +510,40 @@ jobs:
               raise SystemExit("Local ECD function table still present")
           p.write_text(s)
           print("Moved persistent ECD callback table from 2 KiB stack to static storage")
+
+          # Keep Samsung upload hooks out of builds without SEC_DEBUG.
+          p = Path("kernel-src/drivers/trace/exynos-ss.c")
+          s = p.read_text()
+          old = """\t\tif (sec_debug_get_debug_level() &&
+\t\t\t(__raw_readl(exynos_ss_get_base_vaddr() + ESS_OFFSET_SCRATCH)
+\t\t\t\t\t== ESS_SIGN_SCRATCH) &&
+\t\t\tsec_debug_enter_upload())
+\t\t\texynos_sdm_dump_secure_region();"""
+          new = """#ifdef CONFIG_SEC_DEBUG
+\t\tif (sec_debug_get_debug_level() &&
+\t\t\t(__raw_readl(exynos_ss_get_base_vaddr() + ESS_OFFSET_SCRATCH)
+\t\t\t\t\t== ESS_SIGN_SCRATCH) &&
+\t\t\tsec_debug_enter_upload())
+\t\t\texynos_sdm_dump_secure_region();
+#endif /* CONFIG_SEC_DEBUG */"""
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif new not in s:
+              raise SystemExit("Cannot locate Exynos snapshot secure-upload hook")
+          p.write_text(s)
+          print("Guarded Exynos secure-upload hooks with CONFIG_SEC_DEBUG")
+
+          # This vendor EHCI tree has ehci_dbg but no ehci_vdbg helper.
+          p = Path("kernel-src/drivers/usb/host/ehci-hub.c")
+          s = p.read_text()
+          old = 'ehci_vdbg (ehci, "port %d reset\\n", wIndex + 1);'
+          new = 'ehci_dbg (ehci, "port %d reset\\n", wIndex + 1);'
+          if old in s:
+              s = s.replace(old, new, 1)
+          elif new not in s:
+              raise SystemExit("Cannot locate EHCI verbose reset diagnostic")
+          p.write_text(s)
+          print("Replaced unavailable ehci_vdbg with supported ehci_dbg")
           PY
 
       - name: Prepare embedded binaries for out-of-tree build
