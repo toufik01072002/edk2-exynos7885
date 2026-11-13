@@ -116,6 +116,22 @@ jobs:
             exit 1
           }
 
+      - name: Apply kernel tracepoint forward-declaration fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("kernel-src/include/trace/events/sched.h")
+          s = p.read_text()
+          marker = "#include <linux/binfmts.h>\\n"
+          fix = marker + "\\n/* Forward declaration required by sched_rt_load_avg_cpu tracepoint. */\\nstruct rt_rq;\\n"
+          if "struct rt_rq;" not in s:
+              if marker not in s:
+                  raise SystemExit("Cannot locate sched.h insertion point")
+              s = s.replace(marker, fix, 1)
+              p.write_text(s)
+          print("Applied sched.h rt_rq forward declaration")
+          PY
+
       - name: Prepare embedded binaries for out-of-tree build
         run: |
           cd kernel-src
