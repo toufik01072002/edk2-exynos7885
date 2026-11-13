@@ -63,3 +63,68 @@ The current copy-and-branch assembly does not yet demonstrate these conditions. 
 - No on-device launch or reboot test is authorized by this design document.
 - A successful CI build or static validation is not proof that EDK2 starts on the SM-A205W.
 - Any future device test requires a separately reviewed procedure and explicit user approval.
+
+## Exact target-kernel kexec findings (2026-11-13)
+
+Reviewed directly from `toufik01072002/Kernel_SM-A205W`, branch
+`kexec-arm64-4.4-d-work`, commit
+`1e70ef871acb9ea0cd79a531b18e98f61debfc71`.
+
+### Confirmed kernel behavior
+
+- `arch/arm64/kernel/Makefile` links `machine_kexec.o` and
+  `relocate_kernel.o` under `CONFIG_KEXEC`. It does not link an
+  ARM64 Image-format `kexec_image.o` or `machine_kexec_file.o`.
+  Therefore this branch's kernel-side implementation is the legacy
+  `kexec_load()` segment path, not an in-kernel ARM64 Image parser /
+  `kexec_file_load()` path. The userspace kexec-tools loader and its exact
+  version remain to be identified before the wrapper header can be declared
+  accepted.
+- `machine_kexec_prepare()` only stores `kimage->start` in
+  `kimage_start` and records debug information. It does not parse the
+  ARM64 Image header, validate `text_offset`, or derive an entry point.
+- `machine_kexec()` contains
+  `BUG_ON((num_online_cpus() > 1) && !WARN_ON(in_crash_kexec))`.
+  For an ordinary (non-crash) kexec, more than one online CPU therefore
+  triggers a kernel BUG. A safe launch requires a proven CPU-quiescence /
+  single-online-CPU path before entering this function; the current TWRP
+  button path does not establish that.
+- The kernel copies `arm64_relocate_new_kernel` into a dedicated control
+  page, flushes the relocation code and image data caches, masks DAIF,
+  calls `setup_mm_for_reboot()`, then enters the relocation routine through
+  `cpu_soft_restart()`. The reset helper clears SCTLR_EL1 flags and, when
+  required, uses the EL2 HVC transition.
+- `relocate_kernel.S` receives the entry address in x1, moves it to x18,
+  performs the kexec segment relocation, executes DSB / I-cache invalidate /
+  DSB / ISB, then explicitly sets x0, x1, x2 and x3 to zero before
+  `br x18`. Consequently, the Linux FDT pointer is **not passed in x0**
+  to the BootShim by this kernel's ordinary kexec path. A future shim must
+  obtain a DTB through a separately designed, validated handoff record or
+  a reviewed kernel/userspace change; it must not assume x0 contains the
+  recovery DTB.
+- The target-kernel `arch/arm64/include/asm/boot.h` defines a 2 MiB
+  minimum kernel-image alignment and an 8-byte minimum FDT alignment,
+  with a 2 MiB maximum FDT size. The ARM64 startup header in `head.S`
+  rejects `TEXT_OFFSET > 0x1fffff` and documents MMU-off / D-cache-off
+  requirements for a native Linux kernel entry. These constraints do not
+  by themselves define the EDK2 entry ABI.
+
+### Consequences for the current BootShim
+
+1. The current 0x80000 `text_offset` remains a protocol-format candidate,
+   not proof that this exact kexec-tools binary accepts the concatenated
+   BootShim+FD image or reserves the full `image_size` range.
+2. The current shim may execute with x0-x3 all zero. The existing WFE gate
+   remains mandatory until the DTB transport, EDK2 entry address, EL,
+   system-register state, cache policy, and CPU shutdown procedure are
+   explicitly implemented and tested.
+3. The EDK2 FD base (0x90000000) is a firmware placement address, not
+   evidence that the FD's first byte is a callable firmware entry point.
+   The EDK2 PE/COFF or platform entry symbol and required entry state must
+   be established from the built firmware and platform source.
+4. Before changing assembly, inspect the actual userspace `kexec` binary
+   used by the TWRP launch flow (source/version and ARM64 loader path),
+   then test its image-size and segment-placement behavior in CI or a
+   host-side harness. Do not infer this from the kernel's
+   `machine_kexec_prepare()` because that function does not parse the
+   Image header.
