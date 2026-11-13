@@ -122,12 +122,12 @@ jobs:
           from pathlib import Path
           p = Path("kernel-src/include/trace/events/sched.h")
           s = p.read_text()
-          marker = "#include <linux/binfmts.h>\\n"
-          fix = marker + "\\n/* Forward declaration required by sched_rt_load_avg_cpu tracepoint. */\\nstruct rt_rq;\\n"
+          needle = "#include <linux/binfmts.h>"
           if "struct rt_rq;" not in s:
-              if marker not in s:
+              if needle not in s:
                   raise SystemExit("Cannot locate sched.h insertion point")
-              s = s.replace(marker, fix, 1)
+              declaration = "/* Forward declaration required by sched_rt_load_avg_cpu tracepoint. */" + chr(10) + "struct rt_rq;"
+              s = s.replace(needle, needle + chr(10) + chr(10) + declaration, 1)
               p.write_text(s)
           print("Applied sched.h rt_rq forward declaration")
           PY
