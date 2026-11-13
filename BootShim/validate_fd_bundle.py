@@ -78,14 +78,14 @@ def main() -> None:
 
     with COMBINED.open("rb") as stream:
         header = stream.read(64)
-    if len(header) != 64 or header[56:60] != b"ARM\\x64":
+    if len(header) != 64 or header[56:60] != b"ARM\x64":
         fail("combined image does not have a valid ARM64 Image magic/header")
     text_offset, image_size = struct.unpack_from("<QQ", header, 8)
     if text_offset != 0x80000:
         fail(f"ARM64 Image text_offset is 0x{text_offset:x}, expected 0x80000")
     if image_size != combined_size:
         fail(f"ARM64 Image image_size is {image_size}, expected {combined_size}")
-    if header[24:32] != b"\\x00" * 8:
+    if header[24:32] != b"\x00" * 8:
         fail("ARM64 Image flags are not the expected zero/default encoding")
 
     edk2_dir = ROOT.parent / "edk2"
