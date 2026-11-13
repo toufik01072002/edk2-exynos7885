@@ -348,3 +348,20 @@ accepting any values.
 These findings are based on the exact upstream v2.0.32 source, not a
 runtime trace from the SM-A205W. They do not authorize an on-device load,
 execution, reboot, or partition write.
+
+
+### Upstream kexec-tools release checksum
+
+The kernel.org signed checksum list publishes SHA-256 for the exact release
+archive used by the TWRP workflow:
+
+- File: `kexec-tools-2.0.32.tar.xz`
+- SHA-256: `8f81422a5fd2362cf6cb001b511e535565ed0f32c2f4451fb5eb68fed6710a5d`
+- Checksum source: https://www.kernel.org/pub/linux/utils/kernel/kexec/sha256sums.asc
+
+The TWRP workflow should run `sha256sum -c` immediately after downloading
+the archive, then emit `kexec --version`, ELF interpreter, compiler flags,
+and installed binary SHA-256 as build evidence. An attempt to update
+`toufik01072002/android_device_samsung_a20/.github/workflows/twrp-a20-build.yml`
+on branch `android-11` was rejected by the connected GitHub integration with
+HTTP 403 (write permission unavailable); no TWRP workflow change was made.
