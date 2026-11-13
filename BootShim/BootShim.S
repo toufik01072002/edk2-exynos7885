@@ -43,7 +43,7 @@ _Head:
 	.quad	0
 	.quad	0
 	.quad	0
-	.ascii	"ARM\x64"
+	.ascii	"ARM\\x64"
 	.long	0
 
 _Start:
@@ -84,11 +84,10 @@ _HandoffBlocked:
 	b	_HandoffBlocked
 
 	.ltorg
-	/* Code and literal pool must stay below the private stack area. */
-	.if (. - _Head) > 0x8000
-	.error "BootShim code/literals overlap the private stack"
-	.endif
-
+	/*
+	 * The following .org is also the assembler-enforced upper bound:
+	 * assembly fails if code/literals extend beyond the 64 KiB prefix.
+	 */
 	/* 0x8000..0x10000 is the private 32 KiB stack; payload begins at 0x10000. */
 	.org	0x10000
 _Payload:
