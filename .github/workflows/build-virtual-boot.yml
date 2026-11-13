@@ -320,6 +320,64 @@ jobs:
               raise SystemExit("Unexpected pwrcal-env.h CONFIG_CAL_IF guard")
           PY
 
+      - name: Reduce stack usage in SPEEDY register dump
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("kernel-src/drivers/i2c/busses/i2c-speedy.c")
+          s = p.read_text()
+          start = s.find("static void dump_batcher_register(struct exynos_speedy *speedy)")
+          end = s.find("\nstatic void write_batcher", start)
+          if start < 0 or end < 0:
+              raise SystemExit("Cannot locate dump_batcher_register boundaries")
+          replacement = r"""static void dump_batcher_register(struct exynos_speedy *speedy)
+          {
+          	int i;
+
+          	dev_err(speedy->dev, "Batcher Register dump\\n"
+          		"\\tCON               0x%08x\\n"
+          		"\\tState             0x%08x\\n"
+          		"\\tINT_EN            0x%08x\\n"
+          		"\\tFSM_UNEXPEN       0x%08x\\n"
+          		"\\tFSM_TXEN          0x%08x\\n"
+          		"\\tFSM_RXFIFO        0x%08x\\n"
+          		"\\tFSM_CON           0x%08x\\n"
+          		"\\tFIFO_Status       0x%08x\\n"
+          		"\\tINT_Status        0x%08x\\n"
+          		"\\tINTR_UNEXP_state  0x%08x\\n"
+          		"\\tINTR_TX_state     0x%08x\\n"
+          		"\\tINTR_RX_state     0x%08x\\n",
+          		readl(speedy->regs + IPBATCHER_CON),
+          		readl(speedy->regs + IPBATCHER_STATE),
+          		readl(speedy->regs + IPBATCHER_INT_EN),
+          		readl(speedy->regs + IPBATCHER_FSM_UNEXPEN),
+          		readl(speedy->regs + IPBATCHER_FSM_TXEN),
+          		readl(speedy->regs + IPBATCHER_FSM_RXFIFO),
+          		readl(speedy->regs + IPBATCHER_FSM_CON),
+          		readl(speedy->regs + IP_FIFO_STATUS),
+          		readl(speedy->regs + IP_INT_STATUS),
+          		readl(speedy->regs + IP_INTR_UNEXP_STATE),
+          		readl(speedy->regs + IP_INTR_TX_STATE),
+          		readl(speedy->regs + IP_INTR_RX_STATE));
+
+          	dev_err(speedy->dev, "Batcher OPCODE dump\\n");
+          	for (i = 0; i < 7; i++)
+          		dev_err(speedy->dev, "OPCODE %d = 0x%08x\\n", i,
+          			readl(speedy->regs + BATCHER_OPCODE + (i * 4)));
+
+          	dev_err(speedy->dev, "Batcher PAYLOAD dump\\n");
+          	for (i = 0; i < 25; i++) {
+          		dev_err(speedy->dev, "PAYLOAD %02d = 0x%08x%s",
+          			i,
+          			readl(speedy->regs + BATCHER_START_PAYLOAD + (i * 4)),
+          			(i % 5 == 4) ? "\\n" : "   ");
+          	}
+          }
+          """
+          p.write_text(s[:start] + replacement + s[end:])
+          print("Removed 1.25 KiB stack buffers from dump_batcher_register")
+          PY
+
       - name: Prepare embedded binaries for out-of-tree build
         run: |
           cd kernel-src
