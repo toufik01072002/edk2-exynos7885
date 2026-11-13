@@ -147,12 +147,12 @@ def inspect_prepi_sec_entry(fd: bytes, fd_base: int) -> dict:
     section_rva_start = next(
         struct.unpack_from("<I", fd, te_offset + 40 + i * 40 + 12)[0]
         for i in range(section_count)
-        if fd[te_offset + 40 + i * 40:te_offset + 40 + i * 40 + 8].rstrip(b"\\x00").decode("ascii", "replace") == section_name
+        if fd[te_offset + 40 + i * 40:te_offset + 40 + i * 40 + 8].rstrip(b"\x00").decode("ascii", "replace") == section_name
     )
     section_virtual_size = next(
         struct.unpack_from("<I", fd, te_offset + 40 + i * 40 + 8)[0]
         for i in range(section_count)
-        if fd[te_offset + 40 + i * 40:te_offset + 40 + i * 40 + 8].rstrip(b"\\x00").decode("ascii", "replace") == section_name
+        if fd[te_offset + 40 + i * 40:te_offset + 40 + i * 40 + 8].rstrip(b"\x00").decode("ascii", "replace") == section_name
     )
     if not image_base + section_rva_start <= branch_target < image_base + section_rva_start + section_virtual_size:
         fail("PrePi SEC entry BL target is outside its executable section")
