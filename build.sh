@@ -24,8 +24,8 @@ if not bootshim.is_file() or not firmware.is_file():
 bs = bootshim.read_bytes()
 fd = firmware.read_bytes()
 
-if not 256 <= len(bs) <= 65536:
-    raise SystemExit("ERROR: BootShim size outside expected limits")
+if len(bs) != 0x10000:
+    raise SystemExit("ERROR: BootShim must occupy exactly 64 KiB")
 
 if not 0 < len(fd) <= COPY_SIZE:
     raise SystemExit("ERROR: Firmware size invalid or exceeds 2 MiB")
@@ -48,7 +48,7 @@ metadata = {
     },
     "firmware": {
         "source_size": len(fd),
-        "offset": len(bs),
+        "offset": 0x10000,
         "padded_size": COPY_SIZE,
         "load_address": hex(LOAD_ADDRESS),
         "copy_size": COPY_SIZE,
