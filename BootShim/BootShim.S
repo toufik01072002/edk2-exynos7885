@@ -39,7 +39,7 @@ _Head:
 	.quad	0
 	.quad	0
 	.quad	0
-	.ascii	"ARM\\x64"
+	.ascii	"ARM\x64"
 	.long	0
 
 _Start:
