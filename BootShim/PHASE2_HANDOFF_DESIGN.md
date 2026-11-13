@@ -298,3 +298,41 @@ code is enabled.
   https://github.com/horms/kexec-tools/blob/15d78e5799eea7ec5ea9c5897ae95aaa0ce8970c/kexec/arch/arm64/kexec-image-arm64.c
 - kexec-tools syscall selection/fallback:
   https://github.com/horms/kexec-tools/blob/15d78e5799eea7ec5ea9c5897ae95aaa0ce8970c/kexec/kexec.c
+
+
+## Linux-side FD destination reservation audit (2026-11-13)
+
+The EDK2 platform memory map reservation is not sufficient to protect the FD
+destination while Linux is running. The active Linux kernel must reserve the
+physical range independently before a shim can safely copy firmware there.
+
+Source review of the A20 kernel branch
+`Kernel_SM-A205W:kexec-arm64-4.4-d-work` found:
+
+- The Exynos7885 base DTS declares RAM at
+  `0x80000000-0xBDA00000`; therefore
+  `0x90000000-0x90200000` is inside the general RAM range.
+- The A20 overlay
+  `exynos7884B-a20_common.dtsi` includes
+  `exynos7884-rmem_7884.dtsi`. That reserved-memory include only declares
+  the ABOX region at `0xE9400000-0xE9800000`; it does not reserve the
+  UEFI FD window.
+- The Exynos7885 SoC reserved-memory include also has no
+  `0x90000000-0x90200000` reservation.
+- The EDK2 `DeviceMemoryMap.h` reservation and the Virtual Boot DTB
+  `no-map` entry describe the firmware/Virtual Boot environment; they do
+  not prove that the currently booted TWRP Linux kernel has reserved this
+  range.
+- The A20 TWRP device tree points `TARGET_PREBUILT_KERNEL` at
+  `prebuilt/kexec/Image` and uses a prebuilt `recoverydtbo`. The binary
+  prebuilt DTBO and the exact runtime DTB have not yet been decoded and
+  audited, so absence from the DTS source is not proof of the final DTB's
+  contents.
+
+**Current conclusion:** do not copy or branch into the FD window yet. The
+Linux-side reservation is unproven and the source DTS currently does not
+declare it. The next audit must decode the exact DTB/DTBO pair packaged into
+the TWRP recovery, resolve the final merged memory map, and verify that the
+range is reserved before kexec loads any segments. If it is not reserved,
+the kernel/DTB build must be updated and validated in CI before any handoff
+code is considered. Do not infer safety from the EDK2 memory map alone.
