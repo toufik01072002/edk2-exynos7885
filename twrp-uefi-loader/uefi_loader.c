@@ -477,7 +477,11 @@ const char *uefi_loader_get_path(void) {
 /* Entry point for standalone execution (testing) */
 #ifdef UEFI_LOADER_STANDALONE
 int main(int argc, char **argv) {
+    int result;
     (void)argc; (void)argv;
-    return uefi_loader_main();
+    result = uefi_loader_main();
+    if (result != 0)
+        fprintf(stderr, "%s\\n", uefi_loader_get_error());
+    return result;
 }
 #endif
