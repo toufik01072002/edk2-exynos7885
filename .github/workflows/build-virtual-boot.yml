@@ -393,7 +393,11 @@ jobs:
               "", s, flags=re.S)
           if count != 2:
               raise SystemExit("Expected two obsolete sdhci_cmdq_crypto_cfg stubs, found %d" % count)
-          s = s.replace("\\t.crypto_cfg\\t= sdhci_cmdq_crypto_cfg,\\n", "")
+          s, ops_count = re.subn(
+              r"^\\s*\\.crypto_cfg\\s*=\\s*sdhci_cmdq_crypto_cfg,\\s*\\n",
+              "", s, flags=re.M)
+          if ops_count != 1:
+              raise SystemExit("Expected one obsolete CMDQ crypto_cfg ops entry, found %d" % ops_count)
           if "sdhci_cmdq_crypto_cfg" in s or ".crypto_cfg" in s:
               raise SystemExit("Obsolete CMDQ crypto callback remains")
           p.write_text(s)
