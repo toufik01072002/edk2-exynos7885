@@ -515,3 +515,29 @@ that the selected kernel segment is `0x80080000`, the source FD range does
 not overlap the reserved destination, and DTB/purgatory allocations remain
 outside the FD reservation. This is not an execution test. Until that
 evidence exists, do not enable the candidate path or the TWRP launcher.
+
+
+## ECT / EDK2 FD placement correction (2026-11-14)
+
+The live SM-A205W Termux audit recorded the Samsung ECT parameter window at
+`parameter_address = 0x90000000`, `parameter_size = 0x19000`, with an observed
+`memblock_reserve(0x90000000, 0x19000)`. The former 2 MiB EDK2 FD destination
+at `0x90000000-0x90200000` therefore overlapped the ECT reservation.
+
+The placement has been corrected consistently:
+- ECT plus 128 KiB alignment reservation: `0x90000000-0x90020000`;
+- EDK2 FD (2 MiB): `0x90020000-0x90220000`;
+- usable RAM Bank 0 Mid now starts at `0x90220000`;
+- the PrePi SEC entry contract moves from `0x90008278` to `0x90028278`.
+
+The A20 kernel overlay `arch/arm64/boot/dts/exynos/dtbo/exynos7884-rmem_7884.dtsi`
+on branch `kexec-arm64-4.4-d-work` now reserves the relocated FD range with
+`no-map`. The Virtual Boot DTB and EDK2 reference memory map separately reserve
+the ECT window and the FD window. This is a source-level correction; the
+currently packaged TWRP `prebuilt/recoverydtbo` must be rebuilt from the updated
+kernel DTBO source before the new reservation is active on the phone.
+
+This change does not enable the handoff. `ENABLE_HANDOFF=0` and the BootShim
+WFE gate remain mandatory. CI must validate the updated FD address and DTB
+before any runtime placement test; no partition is to be flashed as part of
+this source integration.
