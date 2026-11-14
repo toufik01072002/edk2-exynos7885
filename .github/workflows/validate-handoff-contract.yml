@@ -57,6 +57,16 @@ jobs:
           /tmp/bootshim-consumer-test
           echo "PASS: BootShim accepts only structurally valid descriptor bytes"
 
+      - name: Compile and run fail-closed SEC entry evidence gate
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/BootShim \
+            project/BootShim/sec_entry_gate.c \
+            project/BootShim/test_sec_entry_gate.c \
+            -o /tmp/sec-entry-gate-test
+          /tmp/sec-entry-gate-test
+          echo "PASS: SEC entry geometry and all runtime-evidence gates fail closed"
+
       - name: Compile and run explicit LE producer serializer tests
         run: |
           cc -std=c11 -Wall -Wextra -Werror \
