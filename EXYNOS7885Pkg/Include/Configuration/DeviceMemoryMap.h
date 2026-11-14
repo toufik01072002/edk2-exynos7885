@@ -67,11 +67,14 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
 // Usable RAM in Bank 0:
     {"RAM Bank 0 Low",    0x80000000, 0x10000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x80000000-0x90000000 (256 MiB)
 
-// BootShim / UEFI FD region (loaded by bootloader):
-    {"BootShim/FD",       0x90000000, 0x00200000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK},    // 0x90000000-0x90200000 (2 MiB)
+// ECT parameter area plus alignment padding (ECT uses 0x19000 bytes):
+    {"ECT Reserved",      0x90000000, 0x00020000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK},    // 0x90000000-0x90020000 (128 KiB)
+
+// BootShim / UEFI FD region, after the ECT parameter area:
+    {"BootShim/FD",       0x90020000, 0x00200000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK},    // 0x90020000-0x90220000 (2 MiB)
 
 // Usable RAM after BootShim, before TIMA:
-    {"RAM Bank 0 Mid",    0x90200000, 0x27E00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x90200000-0xB8000000 (638 MiB)
+    {"RAM Bank 0 Mid",    0x90220000, 0x27DE0000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x90220000-0xB8000000 (638 MiB)
 
 // Reserved regions within bank 0:
     {"TIMA Reserved",     0xB8000000, 0x00200000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},
