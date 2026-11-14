@@ -447,26 +447,19 @@ jobs:
 
           p = Path("kernel-src/drivers/mmc/host/cmdq_hci.c")
           s = p.read_text()
-          old = """\tstruct mmc_cmdq_context_info *ctx_info = &mmc->cmdq_ctx;
-          \tu32 dbr = cmdq_readl(cq_host, CQTDBR);
-          \tunsigned long flags;"""
-          new = """\tstruct mmc_cmdq_context_info *ctx_info = &mmc->cmdq_ctx;
-          \tunsigned long flags;"""
-          if s.count(old) != 1:
-              raise SystemExit("Expected one cmdq_finish_data local declaration block")
-          s = s.replace(old, new, 1)
-          old = """#if defined(CONFIG_MMC_DW_DEBUG)
-          \tif (cq_host->ops->cmdq_log) {"""
-          new = """#if defined(CONFIG_MMC_DW_DEBUG) || defined(CONFIG_MMC_CMDQ_DEBUG)
-          \tu32 dbr = cmdq_readl(cq_host, CQTDBR);
-          #endif
-          #if defined(CONFIG_MMC_DW_DEBUG)
-          \tif (cq_host->ops->cmdq_log) {"""
-          if s.count(old) != 1:
-              raise SystemExit("Expected one CMDQ debug logging block")
-          s = s.replace(old, new, 1)
+          s, count = re.subn(
+              r"(static void cmdq_finish_data\(struct mmc_host \*mmc, unsigned int tag\)\s*\{.*?\n)\s*u32 dbr = cmdq_readl\(cq_host, CQTDBR\);",
+              r"\1\t/* dbr is needed only by the optional CMDQ debug paths. */",
+              s, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit("Could not scope CMDQ doorbell declaration")
+          marker = "#if defined(CONFIG_MMC_DW_DEBUG)"
+          replacement = "#if defined(CONFIG_MMC_DW_DEBUG) || defined(CONFIG_MMC_CMDQ_DEBUG)\n\tu32 dbr = cmdq_readl(cq_host, CQTDBR);\n#endif\n#if defined(CONFIG_MMC_DW_DEBUG)"
+          if s.count(marker) != 1:
+              raise SystemExit("Expected one CMDQ debug logging guard")
+          s = s.replace(marker, replacement, 1)
           p.write_text(s)
-          print("Scope CMDQ doorbell snapshot to MMC_DW_DEBUG, where it is consumed")
+          print("Scope CMDQ doorbell snapshot to the union of its two debug consumers")
 
           p = Path("kernel-src/drivers/trace/exynos7885-itmon.c")
           s = p.read_text()
