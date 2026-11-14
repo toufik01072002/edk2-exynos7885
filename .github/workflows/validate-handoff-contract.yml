@@ -57,6 +57,17 @@ jobs:
           /tmp/bootshim-consumer-test
           echo "PASS: BootShim accepts only structurally valid descriptor bytes"
 
+      - name: Compile and run explicit LE producer serializer tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/virtual-boot/include \
+            project/virtual-boot/src/a20_handoff_validate.c \
+            project/virtual-boot/src/a20_handoff_encode.c \
+            project/virtual-boot/tests/handoff_encode_test.c \
+            -o /tmp/handoff-encode-test
+          /tmp/handoff-encode-test
+          echo "PASS: producer serializer emits explicit LE ABI and rejects unassigned ranges"
+
       - name: Validate fail-closed handoff contract
         run: |
           python3 project/virtual-boot/scripts/validate_handoff_contract.py \
