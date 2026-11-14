@@ -1319,7 +1319,7 @@ jobs:
           m = json.loads(Path("virtual-boot-output/hardware-manifest.json").read_text())
           assert m["kexec"]["uefi_handoff_addr"] is None
           assert m["kexec"]["physical_load_addresses"] == "CONFIGURATION_CANDIDATES_ONLY_NOT_RUNTIME_RESERVATIONS"
-          assert "uefi_fd_candidate_unverified" in m["memory_map"]
+          assert "uefi_bundle_candidate_unverified" in m["memory_map"]
           assert "reserved_reference_only" in m["memory_map"]
           p = m["handoff_protocol"]
           assert p["name"] == "SM-A205W-ARM64-HANDOFF"
