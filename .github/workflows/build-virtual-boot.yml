@@ -533,9 +533,18 @@ jobs:
           #define sec_set_param(a,b)			{-1)
           #endif /* CONFIG_SEC_PARAM */"""
           new = """#else
-          #define sec_set_param(a,b)			(-1)
-          #define sec_set_param_str(a,b,c)		(-1)
-          #define sec_get_param_str(a,b)		(-1)
+          static inline int sec_set_param(unsigned long offset, char val)
+          {
+          	return -1;
+          }
+          static inline int sec_set_param_str(unsigned long offset, const char *val, int size)
+          {
+          	return -1;
+          }
+          static inline int sec_get_param_str(unsigned long offset, char *val)
+          {
+          	return -1;
+          }
           #endif /* CONFIG_SEC_PARAM */"""
           if old not in s:
               if new not in s:
