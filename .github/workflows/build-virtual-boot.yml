@@ -6,6 +6,8 @@ on:
     paths:
       - '.github/workflows/build-virtual-boot.yml'
       - 'virtual-boot/**'
+      - 'BootShim/**'
+      - 'build_bootshim.sh'
       - 'EXYNOS7885Pkg/Include/Configuration/DeviceMemoryMap.h'
   workflow_dispatch:
     inputs:
@@ -427,9 +429,68 @@ jobs:
           sed -i 's/# CONFIG_KEXEC is not set/CONFIG_KEXEC=y/' .config
           make -j$(nproc) CC=aarch64-linux-gnu-gcc CROSS_COMPILE=aarch64-linux-gnu- STRIP=aarch64-linux-gnu-strip
 
+      - name: Build fixed-segment BootShim and kexec loader
+        run: |
+          mkdir -p handoff-tools
+          make -C virtual-boot-project/BootShim handoff-candidate \
+            UEFI_BASE=0x90020000 UEFI_SIZE=0x00200000 \
+            SEC_ENTRY=0x90028278 BOOTSHIM_BASE=0x80080000 \
+            FD_SOURCE=0x80400000
+          cp virtual-boot-project/BootShim/BootShim-handoff-candidate.bin \
+            handoff-tools/BootShim.bin
+          aarch64-linux-gnu-gcc -static -Os -Wall -Wextra -Werror \
+            -o handoff-tools/edk2-kexec \
+            virtual-boot-project/virtual-boot/loader/edk2-kexec.c
+          aarch64-linux-gnu-readelf -h handoff-tools/edk2-kexec | grep -q 'Machine:.*AArch64'
+          ! aarch64-linux-gnu-readelf -l handoff-tools/edk2-kexec | grep -q INTERP
+          test "$(wc -c < handoff-tools/BootShim.bin)" -eq 65536
+
+      - name: Find latest successful EDK2 firmware build
+        id: edk2_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/build-a205w.yml/runs?status=success&per_page=20" --jq '[.workflow_runs[] | select(.conclusion == "success")][0].id')
+          test -n "$RUN_ID" && test "$RUN_ID" != "null"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Using EDK2 workflow run: $RUN_ID"
+
+      - name: Download validated EDK2 firmware artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: a205w-edk2
+          run-id: ${{ steps.edk2_run.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: edk2-artifacts
+
+      - name: Extract and verify fixed-size EDK2 FD
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("edk2-artifacts/phase2-fd-manifest.json").read_text())
+          combined = Path("edk2-artifacts/UEFI").read_bytes()
+          offset = int(manifest["combined_image"]["fd_offset"])
+          size = int(manifest["fd"]["length_bytes"])
+          expected_hash = manifest["fd"]["sha256"]
+          sec_entry = int(manifest["prepi_sec"]["entry_address"], 16)
+          if offset != 0x10000 or size != 0x200000:
+              raise SystemExit("Unexpected BootShim/FD boundary or FD size")
+          if sec_entry != 0x90028278:
+              raise SystemExit(f"PrePi SEC entry mismatch: 0x{sec_entry:X}")
+          fd = combined[offset:offset + size]
+          if len(fd) != size or hashlib.sha256(fd).hexdigest() != expected_hash:
+              raise SystemExit("Extracted FD failed size/SHA-256 validation")
+          if fd[0x28:0x2C] != b"_FVH":
+              raise SystemExit("Extracted FD has no EFI firmware-volume signature")
+          Path("handoff-tools/UEFI.fd").write_bytes(fd)
+          print("Verified EDK2 FD:", size, "bytes; SHA-256", expected_hash)
+          PY
+
       - name: Create initramfs structure
         run: |
-          mkdir -p initramfs/{bin,sbin,etc,proc,sys,dev,lib,lib64,mnt,root,tmp,var,run}
+          mkdir -p initramfs/{bin,sbin,etc,proc,sys,dev,lib,lib64,mnt,root,tmp,var,run,edk2}
           mkdir -p initramfs/usr/{bin,sbin,lib,lib64}
 
       - name: Copy BusyBox and create symlinks
@@ -445,6 +506,16 @@ jobs:
             ln -sf busybox $app
           done
           cd ../..
+
+      - name: Stage fixed-segment EDK2 handoff files
+        run: |
+          install -m 0755 handoff-tools/edk2-kexec initramfs/sbin/edk2-kexec
+          install -m 0644 handoff-tools/BootShim.bin initramfs/edk2/BootShim.bin
+          install -m 0644 handoff-tools/UEFI.fd initramfs/edk2/UEFI.fd
+          cp edk2-artifacts/phase2-fd-manifest.json initramfs/edk2/
+          test "$(wc -c < initramfs/edk2/BootShim.bin)" -eq 65536
+          test "$(wc -c < initramfs/edk2/UEFI.fd)" -eq 2097152
+          test -x initramfs/sbin/edk2-kexec
 
       - name: Create init script (diagnostic only - Phase 1)
         run: |
@@ -517,7 +588,10 @@ jobs:
           # Interactive shell for diagnostics
           echo "[INFO] Entering diagnostic shell."
           echo "[INFO] Available: hwinfo, dmesg, cat /proc/*, ls /sys/*, etc."
-          echo "[INFO] Phase 2 will add automated UEFI handoff."
+          echo "[INFO] Fixed-segment BootShim and EDK2 FD are packaged."
+          echo "[INFO] Optional loader staging test: /sbin/edk2-kexec --load-only"
+          echo "[INFO] This command only stages kexec segments; it does NOT reboot or execute."
+          echo "[INFO] Clear a staged image with: /sbin/edk2-kexec --unload"
           echo ""
           exec /bin/sh
           INITEOF
@@ -804,7 +878,17 @@ jobs:
               "dtb_addr": "0x88000000",
               "initrd_addr": "0x84000000",
               "uefi_handoff_addr": "0x90020000",
-              "note": "Phase 1 only - trampoline not assigned"
+              "note": "Linux Virtual Boot kernel entry; second-stage UEFI transfer is separate"
+            },
+            "edk2_second_stage": {
+              "loader": "/sbin/edk2-kexec",
+              "mode": "legacy kexec_load with two fixed physical segments",
+              "bootshim": "0x80080000-0x80090000",
+              "bootshim_entry": "0x80080000",
+              "fd_staging": "0x80400000-0x80600000",
+              "fd_destination": "0x90020000-0x90220000",
+              "command": "/sbin/edk2-kexec --load-only",
+              "execution": "disabled; loader never calls reboot"
             },
             "validation": {
               "dtb_memory_map": "PASSED - binary DTB validated via dtc/fdtget",
