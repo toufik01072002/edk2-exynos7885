@@ -629,6 +629,7 @@ jobs:
           python3 virtual-boot-project/virtual-boot/scripts/validate_dtb_binary.py \
             kernel-artifacts/exynos7885-a205w-virtual.dtb \
             virtual-boot-project/EXYNOS7885Pkg/Include/Configuration/DeviceMemoryMap.h
+          python3 virtual-boot-project/BootShim/test_handoff_mailbox.py
 
       - name: Confirm memory-map validator completed
         run: echo "Binary DTB and DeviceMemoryMap.h checks completed successfully."
