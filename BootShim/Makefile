@@ -5,9 +5,9 @@ CC                = $(CROSS_COMPILE)gcc
 OBJCOPY           = $(CROSS_COMPILE)objcopy
 
 ENABLE_HANDOFF    ?= 0
-UEFI_BASE         ?= 0x90000000
+UEFI_BASE         ?= 0x90020000
 UEFI_SIZE         ?= 0x00200000
-SEC_ENTRY         ?= 0x90008278
+SEC_ENTRY         ?= 0x90028278
 
 ASFLAGS           = -DUEFI_BASE=$(UEFI_BASE) -DUEFI_SIZE=$(UEFI_SIZE) -DSEC_ENTRY=$(SEC_ENTRY)
 
