@@ -18,7 +18,7 @@ ASM = re.sub(r"\s+", " ", ASM_RAW)
 require('.ascii "ARM\\x64"' in ASM, "ARM64 Image magic is missing")
 require(".org 0x10000" in ASM, "BootShim prefix is not fixed at 64 KiB")
 require("UEFI_SIZE != 0x00200000" in ASM, "FD size is not compile-time fixed at 2 MiB")
-require("SEC_ENTRY != 0x90008278" in ASM, "PrePi SEC entry constant changed unexpectedly")
+require("SEC_ENTRY != 0x90028278" in ASM, "PrePi SEC entry constant changed unexpectedly")
 
 candidate = ASM.split("#if ENABLE_HANDOFF", 1)[1].split("#else", 1)[0]
 sequence = [
