@@ -79,6 +79,19 @@ jobs:
           /tmp/sec-handoff-adapter-test
           echo "PASS: SEC adapter binds descriptor segments to runtime evidence and fails closed"
 
+      - name: Compile and run validated SEC entry plan tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \\
+            -Iproject/virtual-boot/include -Iproject/BootShim \\
+            project/virtual-boot/src/a20_handoff_validate.c \\
+            project/BootShim/sec_entry_gate.c \\
+            project/BootShim/sec_handoff_adapter.c \\
+            project/BootShim/sec_entry_plan.c \\
+            project/BootShim/test_sec_entry_plan.c \\
+            -o /tmp/sec-entry-plan-test
+          /tmp/sec-entry-plan-test
+          echo "PASS: SEC entry plan is emitted only after descriptor and runtime gates pass"
+
       - name: Compile and run explicit LE producer serializer tests
         run: |
           cc -std=c11 -Wall -Wextra -Werror \
