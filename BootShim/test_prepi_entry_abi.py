@@ -86,6 +86,14 @@ def main() -> None:
             "internal stack layout constants do not fill the 64 KiB BootShim")
     require(manifest.get("handoff_enabled") is False,
             "SEC manifest must keep handoff_enabled=false")
+    fd = manifest.get("fd", {})
+    sec = manifest.get("entry_contract", {}).get("sec_entry", {})
+    require(fd.get("runtime_physical_load_address") is None
+            and fd.get("runtime_placement_status") == "UNVERIFIED",
+            "FD runtime physical placement must remain explicitly unassigned")
+    require(sec.get("runtime_address") is None
+            and sec.get("runtime_address_status") == "UNVERIFIED",
+            "SEC runtime entry address must remain explicitly unassigned")
 
     print("PASS: PrePi calls ArmPlatformPeiBootAction before installing its own stack")
     print("PASS: BootShim installs a position-independent, 16-byte-checked 8 KiB stack")
