@@ -959,6 +959,11 @@ jobs:
           test -x bin/busybox
           test -x sbin/hwinfo
           test -x sbin/handoff-probe
+          if grep -nE 'dd[[:space:]]+if=/dev/mem|skip=\$\(\(0x90000030\)\)' init; then
+            echo "ERROR: initramfs still reads the unassigned historical UEFI FD address"
+            exit 1
+          fi
+          grep -Fq 'physical address is UNASSIGNED' init
           cd ..
 
       - name: Generate SHA256
@@ -1142,6 +1147,19 @@ jobs:
             }
           }
           MANIFESTEOF
+
+      - name: Assert manifest keeps physical handoff unassigned
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m = json.loads(Path("virtual-boot-output/hardware-manifest.json").read_text())
+          assert m["kexec"]["uefi_handoff_addr"] is None
+          assert m["kexec"]["physical_load_addresses"] == "CONFIGURATION_CANDIDATES_ONLY_NOT_RUNTIME_RESERVATIONS"
+          assert "uefi_fd_candidate_unverified" in m["memory_map"]
+          assert "reserved_reference_only" in m["memory_map"]
+          print("PASS: manifest does not claim a physical UEFI FD or reservation")
+          PY
 
       - name: Generate SHA256SUMS
         run: |
