@@ -786,6 +786,13 @@ jobs:
           sudo apt-get install -y build-essential gcc-aarch64-linux-gnu \
             wget cpio gzip
 
+      - name: Download EDK2 artifact for initramfs
+        if: inputs.edk2_artifact_available
+        uses: actions/download-artifact@v4
+        with:
+          name: a205w-edk2
+          path: edk2-artifacts
+
       - name: Build BusyBox static ARM64
         env:
           BUSYBOX_VERSION: "1.36.1"
@@ -805,6 +812,23 @@ jobs:
         run: |
           mkdir -p initramfs/{bin,sbin,etc,proc,sys,dev,lib,lib64,mnt,root,tmp,var,run}
           mkdir -p initramfs/usr/{bin,sbin,lib,lib64}
+
+      - name: Install EDK2 bundle in initramfs
+        if: inputs.edk2_artifact_available
+        run: |
+          test -s edk2-artifacts/UEFI
+          test -s edk2-artifacts/UEFI.manifest.json
+          test -s edk2-artifacts/UEFI.sec-manifest.json
+          mkdir -p initramfs/boot/edk2
+          install -m 0644 edk2-artifacts/UEFI initramfs/boot/edk2/UEFI
+          install -m 0644 edk2-artifacts/UEFI.manifest.json initramfs/boot/edk2/
+          install -m 0644 edk2-artifacts/UEFI.sec-manifest.json initramfs/boot/edk2/
+          (
+            cd initramfs/boot/edk2
+            sha256sum UEFI > UEFI.sha256
+            sha256sum -c UEFI.sha256
+          )
+          echo "PASS: actual BootShim + EDK2 FD embedded in initramfs (file staging only)"
 
       - name: Copy BusyBox and create symlinks
         run: |
@@ -874,8 +898,14 @@ jobs:
           fi
           echo ""
 
-          # No /dev/mem access: the historical UEFI FD address is unassigned.
-          echo "[INFO] UEFI FD presence check skipped: physical address is UNASSIGNED."
+          # The actual EDK2 bundle is carried as a file, not copied to physical RAM.
+          if [ -s /boot/edk2/UEFI ] && [ -s /boot/edk2/UEFI.sha256 ]; then
+            echo "[INFO] EDK2 BootShim + FD bundle is present in initramfs."
+            (cd /boot/edk2 && sha256sum -c UEFI.sha256) || echo "[WARN] EDK2 bundle checksum failed."
+            echo "[INFO] Bundle is file-staged only; physical load address remains UNASSIGNED."
+          else
+            echo "[INFO] EDK2 bundle not embedded in this diagnostic-only build."
+          fi
           echo "[INFO] No physical memory is read or modified by this diagnostic."
           echo ""
 
@@ -996,7 +1026,13 @@ jobs:
             echo "ERROR: initramfs still reads the unassigned historical UEFI FD address"
             exit 1
           fi
-          grep -Fq 'physical address is UNASSIGNED' init
+          grep -Fq 'physical load address remains UNASSIGNED' init
+          if [ "${{ inputs.edk2_artifact_available }}" = "true" ]; then
+            test -s boot/edk2/UEFI
+            test -s boot/edk2/UEFI.manifest.json
+            test -s boot/edk2/UEFI.sec-manifest.json
+            (cd boot/edk2 && sha256sum -c UEFI.sha256)
+          fi
           cd ..
 
       - name: Generate SHA256
