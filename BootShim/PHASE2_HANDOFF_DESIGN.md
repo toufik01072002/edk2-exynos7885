@@ -544,3 +544,15 @@ builder, does not consume the mailbox in BootShim, and does not prove cache
 or runtime mapping behavior on the handset. CI must compile the driver and
 validate its source contract before this step is considered complete.
 The WFE gate, `ENABLE_HANDOFF=0`, and disabled TWRP launcher remain intact.
+
+
+### Initramfs publisher utility
+
+A static ARM64 utility, `/bin/a20-handoff-publish`, is now built and packaged
+into the initramfs. It accepts explicit physical DTB and command-line address
+and size pairs, rejects incomplete pairs, integer overflow, and payload sizes
+above the kexec DTB bound (2 MiB) or command-line bound (4 KiB), then submits
+the fixed 4 KiB record to `/dev/a20-handoff`. The kernel driver computes the
+CRC32. The utility is packaged but deliberately not invoked by the diagnostic
+init script yet: the exact persistent physical placement and lifetime of the
+DTB and command line must be established before supplying those addresses.
