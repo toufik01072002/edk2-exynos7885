@@ -1,7 +1,7 @@
 /*
  * Fixed-segment ARM64 kexec loader for the SM-A205W EDK2 handoff.
  *
- * This program only stages two kexec segments. It NEVER calls reboot() and
+ * This program only stages two kexec segments. It NEVER invokes reboot and
  * therefore cannot transfer execution to BootShim or EDK2.
  */
 #define _GNU_SOURCE
