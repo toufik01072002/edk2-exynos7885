@@ -14,13 +14,14 @@ KEXEC_ALIGN = 2 * MIB
 TEXT_OFFSET = 0x80000
 
 RAM0_LOW = (0x80000000, 0x90000000)       # [start, end)
-FD_RANGE = (0x90000000, 0x90200000)       # reserved, 2 MiB
-RAM0_MID = (0x90200000, 0xB8000000)       # [start, end)
+ECT_RANGE = (0x90000000, 0x90020000)       # ECT 0x19000 + 0x7000 alignment padding
+FD_RANGE = (0x90020000, 0x90220000)       # reserved, 2 MiB
+RAM0_MID = (0x90220000, 0xB8000000)       # [start, end)
 RAM_RANGES = (RAM0_LOW, RAM0_MID)
 
 FD_BASE = FD_RANGE[0]
 FD_SIZE = FD_RANGE[1] - FD_RANGE[0]
-SEC_ENTRY = 0x90008278
+SEC_ENTRY = 0x90028278
 SEC_ENTRY_OFFSET = SEC_ENTRY - FD_BASE
 
 # Reserve a 64 KiB prefix for position-independent BootShim code and stack.
@@ -130,11 +131,10 @@ def main() -> None:
     if f"#if SEC_ENTRY != 0x{SEC_ENTRY:08x}" not in shim_source:
         fail("physical-layout SEC entry does not match the BootShim assembly contract")
 
-    # Reject the earlier direct-placement proposal: a 0x180000 prefix makes
-    # kexec require a 4 MiB contiguous hole from 0x8FE00000 to 0x90200000.
-    # That span crosses RAM0_LOW into the reserved FD range and is not one
-    # usable RAM range in the platform memory map.
-    direct_prefix = 0x180000
+    # Reject direct placement: a 0x1A0000 prefix makes kexec require a 0x420000
+    # contiguous hole from 0x8FE00000 to 0x90220000. It crosses RAM0_LOW,
+    # the ECT reservation, and the FD reservation; it is not one usable range.
+    direct_prefix = 0x1A0000
     direct_image_size = direct_prefix + FD_SIZE
     direct_hole_size = TEXT_OFFSET + direct_image_size
     direct_hole_start = FD_BASE - TEXT_OFFSET - direct_prefix
@@ -143,8 +143,8 @@ def main() -> None:
         fail("the historical direct-placement equation is not 2 MiB aligned")
     if any(contained(*direct_hole, region) for region in RAM_RANGES):
         fail("direct-placement candidate unexpectedly fits a single usable RAM range")
-    if not overlaps(direct_hole, FD_RANGE):
-        fail("direct-placement candidate no longer overlaps the reserved FD")
+    if not overlaps(direct_hole, ECT_RANGE) or not overlaps(direct_hole, FD_RANGE):
+        fail("direct-placement candidate no longer crosses both ECT and FD reservations")
 
     result = {
         "validation_scope": "static address arithmetic and reference memory-map model only",
@@ -159,6 +159,7 @@ def main() -> None:
         "image_end_exclusive": f"0x{image_end:X}",
         "stack": [f"0x{stack[0]:X}", f"0x{stack[1]:X}"],
         "fd_source": [f"0x{payload[0]:X}", f"0x{payload[1]:X}"],
+        "ect_reserved_range": [f"0x{ECT_RANGE[0]:X}", f"0x{ECT_RANGE[1]:X}"],
         "fd_destination": [f"0x{FD_BASE:X}", f"0x{FD_BASE + FD_SIZE:X}"],
         "sec_entry": f"0x{SEC_ENTRY:X}",
         "rejected_direct_placement_hole": [
