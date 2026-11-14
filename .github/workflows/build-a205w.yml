@@ -94,14 +94,6 @@ jobs:
             ../../kernel/arch/arm64/kernel/machine_kexec.c
           test -s UEFI
 
-  virtual-boot-integration:
-    name: Build Virtual Boot with this EDK2 artifact
-    needs: build
-    permissions:
-      contents: read
-      actions: read
-    uses: ./.github/workflows/build-virtual-boot.yml
-
       - name: Publier les fichiers
         uses: actions/upload-artifact@v4
         with:
@@ -112,3 +104,11 @@ jobs:
             edk2-exynos7885/workspace/UEFI.manifest.json
             edk2-exynos7885/workspace/SHA256SUMS
             edk2-exynos7885/workspace/UEFI.sec-manifest.json
+
+  virtual-boot-integration:
+    name: Build Virtual Boot with this EDK2 artifact
+    needs: build
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/build-virtual-boot.yml
