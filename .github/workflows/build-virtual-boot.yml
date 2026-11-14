@@ -951,6 +951,14 @@ jobs:
           grep -Fq 'descriptor_address=UNASSIGNED' virtual-boot-project/virtual-boot/scripts/handoff-runtime-probe.sh
           echo "PASS: runtime probe is read-only and fail-closed"
 
+      - name: Install explicit offline handoff staging command
+        run: |
+          install -m 0755 virtual-boot-project/virtual-boot/scripts/handoff-stage-request.sh initramfs/sbin/handoff-stage-request
+          sh -n initramfs/sbin/handoff-stage-request
+          grep -Fq '/sbin/handoff-stage' initramfs/sbin/handoff-stage-request
+          grep -Fq 'no physical-memory write' initramfs/sbin/handoff-stage-request
+          echo "PASS: explicit staging command installed; no automatic handoff"
+
       - name: Build initramfs
         run: |
           cd initramfs
@@ -968,6 +976,9 @@ jobs:
           test -x bin/busybox
           test -x sbin/hwinfo
           test -x sbin/handoff-probe
+          test -x sbin/handoff-stage
+          test -x sbin/handoff-stage-request
+          sh -n sbin/handoff-stage-request
           if grep -nE 'dd[[:space:]]+if=/dev/mem|skip=\$\(\(0x90000030\)\)' init; then
             echo "ERROR: initramfs still reads the unassigned historical UEFI FD address"
             exit 1
