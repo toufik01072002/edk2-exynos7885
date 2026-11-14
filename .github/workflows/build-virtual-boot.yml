@@ -1255,6 +1255,9 @@ jobs:
           print("PASS: manifest does not claim a physical UEFI FD or reservation")
           PY
 
+      - name: Test bundle provenance validator
+        run: python3 virtual-boot-project/virtual-boot/tests/test_handoff_bundle_provenance.py
+
       - name: Cross-check bundle files against provenance and manifest
         run: |
           python3 virtual-boot-project/virtual-boot/scripts/validate_handoff_bundle_provenance.py \
