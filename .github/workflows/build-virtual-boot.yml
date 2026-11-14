@@ -1042,6 +1042,26 @@ jobs:
           cp kernel-artifacts/exynos7885-a205w-virtual.dtb virtual-boot-output/exynos7885-a205w-virtual.dtb
           cp initramfs-artifacts/initramfs.cpio.gz virtual-boot-output/
 
+      - name: Generate fail-closed handoff artifact provenance
+        run: |
+          python3 virtual-boot-project/virtual-boot/tests/test_handoff_producer_report.py \
+            virtual-boot-project/virtual-boot/scripts/generate_handoff_producer_report.py
+          python3 virtual-boot-project/virtual-boot/scripts/generate_handoff_producer_report.py \
+            --kernel virtual-boot-output/Image \
+            --initramfs virtual-boot-output/initramfs.cpio.gz \
+            --dtb virtual-boot-output/exynos7885-a205w-virtual.dtb \
+            --output virtual-boot-output/handoff-producer-report.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("virtual-boot-output/handoff-producer-report.json").read_text())
+          assert report["state"] == "DISABLED"
+          assert all(item["physical_address"] is None for item in report["segments"].values())
+          assert report["segments"]["bootshim"]["sha256"] is None
+          assert report["segments"]["uefi_fd"]["sha256"] is None
+          print("PASS: provenance report contains artifact hashes but no assigned physical addresses")
+          PY
+
       - name: Generate hardware manifest with REAL data
         env:
           BUILD_DATE: ${{ github.event.workflow_run.created_at || github.event.head_commit.timestamp }}
@@ -1120,7 +1140,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd virtual-boot-output
-          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz hardware-manifest.json > SHA256SUMS
+          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz hardware-manifest.json handoff-producer-report.json > SHA256SUMS
           cat SHA256SUMS
 
       - name: Copy documentation
