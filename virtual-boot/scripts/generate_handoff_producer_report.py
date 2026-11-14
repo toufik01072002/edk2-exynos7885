@@ -71,7 +71,7 @@ def main():
             "runtime hardware validation is pending",
         ],
     }
-    Path(args.output).write_text(json.dumps(report, indent=2, sort_keys=True) + "\\n")
+    Path(args.output).write_text(json.dumps(report, indent=2, sort_keys=True) + chr(10))
 
 
 if __name__ == "__main__":
