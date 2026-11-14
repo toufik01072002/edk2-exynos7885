@@ -310,6 +310,20 @@ jobs:
           grep -Fq 'bool acc_dev_status;' kernel-src/drivers/usb/dwc3/gadget.c
           grep -Fq 'bool lcd_is_on = true;' kernel-src/drivers/hid/hid-input.c
 
+      - name: Integrate A20 handoff mailbox writer
+        run: |
+          install -D virtual-boot-project/virtual-boot/kernel/a20-handoff-mailbox.c kernel-src/drivers/misc/a20-handoff-mailbox.c
+          python3 - <<'PY'
+          from pathlib import Path
+          makefile = Path('kernel-src/drivers/misc/Makefile')
+          source = makefile.read_text()
+          entry = 'obj-y += a20-handoff-mailbox.o\\n'
+          if entry not in source:
+              makefile.write_text(source + '\\n# Samsung A20 Virtual Boot mailbox writer\\n' + entry)
+          PY
+          python3 virtual-boot-project/BootShim/test_mailbox_driver.py
+          grep -Fq 'obj-y += a20-handoff-mailbox.o' kernel-src/drivers/misc/Makefile
+
       - name: Copy Virtual Boot kernel config
         run: |
           cp virtual-boot-project/virtual-boot/kernel/config_virtual_boot kernel-src/arch/arm64/configs/virtual_boot_defconfig
