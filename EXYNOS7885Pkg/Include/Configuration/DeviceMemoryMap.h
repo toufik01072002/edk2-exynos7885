@@ -71,7 +71,8 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
     {"BootShim/FD",       0x90000000, 0x00200000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK},    // 0x90000000-0x90200000 (2 MiB)
 
 // Usable RAM after BootShim, before TIMA:
-    {"RAM Bank 0 Mid",    0x90200000, 0x27E00000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x90200000-0xB8000000 (638 MiB)
+    {"Handoff Mailbox",   0x90200000, 0x00001000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK},    // 4 KiB Linux-to-UEFI handoff record
+    {"RAM Bank 0 Mid",    0x90201000, 0x27DFF000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x90201000-0xB8000000
 
 // Reserved regions within bank 0:
     {"TIMA Reserved",     0xB8000000, 0x00200000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},
