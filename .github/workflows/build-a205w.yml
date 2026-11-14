@@ -21,6 +21,7 @@ on:
       - "build*.sh"
       - "firstrun.sh"
       - ".github/workflows/build-a205w.yml"
+      - ".github/workflows/build-virtual-boot.yml"
 
 permissions:
   contents: read
