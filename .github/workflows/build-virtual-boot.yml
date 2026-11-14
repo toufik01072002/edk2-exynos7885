@@ -447,11 +447,15 @@ jobs:
 
           p = Path("kernel-src/drivers/mmc/host/cmdq_hci.c")
           s = p.read_text()
-          decl = "u32 dbr = cmdq_readl(cq_host, CQTDBR);"
-          guarded = "#if defined(CONFIG_MMC_DW_DEBUG) || defined(CONFIG_MMC_CMDQ_DEBUG)\\n\\tu32 dbr = cmdq_readl(cq_host, CQTDBR);\\n#endif"
-          if s.count(decl) != 1:
-              raise SystemExit("Expected exactly one CMDQ doorbell declaration")
-          s = s.replace(decl, guarded, 1)
+          pattern = r"(static void cmdq_finish_data\\(.*?\\n\\{.*?)(\\tu32 dbr = cmdq_readl\\(cq_host, CQTDBR\\);)"
+          def guard_dbr(match):
+              return (match.group(1) +
+                      "#if defined(CONFIG_MMC_DW_DEBUG) || defined(CONFIG_MMC_CMDQ_DEBUG)\\n" +
+                      "\\tu32 dbr = cmdq_readl(cq_host, CQTDBR);\\n" +
+                      "#endif")
+          s, count = re.subn(pattern, guard_dbr, s, count=1, flags=re.S)
+          if count != 1:
+              raise SystemExit("Cannot guard CMDQ dbr declaration inside cmdq_finish_data")
           p.write_text(s)
           print("Compile CMDQ doorbell snapshot only when a debug consumer is enabled")
 
