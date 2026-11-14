@@ -447,17 +447,21 @@ jobs:
 
           p = Path("kernel-src/drivers/mmc/host/cmdq_hci.c")
           s = p.read_text()
-          s, count = re.subn(
-              r"(static void cmdq_finish_data\(struct mmc_host \*mmc, unsigned int tag\)\s*\{.*?\n)\s*u32 dbr = cmdq_readl\(cq_host, CQTDBR\);",
-              r"\1\t/* dbr is needed only by the optional CMDQ debug paths. */",
-              s, count=1, flags=re.S)
-          if count != 1:
-              raise SystemExit("Could not scope CMDQ doorbell declaration")
-          marker = "#if defined(CONFIG_MMC_DW_DEBUG)"
-          replacement = "#if defined(CONFIG_MMC_DW_DEBUG) || defined(CONFIG_MMC_CMDQ_DEBUG)\n\tu32 dbr = cmdq_readl(cq_host, CQTDBR);\n#endif\n#if defined(CONFIG_MMC_DW_DEBUG)"
-          if s.count(marker) != 1:
-              raise SystemExit("Expected one CMDQ debug logging guard")
-          s = s.replace(marker, replacement, 1)
+          start = s.find("static void cmdq_finish_data(struct mmc_host *mmc, unsigned int tag)")
+          end = s.find("\\nirqreturn_t cmdq_irq", start)
+          if start < 0 or end < 0:
+              raise SystemExit("Cannot locate cmdq_finish_data boundaries")
+          fn = s[start:end]
+          decl = "\\tu32 dbr = cmdq_readl(cq_host, CQTDBR);"
+          if fn.count(decl) != 1:
+              raise SystemExit("Expected one CMDQ doorbell declaration in cmdq_finish_data")
+          fn = fn.replace(decl, "", 1)
+          guard = "#if defined(CONFIG_MMC_DW_DEBUG)"
+          if fn.count(guard) != 1:
+              raise SystemExit("Expected one DW debug guard in cmdq_finish_data")
+          snapshot = "#if defined(CONFIG_MMC_DW_DEBUG) || defined(CONFIG_MMC_CMDQ_DEBUG)\\n\\tu32 dbr = cmdq_readl(cq_host, CQTDBR);\\n#endif\\n"
+          fn = fn.replace(guard, snapshot + guard, 1)
+          s = s[:start] + fn + s[end:]
           p.write_text(s)
           print("Scope CMDQ doorbell snapshot to the union of its two debug consumers")
 
