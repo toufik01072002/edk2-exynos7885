@@ -1168,3 +1168,11 @@ jobs:
             /tmp/uefi_loader_test.log
           echo "PASS: standalone loader refuses the unvalidated handoff"
 
+      - name: Assert loader has no kexec execution path
+        run: |
+          if grep -nE 'kexec_load|__NR_reboot|syscall[[:space:]]*\\(' twrp-uefi-loader/uefi_loader.c; then
+            echo "ERROR: executable kexec path found in TWRP loader"
+            exit 1
+          fi
+          echo "PASS: TWRP loader contains no kexec/reboot syscall path"
+
