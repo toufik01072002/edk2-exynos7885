@@ -937,6 +937,15 @@ jobs:
       - name: Install fail-closed runtime handoff probe
         run: |
           install -m 0755 virtual-boot-project/virtual-boot/scripts/handoff-runtime-probe.sh initramfs/sbin/handoff-probe
+
+      - name: Build offline descriptor mailbox stager for initramfs
+        run: |
+          aarch64-linux-gnu-gcc -Os -static -std=c11 -Wall -Wextra -Werror \
+            virtual-boot-project/virtual-boot/src/handoff_stage.c \
+            -o initramfs/sbin/handoff-stage
+          chmod 0755 initramfs/sbin/handoff-stage
+          file initramfs/sbin/handoff-stage
+          echo "PASS: ARM64 offline mailbox stager compiled for initramfs"
           grep -Fq 'state=DISABLED' virtual-boot-project/virtual-boot/scripts/handoff-runtime-probe.sh
           grep -Fq 'physical_reservations=UNVERIFIED' virtual-boot-project/virtual-boot/scripts/handoff-runtime-probe.sh
           grep -Fq 'descriptor_address=UNASSIGNED' virtual-boot-project/virtual-boot/scripts/handoff-runtime-probe.sh
