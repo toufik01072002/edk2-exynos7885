@@ -663,35 +663,39 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           p = Path("kernel-src/drivers/cpufreq/exynos-acme.c")
           s = p.read_text()
 
-          old_domain_mask = """\tif (ap_fuse != 2)
-          \t\tcpulist_parse(buf, &domain->cpus);
-          \telse
-          \t\tcpulist_parse("0-3", &domain->cpus);"""
-          new_domain_mask = """\tcpulist_parse(buf, &domain->cpus);"""
+          domain_mask = re.compile(
+              r"(?m)^[ \\t]*if \\(ap_fuse != 2\\)\\r?\\n"
+              r"[ \\t]*cpulist_parse\\(buf, &domain->cpus\\);\\r?\\n"
+              r"[ \\t]*else\\r?\\n"
+              r"[ \\t]*cpulist_parse\\(\\"0-3\\", &domain->cpus\\);"
+          )
+          s, mask_count = domain_mask.subn(
+              "\\tcpulist_parse(buf, &domain->cpus);", s, count=1
+          )
+          if mask_count == 0 and "ap_fuse != 2" in s:
+              raise SystemExit("Could not safely replace legacy AP-fuse CPU-mask branch")
 
-          old_domain_skip = """\t\t if (domain_id >= 1 && ap_fuse == 2)
-                       continue;
-
-          """
-          if old_domain_mask in s:
-              s = s.replace(old_domain_mask, new_domain_mask, 1)
-          elif new_domain_mask not in s:
-              raise SystemExit("Unexpected Exynos ACME CPU-mask logic")
-
-          if old_domain_skip in s:
-              s = s.replace(old_domain_skip, "", 1)
-          elif "ap_fuse == 2" in s:
-              raise SystemExit("Unexpected AP-fuse domain-skip logic")
+          domain_skip = re.compile(
+              r"(?m)^[ \\t]*if \\(domain_id >= 1 && ap_fuse == 2\\)\\r?\\n"
+              r"[ \\t]*continue;[ \\t]*\\r?\\n?"
+          )
+          s, skip_count = domain_skip.subn("", s, count=1)
+          if skip_count == 0 and "ap_fuse == 2" in s:
+              raise SystemExit("Could not safely remove legacy AP-fuse domain skip")
 
           if "ap_fuse" in s:
               raise SystemExit("Unresolved ap_fuse reference remains in exynos-acme.c")
 
+          if "cpulist_parse(buf, &domain->cpus);" not in s:
+              raise SystemExit("Device Tree sibling-cpus parsing is missing")
+
           p.write_text(s)
-          print("PASS: Exynos ACME now uses Device Tree sibling-cpus for every domain")
+          print("PASS: Exynos ACME uses Device Tree sibling-cpus; no ap_fuse references remain")
           PY
 
           grep -n -E 'sibling-cpus|cpulist_parse|ap_fuse' kernel-src/drivers/cpufreq/exynos-acme.c
