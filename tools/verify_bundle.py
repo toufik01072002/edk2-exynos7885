@@ -32,7 +32,8 @@ except Exception as exc:
 if metadata.get("format") != "7K-EDK2-BUNDLE":
     fail("Unknown bundle format")
 
-if metadata.get("format_version") != 1:
+version = metadata.get("format_version")
+if version not in (1, 2):
     fail("Unsupported manifest version")
 
 if metadata.get("architecture") != "AARCH64":
@@ -93,6 +94,21 @@ bootshim_data = data[bs_offset:bs_offset + bs_size]
 firmware_area = data[fd_offset:fd_offset + fd_padded_size]
 firmware_data = firmware_area[:fd_source_size]
 padding = firmware_area[fd_source_size:]
+
+if version == 2:
+    slot_text = bs.get("sec_entry_offset_slot")
+    entry_text = bs.get("sec_entry_bundle_offset")
+    try:
+        slot = int(slot_text, 0)
+        entry = int(entry_text, 0)
+    except (TypeError, ValueError):
+        fail("Version 2 manifest has invalid SEC entry offsets")
+    if slot != 0xD100:
+        fail("Unexpected BootShim SEC entry slot")
+    if not EXPECTED_BOOTSHIM_SIZE <= entry < EXPECTED_BOOTSHIM_SIZE + EXPECTED_COPY_SIZE or entry & 3:
+        fail("SEC entry bundle offset is outside the aligned FD range")
+    if int.from_bytes(bootshim_data[slot:slot + 8], "little") != entry:
+        fail("BootShim SEC entry slot differs from manifest")
 
 if sha256(bootshim_data) != bs.get("sha256"):
     fail("BootShim SHA-256 mismatch")
