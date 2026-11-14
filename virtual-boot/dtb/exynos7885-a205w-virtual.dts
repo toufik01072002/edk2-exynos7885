@@ -15,6 +15,7 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/sysmmu/sysmmu.h>
 #include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/power/exynos-power.h>
 
 /dts-v1/;
 
