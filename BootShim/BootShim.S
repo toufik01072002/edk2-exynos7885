@@ -2,6 +2,7 @@
  * SM-A205W - EDK2 BootShim
  * Position-independent entry: establish a private stack, then branch to the
  * PrePi SEC entry offset embedded by the post-EDK2 bundle build.
+ * The combined UEFI bundle is also carried in the Virtual Boot initramfs.
  *
  * 0x0000-0xCFFF code; 0xD000 descriptor mailbox; 0xD100 SEC offset;
  * 0xE000-0xFFFF private 8 KiB stack; FD begins at bundle offset 0x10000.
