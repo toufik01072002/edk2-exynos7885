@@ -17,9 +17,9 @@ on:
         required: true
         default: "kexec-arm64-4.4-d-work"
       kernel_commit:
-        description: "Expected commit SHA (1e70ef871acb9ea0cd79a531b18e98f61debfc71)"
+        description: "Expected commit SHA (7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88)"
         required: true
-        default: "1e70ef871acb9ea0cd79a531b18e98f61debfc71"
+        default: "7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88"
 
 permissions:
   contents: read
@@ -66,7 +66,7 @@ jobs:
         id: clone_kernel
         env:
           KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'kexec-arm64-4.4-d-work' }}
-          EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit || '1e70ef871acb9ea0cd79a531b18e98f61debfc71' }}
+          EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit || '7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88' }}
         run: |
           git clone --recursive https://github.com/toufik01072002/Kernel_SM-A205W.git kernel-src
           cd kernel-src
