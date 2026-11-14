@@ -7,11 +7,13 @@ validate live /proc/iomem, or authorize a firmware handoff.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 MIB = 0x100000
 KEXEC_ALIGN = 2 * MIB
 TEXT_OFFSET = 0x80000
+ECT_SIZE = 0x19000
 
 RAM0_LOW = (0x80000000, 0x90000000)       # [start, end)
 ECT_RANGE = (0x90000000, 0x90020000)       # ECT 0x19000 + 0x7000 alignment padding
@@ -36,6 +38,10 @@ KEXEC_HOLE_CANDIDATE = 0x80000000
 
 BOOTSHIM_BIN = Path(__file__).with_name("BootShim.bin")
 CANDIDATE_BIN = Path(__file__).with_name("BootShim-handoff-candidate.bin")
+ROOT = Path(__file__).resolve().parents[1]
+MEMORY_MAP = ROOT / "EXYNOS7885Pkg/Include/Configuration/DeviceMemoryMap.h"
+FDF = ROOT / "EXYNOS7885Pkg/EXYNOS7885Pkg.fdf"
+VIRTUAL_DTS = ROOT / "virtual-boot/dtb/exynos7885-a205w-virtual.dts"
 BUILD_SCRIPT = Path(__file__).resolve().parents[1] / "build_bootshim.sh"
 MAKEFILE = Path(__file__).with_name("Makefile")
 WFE_OPCODE = bytes.fromhex("5f 20 03 d5")
@@ -82,6 +88,32 @@ def main() -> None:
     blocked_target = 64 + (immediate << 2)
     if shim_bytes[blocked_target:blocked_target + 4] != WFE_OPCODE:
         fail("packaged BootShim entry does not branch directly to WFE")
+
+    # Cross-check the corrected ECT/FD reservations against all source-level
+    # memory maps so a future edit cannot silently reintroduce the overlap.
+    if ECT_RANGE[1] - ECT_RANGE[0] < ECT_SIZE:
+        fail("ECT reservation is smaller than Samsung's 0x19000-byte parameter block")
+    if ECT_RANGE[1] != FD_BASE:
+        fail("UEFI FD must begin immediately after the ECT reservation")
+    if overlaps(ECT_RANGE, FD_RANGE):
+        fail("ECT parameter reservation overlaps the EDK2 FD")
+
+    memory_map = MEMORY_MAP.read_text(encoding="utf-8")
+    fdf = FDF.read_text(encoding="utf-8")
+    virtual_dts = VIRTUAL_DTS.read_text(encoding="utf-8")
+    required_map_entries = (
+        r'\{"ECT Reserved",\s*0x90000000,\s*0x00020000,',
+        r'\{"BootShim/FD",\s*0x90020000,\s*0x00200000,',
+    )
+    if any(not re.search(pattern, memory_map) for pattern in required_map_entries):
+        fail("EDK2 DeviceMemoryMap.h does not match the ECT/FD reservation layout")
+    if not re.search(r'(?m)^\s*BaseAddress\s*=\s*0x90020000\|', fdf):
+        fail("EDK2 FDF does not link the firmware at the relocated FD base")
+    for address, size in (("0x90000000", "0x00020000"), ("0x90020000", "0x00200000")):
+        if f"reg = <0x0 {address} {size}>;" not in virtual_dts:
+            fail(f"Virtual Boot DTB source is missing reservation {address}/{size}")
+    if virtual_dts.count("no-map;") < 2:
+        fail("Virtual Boot ECT and FD reservations must both be no-map")
 
     image_size = PREFIX_SIZE + FD_SIZE
     hole_size = TEXT_OFFSET + image_size
