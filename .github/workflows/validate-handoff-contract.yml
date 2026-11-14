@@ -37,6 +37,11 @@ jobs:
           ref: 7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88
           path: kernel
 
+      - name: Validate BootShim in-image descriptor mailbox layout
+        run: |
+          python3 project/BootShim/validate_descriptor_mailbox.py
+          echo "PASS: BootShim mailbox is reserved without enabling handoff"
+
       - name: Compile handoff descriptor ABI layout test
         run: |
           cc -std=c11 -Wall -Wextra -Werror -fsyntax-only project/virtual-boot/tests/handoff_abi_layout.c

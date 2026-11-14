@@ -3,13 +3,17 @@
  *
  * SAFE PREPARATION MODE:
  * - Position-independent; no fixed physical address.
+ * - Reserves a 256-byte descriptor mailbox inside the image.
  * - Establishes a private stack inside its own 64 KiB image.
- * - Does not copy the FD or branch to SEC.
+ * - Does not populate the mailbox, copy the FD, or branch to SEC.
  * - Remains blocked in WFE after stack setup.
  *
- * The stack occupies [image + 0xE000, image + 0x10000).
- * The FD starts at image + 0x10000, so the stack grows down
- * inside the BootShim reservation and cannot overwrite the FD.
+ * Image layout:
+ *   0x0000-0xCFFF  executable shim code / reserved image space
+ *   0xD000-0xD0FF  handoff descriptor mailbox (256 bytes)
+ *   0xD100-0xDFFF  reserved
+ *   0xE000-0xFFFF  private 8 KiB stack
+ *   0x10000        FD begins in the bundle
  */
 
 .section .text
@@ -38,11 +42,20 @@ _StackFault:
     b       _StackFault
 
 /*
- * Reserve an 8 KiB writable stack in the tail of the 64 KiB BootShim.
- * Exact reservation size: 0x2000 bytes (from 0xE000 through 0xFFFF).
- * Stack grows downward from _BootShimStackTop. The FD begins immediately
- * after the top boundary at bundle offset 0x10000.
+ * Fixed image-relative mailbox. A future producer may populate these bytes
+ * before the BootShim image is handed to kexec. The consumer must locate it
+ * PC-relatively; no x0-x3 argument register is assumed to survive kexec.
+ * All-zero contents mean "no descriptor" and must fail validation.
  */
+.org 0xD000, 0
+.balign 16
+.global _HandoffDescriptorMailbox
+.type _HandoffDescriptorMailbox, %object
+_HandoffDescriptorMailbox:
+.space 0x100, 0
+.size _HandoffDescriptorMailbox, . - _HandoffDescriptorMailbox
+
+/* Reserve an 8 KiB writable stack at image offsets 0xE000-0xFFFF. */
 .org 0xE000, 0
 .global _BootShimStackBottom
 _BootShimStackBottom:
