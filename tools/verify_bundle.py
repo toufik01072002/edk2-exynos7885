@@ -12,7 +12,7 @@ MANIFEST = WORKSPACE / "UEFI.manifest.json"
 
 EXPECTED_COPY_SIZE = 0x00200000
 EXPECTED_BOOTSHIM_SIZE = 0x10000
-EXPECTED_LOAD_ADDRESS = "0x90000000"
+EXPECTED_LINKED_IMAGE_BASE = "0x90000000"
 
 def fail(message):
     print("BUNDLE VERIFICATION FAILED:", message, file=sys.stderr)
@@ -46,10 +46,12 @@ try:
     bs_offset = bs["offset"]
     bs_size = bs["size"]
     fd_offset = fd["offset"]
+    linked_image_base = fd["linked_image_base"]
+    runtime_load_address = fd["runtime_physical_load_address"]
+    runtime_placement_status = fd["runtime_placement_status"]
     fd_source_size = fd["source_size"]
     fd_padded_size = fd["padded_size"]
     fd_copy_size = fd["copy_size"]
-    load_address = fd["load_address"]
     declared_bundle_size = bundle_meta["size"]
 except (KeyError, TypeError):
     fail("Missing or invalid manifest fields")
@@ -69,8 +71,11 @@ if fd_padded_size != EXPECTED_COPY_SIZE:
 if fd_copy_size != EXPECTED_COPY_SIZE:
     fail("Unexpected BootShim copy size")
 
-if load_address != EXPECTED_LOAD_ADDRESS:
-    fail("Unexpected firmware destination address")
+if linked_image_base != EXPECTED_LINKED_IMAGE_BASE:
+    fail("Unexpected linked image base")
+
+if runtime_load_address is not None or runtime_placement_status != "UNVERIFIED":
+    fail("Runtime physical placement must remain explicitly unassigned")
 
 if not 0 < fd_source_size <= fd_padded_size:
     fail("Invalid original firmware size")
@@ -109,5 +114,6 @@ print("BootShim:", bs_size, "bytes")
 print("Firmware original:", fd_source_size, "bytes")
 print("Firmware padded:", fd_padded_size, "bytes")
 print("Bundle total:", len(data), "bytes")
-print("Firmware destination:", load_address)
+print("Firmware linked image base:", linked_image_base)
+print("Runtime physical load address: UNASSIGNED")
 print("All SHA-256 and layout checks passed")
