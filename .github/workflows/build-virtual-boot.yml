@@ -533,9 +533,9 @@ jobs:
           #define sec_set_param(a,b)			{-1)
           #endif /* CONFIG_SEC_PARAM */"""
           new = """#else
-          #define sec_set_param(a,b)			((void)(-1))
-          #define sec_set_param_str(a,b,c)		((void)(-1))
-          #define sec_get_param_str(a,b)		((void)(-1))
+          #define sec_set_param(a,b)			(-1)
+          #define sec_set_param_str(a,b,c)		(-1)
+          #define sec_get_param_str(a,b)		(-1)
           #endif /* CONFIG_SEC_PARAM */"""
           if old not in s:
               if new not in s:
