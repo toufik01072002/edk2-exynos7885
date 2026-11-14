@@ -712,7 +712,7 @@ jobs:
         run: |
           mkdir -p virtual-boot-output
           sudo apt-get update && sudo apt-get install -y device-tree-compiler
-          cpp -nostdinc \
+          cpp -traditional-cpp -nostdinc \
             -I "$GITHUB_WORKSPACE/kernel-src/include" \
             -I "$GITHUB_WORKSPACE/kernel-src/arch/arm64/boot/dts" \
             -undef -D__DTS__ -x assembler-with-cpp \
@@ -780,7 +780,9 @@ jobs:
           sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
           sed -i 's/# CONFIG_FEATURE_INDIVIDUAL is not set/CONFIG_FEATURE_INDIVIDUAL=y/' .config
           sed -i 's/# CONFIG_KEXEC is not set/CONFIG_KEXEC=y/' .config
-          make -j$(nproc) CC=aarch64-linux-gnu-gcc
+          make -j"$(nproc)" \
+            CC=aarch64-linux-gnu-gcc \
+            STRIP=aarch64-linux-gnu-strip
 
       - name: Create initramfs structure
         run: |
