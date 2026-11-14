@@ -2,6 +2,12 @@ name: Build Virtual Boot ARM64 (SM-A205W)
 
 on:
   workflow_call:
+    inputs:
+      edk2_artifact_available:
+        description: "The caller has uploaded the a205w-edk2 artifact in this run"
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - feature/kexec-arm64-virtual-boot
@@ -1063,7 +1069,7 @@ jobs:
           path: initramfs-artifacts
 
       - name: Download EDK2 artifact from this workflow run
-        if: github.event_name == 'workflow_call'
+        if: inputs.edk2_artifact_available
         uses: actions/download-artifact@v4
         with:
           name: a205w-edk2
@@ -1096,7 +1102,7 @@ jobs:
           cp initramfs-artifacts/initramfs.cpio.gz virtual-boot-output/
 
       - name: Integrate the real EDK2 BootShim and firmware bundle
-        if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+        if: inputs.edk2_artifact_available
         run: |
           test -s edk2-artifacts/UEFI
           test -s edk2-artifacts/UEFI.manifest.json

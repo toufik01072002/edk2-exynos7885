@@ -112,3 +112,5 @@ jobs:
       contents: read
       actions: read
     uses: ./.github/workflows/build-virtual-boot.yml
+    with:
+      edk2_artifact_available: true
