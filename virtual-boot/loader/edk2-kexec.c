@@ -27,7 +27,8 @@
 #define FD_BASE        UINT64_C(0x90020000)
 #define FD_END         UINT64_C(0x90220000)
 #define RAM0_START     UINT64_C(0x80000000)
-#define RAM0_END       UINT64_C(0x90000000)\n#define RAM_BANK0_END  UINT64_C(0xBBC00000)
+#define RAM0_END       UINT64_C(0x90000000)
+#define RAM_BANK0_END  UINT64_C(0xBBC00000)
 #define FVH_OFFSET     0x28
 
 static void usage(const char *name)
@@ -123,7 +124,8 @@ int main(int argc, char **argv)
         BOOTSHIM_ADDR + BOOTSHIM_SIZE > RAM0_END ||
         FD_STAGE_ADDR < RAM0_START ||
         FD_STAGE_ADDR + FD_SIZE > RAM0_END ||
-        FD_BASE != UINT64_C(0x90020000) || FD_END != UINT64_C(0x90220000) ||\n        FD_BASE < RAM0_START || FD_END > RAM_BANK0_END ||
+        FD_BASE != UINT64_C(0x90020000) || FD_END != UINT64_C(0x90220000) ||
+        FD_BASE < RAM0_START || FD_END > RAM_BANK0_END ||
         BOOTSHIM_ADDR + BOOTSHIM_SIZE > FD_STAGE_ADDR ||
         FD_STAGE_ADDR + FD_SIZE > FD_BASE ||
         FD_BASE + FD_SIZE != FD_END) {
