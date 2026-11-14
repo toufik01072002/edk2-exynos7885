@@ -103,6 +103,23 @@ Consequences:
   the static image level, but actual RAM placement, writability, and
   non-overlap still require runtime evidence.
 
+## Fail-closed SEC entry evidence gate (host-tested)
+
+`BootShim/sec_entry_gate.c` adds a validation-only gate for the values a
+future runtime loader must supply before it can consider entering SEC. It
+checks the BootShim/FD adjacency, the linked FD base and size, the private
+stack geometry and alignment, and that the SEC entry lies inside the FD.
+It then requires independent evidence for reserved ranges, writable stack,
+executable FD mapping, CPU execution state, DMA quiescence, and secondary-core
+quiescence.
+
+The gate is compiled and exercised by the handoff-contract GitHub Actions
+workflow with synthetic host fixtures. The positive fixture is only a
+software test vector; it is not a proposed or observed SM-A205W memory map.
+The function does not reserve RAM, discover addresses, establish any evidence,
+read hardware state, or branch to SEC. It is not yet called by BootShim.S or
+PrePi and therefore does not change the disabled launch path.
+
 ## Exit criteria before enabling a branch
 
 1. Prove the exact recovery-kernel source, configuration, and live kexec path.
