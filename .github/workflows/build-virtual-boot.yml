@@ -2,7 +2,7 @@ name: Build Virtual Boot ARM64 (SM-A205W)
 
 on:
   push:
-    branches: [main]
+    branches: [main, "phase2/**"]
     paths:
       - '.github/workflows/build-virtual-boot.yml'
       - 'virtual-boot/**'
