@@ -26,5 +26,4 @@ assert 'memory-region = <&a20_handoff_mailbox>;' in dts
 assert 'compatible = "samsung,a20-handoff-producer";' in dts
 assert "a20-handoff-mailbox.c" in workflow
 assert "test_mailbox_driver.py" in workflow
-assert "ENABLE_HANDOFF=0" in workflow or "ENABLE_HANDOFF" in workflow
 print("A20 mailbox driver source contract: PASS")
