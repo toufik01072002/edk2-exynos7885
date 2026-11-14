@@ -61,6 +61,7 @@ jobs:
           ls -la
 
       - name: Validate build script syntax
+        working-directory: edk2-exynos7885
         run: |
           bash -n build.sh
           bash -n build_bootshim.sh
