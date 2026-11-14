@@ -478,3 +478,40 @@ SEC entry \`0x90008280\`.
 This is not an enabled launch path. The WFE gate and disabled TWRP button
 remain mandatory until the independent CPU-stop, DMA-quiescence, exception
 level, and real loader-placement checks are complete.
+
+## Build #121 — SEC entry and physical-layout contract (2026-11-14)
+
+GitHub Actions run #121 completed successfully at commit
+`0f89f8296cde1108288c437ad5740b7767eff9fe`. The run passed the EDK2
+build, the single-core WFE source gate, the reference physical-layout test,
+the ARM64 handoff source-contract test, and the FD/bundle validator.
+
+The current FD artifact parser and BootShim source now agree on the SEC entry
+address `0x90008278` (FD offset `0x8278`). Older design notes above record
+`0x90008280`; those values describe an earlier artifact and must not be used
+as the current entry contract. The CI validator extracts the SEC entry from
+the built PrePi TE image and rejects a mismatch with the BootShim source.
+
+The current reference placement arithmetic remains:
+
+- kexec aligned-hole candidate: `0x80000000`;
+- BootShim entry candidate: `0x80080000`;
+- private stack interval: `0x80088000-0x80090000`;
+- FD source interval: `0x80090000-0x80290000`;
+- fixed FD destination: `0x90000000-0x90200000`;
+- current PrePi SEC entry: `0x90008278`.
+
+**Scope of the success:** this is a CI build and static artifact/layout
+validation. It does not prove that the live TWRP kexec loader selects the
+candidate hole, that the runtime memory map matches the reference map, or
+that CPU/DMA/exception state is safe for transfer. The packaged BootShim
+continues to use `ENABLE_HANDOFF=0`, and the TWRP launcher remains disabled.
+
+### Next implementation gate
+
+The next concrete gate is a load-only placement proof using the exact TWRP
+kexec-tools 2.0.32 binary: capture its debug allocation result and verify
+that the selected kernel segment is `0x80080000`, the source FD range does
+not overlap the reserved destination, and DTB/purgatory allocations remain
+outside the FD reservation. This is not an execution test. Until that
+evidence exists, do not enable the candidate path or the TWRP launcher.
