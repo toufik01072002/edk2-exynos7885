@@ -65,6 +65,7 @@ jobs:
         run: |
           bash -n build.sh
           bash -n build_bootshim.sh
+          python3 -m py_compile BootShim/patch_sec_entry.py BootShim/test_patch_sec_entry.py
 
       - name: Compiler
         working-directory: edk2-exynos7885
@@ -78,6 +79,7 @@ jobs:
         run: |
           sha256sum -c SHA256SUMS
           python3 ../tools/verify_bundle.py
+          python3 ../BootShim/test_patch_sec_entry.py
           python3 ../BootShim/validate_prepi_entry.py
           python3 ../BootShim/test_prepi_entry_abi.py
           python3 ../virtual-boot/scripts/validate_handoff_contract.py \

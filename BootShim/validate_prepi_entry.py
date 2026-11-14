@@ -215,6 +215,10 @@ def main() -> None:
     if "CEntryPoint" not in csrc: fail("PrePi.c does not define CEntryPoint")
     shim, combined = SHIM.read_bytes(), COMBINED.read_bytes()
     if len(shim) != 0x10000: fail("BootShim must be exactly 64 KiB")
+    sec_bundle_offset = struct.unpack_from("<Q", shim, 0xD100)[0]
+    expected_bundle_offset = 0x10000 + int(sec["entry_fd_offset"], 16)
+    if sec_bundle_offset != expected_bundle_offset:
+        fail(f"BootShim SEC entry offset 0x{sec_bundle_offset:X} does not match PrePi 0x{expected_bundle_offset:X}")
     if combined[:len(shim)] != shim: fail("BootShim prefix mismatch")
     if combined[len(shim):len(shim)+len(fd)] != fd: fail("FD is not at bundle offset 0x10000")
     if len(combined) != len(shim) + EXPECTED_SIZE: fail("bundle must contain 64 KiB BootShim plus 2 MiB FD")
@@ -243,6 +247,7 @@ def main() -> None:
             },
             "sec_entry": {
                 "linked_address": sec["entry_address"],
+                "bundle_offset": f"0x{sec_bundle_offset:X}",
                 "runtime_address": None,
                 "runtime_address_status": "UNVERIFIED",
                 "fd_offset": sec["entry_fd_offset"],
@@ -277,6 +282,7 @@ def main() -> None:
         "bootshim": {
             "size": len(shim),
             "sha256": sha256(shim),
+            "sec_entry_bundle_offset": f"0x{sec_bundle_offset:X}",
             "stack": {
                 "offset": stack_offset,
                 "size": stack_size,

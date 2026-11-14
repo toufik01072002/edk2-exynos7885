@@ -76,12 +76,19 @@ def main() -> None:
     stack_setup = shim.index("mov     sp, x9")
     first_wait = shim.index("wfe")
     require(stack_setup < first_wait, "BootShim must install SP before entering its WFE guard")
-    require(not re.search(r"(?im)^\s*br\s+x\d+", shim),
-            "active register-indirect branch detected in BootShim")
-    require(not re.search(r"(?im)^\s*blr\s+x\d+", shim),
-            "active register-indirect call detected in BootShim")
+    require(re.search(r"(?m)^\s*adr\s+x16,\s*_Head\s*$", shim) is not None,
+            "BootShim does not derive its bundle base from its current PC")
+    require(re.search(r"(?m)^\s*adr\s+x17,\s*_SecEntryOffset\s*$", shim) is not None
+            and re.search(r"(?m)^\s*ldr\s+x17,\s*\[x17\]\s*$", shim) is not None,
+            "BootShim does not load the build-patched SEC entry offset")
+    require(re.search(r"(?m)^\s*add\s+x16,\s*x16,\s*x17\s*$", shim) is not None
+            and re.search(r"(?m)^\s*br\s+x16\s*$", shim) is not None,
+            "BootShim is not wired to branch to the actual PrePi SEC entry")
     require(f"0x{STACK_BOTTOM:X}" in abi_doc and f"0x{STACK_SIZE:X}" in abi_doc,
             "SEC ABI document does not describe the reserved BootShim stack")
+    require(re.search(r"(?m)^\.org\s+0xD100,\s*0\s*$", shim) is not None
+            and re.search(r"(?m)^\.quad\s+0\s*$", shim) is not None,
+            "BootShim SEC entry offset slot is missing")
     require(SHIM_SIZE == STACK_BOTTOM + STACK_SIZE,
             "internal stack layout constants do not fill the 64 KiB BootShim")
     require(manifest.get("handoff_enabled") is False,
@@ -100,7 +107,8 @@ def main() -> None:
     print("PASS: private stack occupies BootShim offsets 0xE000-0x10000; FD starts at 0x10000")
     print("PASS: PrePi CEntryPoint argument and cache-init sequence are present")
     print("PASS: secondary-core WFE remains multi-core gated")
-    print("PASS: BootShim remains fail-closed; no SEC branch; handoff_enabled=false")
+    print("PASS: BootShim branches to the build-resolved PrePi SEC entry after stack setup")
+    print("PASS: runtime physical placement remains unassigned")
     print("LIMIT: live EL/MMU/cache/register/DMA state and physical reservation are not proven")
 
 
