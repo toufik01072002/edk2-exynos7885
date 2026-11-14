@@ -1,6 +1,10 @@
 name: Build Virtual Boot ARM64 (SM-A205W)
 
 on:
+  workflow_run:
+    workflows: ["Build EDK2 SM-A205W"]
+    types: [completed]
+    branches: [integrate/fd-sec-contract]
   push:
     branches:
       - feature/kexec-arm64-virtual-boot
@@ -23,6 +27,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   build-kernel:
@@ -1060,6 +1065,15 @@ jobs:
           name: virtual-boot-initramfs
           path: initramfs-artifacts
 
+      - name: Download EDK2 artifact from the completed build
+        if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: a205w-edk2
+          path: edk2-artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
+
       - name: Verify all artifacts exist
         run: |
           test -f kernel-artifacts/Image
@@ -1076,6 +1090,24 @@ jobs:
           cp kernel-artifacts/Image virtual-boot-output/
           cp kernel-artifacts/exynos7885-a205w-virtual.dtb virtual-boot-output/exynos7885-a205w-virtual.dtb
           cp initramfs-artifacts/initramfs.cpio.gz virtual-boot-output/
+
+      - name: Integrate the real EDK2 BootShim and firmware bundle
+        if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+        run: |
+          test -s edk2-artifacts/UEFI
+          test -s edk2-artifacts/UEFI.manifest.json
+          test -s edk2-artifacts/UEFI.sec-manifest.json
+          mkdir -p virtual-boot-output/edk2
+          cp edk2-artifacts/UEFI virtual-boot-output/edk2/UEFI
+          cp edk2-artifacts/UEFI.manifest.json virtual-boot-output/edk2/
+          cp edk2-artifacts/UEFI.sec-manifest.json virtual-boot-output/edk2/
+          (
+            cd virtual-boot-output/edk2
+            sha256sum UEFI > UEFI.sha256
+            sha256sum -c UEFI.sha256
+          )
+          echo "PASS: actual BootShim + padded EDK2 FD integrated into Virtual Boot artifact"
+          ls -lh virtual-boot-output/edk2/
 
       - name: Generate fail-closed handoff artifact provenance
         run: |
