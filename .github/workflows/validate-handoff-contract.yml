@@ -67,6 +67,18 @@ jobs:
           /tmp/sec-entry-gate-test
           echo "PASS: SEC entry geometry and all runtime-evidence gates fail closed"
 
+      - name: Compile and run descriptor-bound SEC adapter tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/virtual-boot/include -Iproject/BootShim \
+            project/virtual-boot/src/a20_handoff_validate.c \
+            project/BootShim/sec_entry_gate.c \
+            project/BootShim/sec_handoff_adapter.c \
+            project/BootShim/test_sec_handoff_adapter.c \
+            -o /tmp/sec-handoff-adapter-test
+          /tmp/sec-handoff-adapter-test
+          echo "PASS: SEC adapter binds descriptor segments to runtime evidence and fails closed"
+
       - name: Compile and run explicit LE producer serializer tests
         run: |
           cc -std=c11 -Wall -Wextra -Werror \
