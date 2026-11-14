@@ -14,9 +14,9 @@ on:
         required: true
         default: "kexec-arm64-4.4-d-work"
       kernel_commit:
-        description: "Expected commit SHA (1e70ef871acb9ea0cd79a531b18e98f61debfc71)"
+        description: "Expected commit SHA (14eaa7b1aad3814d69f7c575c3215aa7edbad6dc)"
         required: true
-        default: "1e70ef871acb9ea0cd79a531b18e98f61debfc71"
+        default: "14eaa7b1aad3814d69f7c575c3215aa7edbad6dc"
 
 permissions:
   contents: read
@@ -68,7 +68,7 @@ jobs:
         id: checkout_kernel
         env:
           KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'kexec-arm64-4.4-d-work' }}
-          EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit || '7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88' }}
+          EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit || '14eaa7b1aad3814d69f7c575c3215aa7edbad6dc' }}
         run: |
           git clone --recursive https://github.com/toufik01072002/Kernel_SM-A205W.git kernel-src
           cd kernel-src
@@ -501,13 +501,13 @@ jobs:
           echo ""
 
           # Check for UEFI FD at expected location
-          echo "[INFO] Checking for UEFI FD at 0x90000000..."
+          echo "[INFO] Checking for UEFI FD at 0x90020000..."
           if [ -c /dev/mem ]; then
-            dd if=/dev/mem of=/tmp/uefi_check.bin bs=1 count=8 skip=$((0x90000030)) 2>/dev/null
+            dd if=/dev/mem of=/tmp/uefi_check.bin bs=1 count=8 skip=$((0x90020030)) 2>/dev/null
             if hexdump -C /tmp/uefi_check.bin 2>/dev/null | grep -q "41 52 4d 36"; then
-              echo "[OK] ARM64 magic found at 0x90000030 - UEFI FD present"
+              echo "[OK] ARM64 magic found at 0x90020030 - UEFI FD present"
             else
-              echo "[WARN] ARM64 magic NOT found at 0x90000030"
+              echo "[WARN] ARM64 magic NOT found at 0x90020030"
             fi
           else
             echo "[WARN] /dev/mem not available"
@@ -782,8 +782,9 @@ jobs:
               "bank0": "0x80000000-0xBBC00000 (956 MiB)",
               "bank1": "0xC0000000-0x100000000 (1024 MiB)",
               "bank2": "0x880000000-0x8C0000000 (1024 MiB, >4GB)",
-              "uefi_fd": "0x90000000-0x90200000 (2 MiB)",
+              "uefi_fd": "0x90020000-0x90220000 (2 MiB)",
               "reserved": [
+                "ECT: 0x90000000-0x90020000 (128 KiB)",
                 "TIMA: 0xB8000000-0xB8200000",
                 "seclog: 0xC0000000-0xC0080000",
                 "WiFi/BT: 0xE9000000-0xE9400000",
@@ -802,7 +803,7 @@ jobs:
               "kernel_entry": "0x80080000",
               "dtb_addr": "0x88000000",
               "initrd_addr": "0x84000000",
-              "uefi_handoff_addr": "0x90000000",
+              "uefi_handoff_addr": "0x90020000",
               "note": "Phase 1 only - trampoline not assigned"
             },
             "validation": {
