@@ -166,6 +166,13 @@
         };
     };
 
+    /* Linux-side writer for the reserved mailbox above. */
+    a20_handoff_producer: a20-handoff-producer {
+        compatible = "samsung,a20-handoff-producer";
+        memory-region = <&a20_handoff_mailbox>;
+        status = "okay";
+    };
+
     /* CPUs - from exynos7885.dts */
     cpus {
         #address-cells = <2>;
