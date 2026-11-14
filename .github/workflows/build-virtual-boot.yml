@@ -1220,7 +1220,7 @@ jobs:
               "bank0": "0x80000000-0xBDA00000 (986 MiB)",
               "bank1": "0xC0000000-0x100000000 (1024 MiB)",
               "bank2": "0x880000000-0x8C0000000 (1024 MiB, >4GB)",
-              "uefi_fd_candidate_unverified": "0x90000000-0x90200000 (historical candidate only; NOT reserved or assigned)",
+              "uefi_bundle_candidate_unverified": "0x8FFF0000-0x9020FFFF (64 KiB BootShim + 2 MiB FD; target-DTB reservation only, NOT proof of source-kernel reservation or runtime assignment)",
               "reserved_reference_only": [
                 "TIMA: 0xB8000000-0xB8200000",
                 "seclog: 0xC0000000-0xC0080000",

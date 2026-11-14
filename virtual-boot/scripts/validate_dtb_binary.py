@@ -109,8 +109,8 @@ def main():
     for name, addr, size in reserved:
         if not any(addr >= base and addr + size <= base + length for _, base, length in ram):
             raise RuntimeError(f"{name} at 0x{addr:x}+0x{size:x} is outside RAM")
-    if sum(1 for _, a, s in reserved if a == 0x90000000 and s == 0x200000) != 1:
-        raise RuntimeError("Expected exactly one 2 MiB UEFI reservation at 0x90000000")
+    if sum(1 for _, a, s in reserved if a == 0x8FFF0000 and s == 0x210000) != 1:
+        raise RuntimeError("Expected exactly one 0x210000-byte BootShim+FD reservation at 0x8FFF0000")
 
     print(f"DTB identity: {model}")
     print(f"RAM banks: {len(ram)}; fixed reserved regions: {len(reserved)}")
