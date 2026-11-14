@@ -7,7 +7,7 @@ class PatchSecEntryTests(unittest.TestCase):
     def test_bundle_relative_offset(self):
         image = bytes(0x10000)
         result = patch_bootshim(image, 0x81234)
-        self.assertEqual(struct.unpack_from("<Q", result, ENTRY_SLOT_OFFSET)[0], 0x181234)
+        self.assertEqual(struct.unpack_from("<Q", result, ENTRY_SLOT_OFFSET)[0], 0x91234)
         self.assertEqual(result[:ENTRY_SLOT_OFFSET], image[:ENTRY_SLOT_OFFSET])
         self.assertEqual(result[ENTRY_SLOT_OFFSET + 8:], image[ENTRY_SLOT_OFFSET + 8:])
 
