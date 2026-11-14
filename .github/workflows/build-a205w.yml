@@ -15,6 +15,8 @@ on:
       - "BootShim/**"
       - "virtual-boot/docs/hardware-manifest.json"
       - "virtual-boot/scripts/validate_handoff_contract.py"
+      - "kernel/arch/arm64/kernel/cpu-reset.S"
+      - "kernel/arch/arm64/kernel/machine_kexec.c"
       - "twrp-uefi-loader/trampoline.S"
       - "build*.sh"
       - "firstrun.sh"
@@ -75,7 +77,9 @@ jobs:
           python3 ../virtual-boot/scripts/validate_handoff_contract.py \
             ../virtual-boot/docs/hardware-manifest.json \
             ../../kernel/arch/arm64/kernel/relocate_kernel.S \
-            ../twrp-uefi-loader/trampoline.S
+            ../twrp-uefi-loader/trampoline.S \
+            ../../kernel/arch/arm64/kernel/cpu-reset.S \
+            ../../kernel/arch/arm64/kernel/machine_kexec.c
           test -s UEFI
 
       - name: Publier les fichiers
