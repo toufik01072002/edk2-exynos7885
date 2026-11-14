@@ -22,6 +22,10 @@ on:
       - "firstrun.sh"
       - ".github/workflows/build-a205w.yml"
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -89,6 +93,14 @@ jobs:
             ../../kernel/arch/arm64/kernel/cpu-reset.S \
             ../../kernel/arch/arm64/kernel/machine_kexec.c
           test -s UEFI
+
+  virtual-boot-integration:
+    name: Build Virtual Boot with this EDK2 artifact
+    needs: build
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/build-virtual-boot.yml
 
       - name: Publier les fichiers
         uses: actions/upload-artifact@v4

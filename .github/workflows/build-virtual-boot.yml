@@ -1,10 +1,7 @@
 name: Build Virtual Boot ARM64 (SM-A205W)
 
 on:
-  workflow_run:
-    workflows: ["Build EDK2 SM-A205W"]
-    types: [completed]
-    branches: [integrate/fd-sec-contract]
+  workflow_call:
   push:
     branches:
       - feature/kexec-arm64-virtual-boot
@@ -1065,7 +1062,14 @@ jobs:
           name: virtual-boot-initramfs
           path: initramfs-artifacts
 
-      - name: Download EDK2 artifact from the completed build
+      - name: Download EDK2 artifact from this workflow run
+        if: github.event_name == 'workflow_call'
+        uses: actions/download-artifact@v4
+        with:
+          name: a205w-edk2
+          path: edk2-artifacts
+
+      - name: Download EDK2 artifact from a completed standalone build
         if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
         uses: actions/download-artifact@v4
         with:
