@@ -34,7 +34,7 @@
     "bank0": "0x80000000-0xBDA00000 (986 MiB)",
     "bank1": "0xC0000000-0x100000000 (1024 MiB)",
     "bank2": "0x880000000-0x8C0000000 (1024 MiB, >4GB)",
-    "uefi_fd": "0x90000000-0x90200000 (2 MiB)"
+    "uefi_fd_candidate_unverified": "0x90000000-0x90200000 (historical candidate only; NOT reserved or assigned)"
   },
   "kexec": {
     "kernel_entry": "0x80080000",
@@ -43,7 +43,8 @@
     "uefi_handoff_addr": null,
     "trampoline_load_address": null,
     "argument_contract": "UNIMPLEMENTED: vendor arm64 relocate_kernel.S clears x0-x3 before branching to kimage_start",
-    "note": "Phase 1 diagnostic bundle only; no UEFI handoff or executable trampoline"
+    "note": "Phase 1 diagnostics only; all listed load addresses are unverified candidates, no UEFI FD address or trampoline is assigned, and no handoff is enabled.",
+    "physical_load_addresses": "CONFIGURATION_CANDIDATES_ONLY_NOT_RUNTIME_RESERVATIONS"
   },
   "validation": {
     "dtb_memory_map": "STATIC_CI_ONLY",
