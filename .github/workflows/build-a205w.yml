@@ -68,6 +68,7 @@ jobs:
         working-directory: edk2-exynos7885
         run: |
           python3 BootShim/test_handoff_contract.py
+          python3 BootShim/test_handoff_mailbox.py
 
       - name: Valider le FD et le bundle BootShim
         working-directory: edk2-exynos7885
