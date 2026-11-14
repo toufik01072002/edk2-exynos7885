@@ -959,6 +959,11 @@ jobs:
           grep -Fq 'no physical-memory write' initramfs/sbin/handoff-stage-request
           echo "PASS: explicit staging command installed; no automatic handoff"
 
+      - name: Test explicit handoff staging request
+        run: |
+          sh virtual-boot-project/virtual-boot/tests/test_handoff_stage_request.sh \\
+            virtual-boot-project/virtual-boot/scripts/handoff-stage-request.sh
+
       - name: Build initramfs
         run: |
           cd initramfs
@@ -979,6 +984,7 @@ jobs:
           test -x sbin/handoff-stage
           test -x sbin/handoff-stage-request
           sh -n sbin/handoff-stage-request
+          test -x sbin/handoff-stage
           if grep -nE 'dd[[:space:]]+if=/dev/mem|skip=\$\(\(0x90000030\)\)' init; then
             echo "ERROR: initramfs still reads the unassigned historical UEFI FD address"
             exit 1

@@ -2,9 +2,10 @@
 # Explicit offline staging request. This never writes physical RAM or executes SEC.
 set -eu
 
-BOOTSHIM=/boot/edk2/BootShim.bin
-DESCRIPTOR=/boot/edk2/handoff-descriptor.bin
-OUTPUT=/tmp/BootShim-staged.bin
+BOOTSHIM=${BOOTSHIM_PATH:-/boot/edk2/BootShim.bin}
+DESCRIPTOR=${DESCRIPTOR_PATH:-/boot/edk2/handoff-descriptor.bin}
+OUTPUT=${OUTPUT_PATH:-/tmp/BootShim-staged.bin}
+STAGER=${HANDOFF_STAGE_BIN:-/sbin/handoff-stage}
 
 if [ ! -f "$BOOTSHIM" ] || [ ! -f "$DESCRIPTOR" ]; then
     echo "HANDOFF STAGING BLOCKED"
@@ -21,6 +22,6 @@ if [ -e "$OUTPUT" ]; then
     exit 1
 fi
 
-/sbin/handoff-stage "$BOOTSHIM" "$DESCRIPTOR" "$OUTPUT"
+$STAGER "$BOOTSHIM" "$DESCRIPTOR" "$OUTPUT"
 echo "Staged image: $OUTPUT"
 echo "STATUS: offline file staging only; no physical-memory write, kexec, or SEC transfer."
