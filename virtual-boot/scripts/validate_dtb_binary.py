@@ -7,7 +7,10 @@ import sys
 def prop(dtb, node, name, kind="x"):
     p = subprocess.run(["fdtget", "-t", kind, dtb, node, name],
                        text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    return p.stdout.strip() if p.returncode == 0 else None
+    if p.returncode != 0:
+        print(f"fdtget failed for node={node!r} property={name!r}: {p.stderr.strip()}", file=sys.stderr)
+        return None
+    return p.stdout.strip()
 
 def cells(dtb, node, name):
     value = prop(dtb, node, name)
@@ -50,6 +53,16 @@ def main():
     dtb = ap.parse_args().dtb
     ac, sc = prop(dtb, "/", "#address-cells"), prop(dtb, "/", "#size-cells")
     if ac is None or sc is None:
+        print("=== DTB root property listing (fdtget -p) ===", file=sys.stderr)
+        listing = subprocess.run(["fdtget", "-p", dtb, "/"], text=True,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print(listing.stdout, file=sys.stderr)
+        print(listing.stderr, file=sys.stderr)
+        print("=== Decompiled DTB root (dtc) ===", file=sys.stderr)
+        dump = subprocess.run(["dtc", "-I", "dtb", "-O", "dts", dtb],
+                              text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        print("\\n".join(dump.stdout.splitlines()[:75]), file=sys.stderr)
+        print(dump.stderr, file=sys.stderr)
         raise RuntimeError("DTB root lacks address/size cells")
     ac, sc = int(ac, 16), int(sc, 16)
     if ac not in (1, 2) or sc not in (1, 2):
