@@ -5,7 +5,7 @@ set -e
 ./build_bootshim.sh
 # Current EDK2 has removed the legacy GCC5 toolchain tag.
 GCC_AARCH64_PREFIX=aarch64-linux-gnu- build -j$(nproc) -s -n 0 -a AARCH64 -t GCC -p EXYNOS7885Pkg/Devices/a205w.dsc
-python3 - <<'BUNDLE'
+python3 - <<'BUNDLE
 import hashlib
 import json
 from pathlib import Path
@@ -16,7 +16,9 @@ bundle = Path("workspace/UEFI")
 manifest = Path("workspace/UEFI.manifest.json")
 
 COPY_SIZE = 0x00200000
-LOAD_ADDRESS = 0x90000000
+# This is the address at which the EDK2 FD is linked/configured (FDF/PCD).
+# It is NOT a verified runtime physical load address.
+LINKED_IMAGE_BASE = 0x90000000
 
 if not bootshim.is_file() or not firmware.is_file():
     raise SystemExit("ERROR: BootShim or firmware missing")
@@ -50,7 +52,9 @@ metadata = {
         "source_size": len(fd),
         "offset": 0x10000,
         "padded_size": COPY_SIZE,
-        "load_address": hex(LOAD_ADDRESS),
+        "linked_image_base": hex(LINKED_IMAGE_BASE),
+        "runtime_physical_load_address": None,
+        "runtime_placement_status": "UNVERIFIED",
         "copy_size": COPY_SIZE,
         "sha256": sha(fd),
         "padded_sha256": sha(padded_fd)
@@ -61,12 +65,14 @@ metadata = {
     }
 }
 
-manifest.write_text(json.dumps(metadata, indent=2) + "\n")
+manifest.write_text(json.dumps(metadata, indent=2) + "\\n")
 
 print("Bundle generated:", bundle)
 print("BootShim:", len(bs), "bytes")
 print("Firmware:", len(fd), "bytes")
 print("Firmware padded:", COPY_SIZE, "bytes")
+print("EDK2 linked image base:", hex(LINKED_IMAGE_BASE))
+print("Runtime physical load address: UNASSIGNED")
 print("Bundle:", len(bundle_data), "bytes")
 print("Manifest:", manifest)
 BUNDLE
