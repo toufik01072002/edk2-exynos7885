@@ -3,7 +3,7 @@
 from pathlib import Path
 import re
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 ASM = re.sub(r"\s+", " ", (ROOT / "BootShim/BootShim.S").read_text())
 MAKE = re.sub(r"\s+", " ", (ROOT / "BootShim/Makefile").read_text())
 BUILD = (ROOT / "build_bootshim.sh").read_text()
