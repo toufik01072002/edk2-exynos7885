@@ -526,6 +526,24 @@ jobs:
               raise SystemExit("Unexpected sec_debug include guards in exynos-ss.c")
           p.write_text(s)
           print("Made sec_debug declarations visible whenever CONFIG_SEC_DEBUG is enabled")
+
+          p = Path("kernel-src/include/linux/sec_ext.h")
+          s = p.read_text()
+          old = """#else
+          #define sec_set_param(a,b)			{-1)
+          #endif /* CONFIG_SEC_PARAM */"""
+          new = """#else
+          #define sec_set_param(a,b)			(-1)
+          #define sec_set_param_str(a,b,c)		(-1)
+          #define sec_get_param_str(a,b)		(-1)
+          #endif /* CONFIG_SEC_PARAM */"""
+          if old not in s:
+              if new not in s:
+                  raise SystemExit("Unexpected CONFIG_SEC_PARAM fallback definitions")
+          else:
+              s = s.replace(old, new, 1)
+              p.write_text(s)
+          print("Provide valid -1 fallbacks for disabled SEC_PARAM APIs")
           PY
 
       - name: Fix Exynos trace debug declarations and console debugger stack usage
