@@ -1,4 +1,10 @@
+#!/bin/bash
+set -eu
+
+# BootShim is position-independent. Its build must not assign an FD or
+# runtime physical load address; placement belongs to a future validated
+# runtime handoff contract.
 cd BootShim
-make UEFI_BASE=0x90000000 UEFI_SIZE=0x00200000
-rm BootShim.elf
+make
+rm -f BootShim.elf
 cd ..
