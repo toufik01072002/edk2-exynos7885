@@ -14,13 +14,13 @@
 #ifndef SEC_ENTRY
 #error "SEC_ENTRY must be supplied by the build"
 #endif
-#if UEFI_BASE != 0x90000000
+#if UEFI_BASE != 0x90020000
 #error "Unexpected fixed EDK2 FD base"
 #endif
 #if UEFI_SIZE != 0x00200000
 #error "Unexpected EDK2 FD size"
 #endif
-#if SEC_ENTRY != 0x90008278
+#if SEC_ENTRY != 0x90028278
 #error "Unexpected PrePi SEC entry"
 #endif
 #if (UEFI_SIZE % 16) != 0
