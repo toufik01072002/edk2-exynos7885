@@ -712,12 +712,14 @@ jobs:
         run: |
           mkdir -p virtual-boot-output
           sudo apt-get update && sudo apt-get install -y device-tree-compiler
-          cpp -traditional-cpp -nostdinc \
+          cpp -nostdinc \
             -I "$GITHUB_WORKSPACE/kernel-src/include" \
             -I "$GITHUB_WORKSPACE/kernel-src/arch/arm64/boot/dts" \
             -undef -D__DTS__ -x assembler-with-cpp \
             virtual-boot-project/virtual-boot/dtb/exynos7885-a205w-virtual.dts \
             > /tmp/exynos7885-a205w-virtual.pp.dts
+          echo "=== Confirm DTS root cell properties survived preprocessing ==="
+          grep -nE '^[[:space:]]*#(address|size)-cells[[:space:]]*=' /tmp/exynos7885-a205w-virtual.pp.dts
           dtc -Wno-unit_address_vs_reg -I dts -O dtb \
             -o virtual-boot-output/exynos7885-a205w-virtual.dtb \
             /tmp/exynos7885-a205w-virtual.pp.dts
