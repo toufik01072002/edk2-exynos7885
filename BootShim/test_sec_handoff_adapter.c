@@ -26,7 +26,7 @@ static void fixture(uint8_t *d)
     d[8] = 1;
     d[10] = 0;
     d[11] = 1;
-    d[12] = 0x38; /* reservation, cache and EL evidence flags */
+    d[12] = 0x3f; /* all payload and hardware-evidence flags */
     for (i = 0; i < A20_HANDOFF_SEGMENT_COUNT; ++i) {
         uint8_t *s = d + 16 + i * 48;
         put_le64(s, addr[i]);
