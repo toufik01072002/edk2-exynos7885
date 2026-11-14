@@ -603,7 +603,7 @@ jobs:
           if include not in s:
               if anchor not in s:
                   raise SystemExit("Cannot locate sec_debug_extra_info include anchor")
-              s = s.replace(anchor, anchor + "\\n" + include, 1)
+              s = s.replace(anchor, anchor + "\n" + include, 1)
               p.write_text(s)
           print("Added linux/sched.h declaration for local_clock()")
           PY
