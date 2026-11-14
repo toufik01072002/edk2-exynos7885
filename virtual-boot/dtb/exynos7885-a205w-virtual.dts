@@ -151,10 +151,17 @@
             no-map;
         };
 
-        /* UEFI FD region for Virtual Boot */
-        uefi_fd_reserved: uefi-fd@90000000 {
+        /* Preserve Samsung ECT parameters at 0x90000000 (0x19000 bytes). */
+        ect_reserved: ect-parameters@90000000 {
+            compatible = "samsung,ect-parameters-reserved";
+            reg = <0x0 0x90000000 0x00020000>;
+            no-map;
+        };
+
+        /* UEFI FD moved after the ECT reservation. */
+        uefi_fd_reserved: uefi-fd@90020000 {
             compatible = "samsung,uefi-fd-reserved";
-            reg = <0x0 0x90000000 0x00200000>;
+            reg = <0x0 0x90020000 0x00200000>;
             no-map;
         };
     };
