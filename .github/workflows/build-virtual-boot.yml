@@ -659,6 +659,44 @@ jobs:
         run: |
           python3 virtual-boot-project/virtual-boot/scripts/fix_kernel_debug_compat.py
 
+      - name: Remove undefined legacy AP fuse dependency from Exynos ACME
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("kernel-src/drivers/cpufreq/exynos-acme.c")
+          s = p.read_text()
+
+          old_domain_mask = """\tif (ap_fuse != 2)
+          \t\tcpulist_parse(buf, &domain->cpus);
+          \telse
+          \t\tcpulist_parse("0-3", &domain->cpus);"""
+          new_domain_mask = """\tcpulist_parse(buf, &domain->cpus);"""
+
+          old_domain_skip = """\t\t if (domain_id >= 1 && ap_fuse == 2)
+                       continue;
+
+          """
+          if old_domain_mask in s:
+              s = s.replace(old_domain_mask, new_domain_mask, 1)
+          elif new_domain_mask not in s:
+              raise SystemExit("Unexpected Exynos ACME CPU-mask logic")
+
+          if old_domain_skip in s:
+              s = s.replace(old_domain_skip, "", 1)
+          elif "ap_fuse == 2" in s:
+              raise SystemExit("Unexpected AP-fuse domain-skip logic")
+
+          if "ap_fuse" in s:
+              raise SystemExit("Unresolved ap_fuse reference remains in exynos-acme.c")
+
+          p.write_text(s)
+          print("PASS: Exynos ACME now uses Device Tree sibling-cpus for every domain")
+          PY
+
+          grep -n -E 'sibling-cpus|cpulist_parse|ap_fuse' kernel-src/drivers/cpufreq/exynos-acme.c
+          ! grep -q 'ap_fuse' kernel-src/drivers/cpufreq/exynos-acme.c
+
       - name: Prepare embedded binaries for out-of-tree build
         run: |
           cd kernel-src
