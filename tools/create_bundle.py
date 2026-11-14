@@ -58,7 +58,7 @@ metadata = {
     },
 }
 
-manifest.write_text(json.dumps(metadata, indent=2) + "\\n")
+manifest.write_text(json.dumps(metadata, indent=2) + "\n")
 print("Bundle generated:", bundle)
 print("BootShim:", len(bs), "bytes")
 print("Firmware:", len(fd), "bytes")
