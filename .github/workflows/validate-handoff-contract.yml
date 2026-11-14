@@ -43,7 +43,7 @@ jobs:
 
       - name: Compile and run descriptor validation tests
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -Iproject/virtual-boot/include \\\n            project/virtual-boot/src/a20_handoff_validate.c \\\n            project/virtual-boot/tests/handoff_descriptor_validation.c \\\n            -o /tmp/handoff-validation
+          cc -std=c11 -Wall -Wextra -Werror -Iproject/virtual-boot/include project/virtual-boot/src/a20_handoff_validate.c project/virtual-boot/tests/handoff_descriptor_validation.c -o /tmp/handoff-validation
           /tmp/handoff-validation
 
       - name: Validate fail-closed handoff contract
