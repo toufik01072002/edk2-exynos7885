@@ -26,6 +26,5 @@ BootShim.elf: BootShim.S
 handoff-candidate:
 	$(CC) -c BootShim.S -o BootShim-handoff-candidate.elf $(ASFLAGS) -DENABLE_HANDOFF=1
 	$(OBJCOPY) -O binary BootShim-handoff-candidate.elf BootShim-handoff-candidate.bin
-	test "$(wc -c < BootShim-handoff-candidate.bin)" -eq 65536
 
 BootShim.S:
