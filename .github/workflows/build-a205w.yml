@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
   push:
-    branches: [main]
+    branches: [main, "phase2/**"]
     paths:
       - "EXYNOS7885Pkg/**"
       - "BootShim/**"
