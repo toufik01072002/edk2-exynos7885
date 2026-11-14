@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: virtual-boot-${{ github.ref }}
@@ -655,6 +656,32 @@ jobs:
           name: virtual-boot-initramfs
           path: initramfs-artifacts
 
+      - name: Find latest successful EDK2 build
+        id: edk2_run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/build-a205w.yml/runs?status=success&per_page=20" --jq '[.workflow_runs[] | select(.conclusion == "success")][0].id')
+          test -n "$RUN_ID" && test "$RUN_ID" != "null"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "Using successful EDK2 workflow run: $RUN_ID"
+
+      - name: Download validated EDK2 firmware artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: a205w-edk2
+          run-id: ${{ steps.edk2_run.outputs.run_id }}
+          github-token: ${{ github.token }}
+          path: edk2-artifacts
+
+      - name: Verify EDK2 firmware artifact
+        run: |
+          test -d edk2-artifacts/UEFI
+          test -s edk2-artifacts/phase2-fd-manifest.json
+          find edk2-artifacts/UEFI -type f -size +0c -print
+          test -n "$(find edk2-artifacts/UEFI -type f -size +0c -print -quit)"
+          python3 -m json.tool edk2-artifacts/phase2-fd-manifest.json >/dev/null
+
       - name: Verify all artifacts exist
         run: |
           test -f kernel-artifacts/Image
@@ -671,6 +698,14 @@ jobs:
           cp kernel-artifacts/Image virtual-boot-output/
           cp kernel-artifacts/exynos7885-a205w-virtual.dtb virtual-boot-output/exynos7885-a205w-virtual.dtb
           cp initramfs-artifacts/initramfs.cpio.gz virtual-boot-output/
+
+      - name: Integrate validated EDK2 firmware into bundle
+        run: |
+          mkdir -p virtual-boot-output/edk2
+          cp -a edk2-artifacts/UEFI virtual-boot-output/edk2/
+          cp edk2-artifacts/phase2-fd-manifest.json virtual-boot-output/edk2/
+          find virtual-boot-output/edk2 -type f -size +0c -print
+          test -n "$(find virtual-boot-output/edk2 -type f -size +0c -print -quit)"
 
       - name: Include kernel compatibility patch
         run: |
@@ -772,7 +807,7 @@ jobs:
       - name: Generate SHA256SUMS
         run: |
           cd virtual-boot-output
-          sha256sum Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz patches/0001-forward-declare-rt-rq.patch patches/0002-fix-nmi-inline-declaration.patch patches/0003-fix-sched-tune-forward-declarations.patch patches/0004-fix-schedutil-config-guards.patch patches/0005-gpu-arm-makefile-conditional.patch patches/0006-fix-mmc-cmdq-and-itmon.patch patches/0007-guard-sec-debug-snapshot-calls.patch patches/0008-move-exynos-condbg-function-table-off-stack.patch patches/0009-fix-ehci-verbose-debug-call.patch patches/0010-fix-virtual-boot-link-dependencies.patch hardware-manifest.json > SHA256SUMS
+          find Image exynos7885-a205w-virtual.dtb initramfs.cpio.gz edk2 patches hardware-manifest.json -type f -size +0c -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
           cat SHA256SUMS
 
       - name: Copy documentation
