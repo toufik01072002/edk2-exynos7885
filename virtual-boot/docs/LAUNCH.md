@@ -44,6 +44,8 @@ The end-to-end launch path is not validated. In particular:
 
 The TWRP action **Démarrer EDK2** must remain blocked until these issues have a tested implementation. Do not bypass the fail-closed guard.
 
+The TWRP userspace loader is currently a launch gate only: it contains no `kexec_load` or reboot syscall path. CI compiles it and verifies that it refuses launch. This prevents a build-time define from re-enabling the old unvalidated prototype.
+
 ## Proposed memory addresses
 
 The manifest currently records these proposed addresses:
