@@ -961,8 +961,7 @@ jobs:
 
       - name: Test explicit handoff staging request
         run: |
-          sh virtual-boot-project/virtual-boot/tests/test_handoff_stage_request.sh \\
-            virtual-boot-project/virtual-boot/scripts/handoff-stage-request.sh
+          sh virtual-boot-project/virtual-boot/tests/test_handoff_stage_request.sh virtual-boot-project/virtual-boot/scripts/handoff-stage-request.sh
 
       - name: Build initramfs
         run: |
