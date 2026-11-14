@@ -16,6 +16,12 @@ The Phase 1 kernel, DTB, initramfs and bundle build passed in GitHub Actions run
 - `EXYNOS7885Pkg/EXYNOS7885Pkg.fdf` defines an EDK2 FD at base 0x90000000 with size 0x00200000. `DeviceMemoryMap.h` reserves the same 2 MiB as `BootShim/FD`, and the Virtual Boot DTB marks that range no-map.
 - The selected kernel branch's `arch/arm64/kernel/machine_kexec.c` includes a guard that BUGs if more than one CPU is online for a normal kexec. SMP shutdown requirements must therefore be resolved explicitly before any launch attempt.
 
+## Phase 2 progress (2026-11-14)
+
+- Added a fixed 4 KiB handoff mailbox at physical address `0x90200000`, immediately after the 2 MiB UEFI FD reservation. The adjacent usable RAM descriptor now begins at `0x90201000`.
+- Mirrored the mailbox as a `no-map` reserved-memory node in the Virtual Boot DTS and as a `MEM_RES` descriptor in `DeviceMemoryMap.h`. This establishes a stable physical rendezvous point despite ordinary kexec clearing x0-x3.
+- This step reserves and specifies the mailbox only. It does not yet write a record, read it in BootShim, or enable the WFE-gated transfer. Producer/consumer implementation and checksum validation remain next.
+
 ## Phase 2 progress (2026-11-13)
 
 - The FD packaging gate is integrated in CI and passed in EDK2 build run 19.
