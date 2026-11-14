@@ -521,8 +521,8 @@ jobs:
         run: |
           cat > initramfs/init << 'INITEOF'
           #!/bin/busybox sh
-          # Virtual Boot init - SM-A205W Exynos 7885 (Phase 1)
-          # Diagnostic environment only - no UEFI handoff yet
+          # Virtual Boot init - SM-A205W Exynos 7885 (Phase 2 staging)
+          # Fixed-segment kexec loader is load-only; no automatic execution
 
           export PATH=/bin:/sbin:/usr/bin:/usr/sbin
           export HOME=/root
@@ -541,7 +541,7 @@ jobs:
 
           echo "=========================================="
           echo "Virtual Boot ARM64 - Samsung SM-A205W"
-          echo "Exynos 7885 - Phase 1: Diagnostic Environment"
+          echo "Exynos 7885 - Phase 2: Load-only handoff staging"
           echo "=========================================="
           echo ""
 
