@@ -15,6 +15,14 @@ on:
       - "build*.sh"
       - "firstrun.sh"
       - ".github/workflows/build-a205w.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "EXYNOS7885Pkg/**"
+      - "BootShim/**"
+      - "build*.sh"
+      - "firstrun.sh"
+      - ".github/workflows/build-a205w.yml"
 
 jobs:
   build:
