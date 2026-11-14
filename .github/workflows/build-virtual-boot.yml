@@ -445,6 +445,27 @@ jobs:
           p.write_text(s)
           print("Use the SDHCI block-size register directly for CMDQ (512-byte blocks)")
 
+          p = Path("kernel-src/drivers/mmc/host/cmdq_hci.c")
+          s = p.read_text()
+          old = """\tstruct mmc_cmdq_context_info *ctx_info = &mmc->cmdq_ctx;
+          u32 dbr = cmdq_readl(cq_host, CQTDBR);
+          unsigned long flags;"""
+          new = """\tstruct mmc_cmdq_context_info *ctx_info = &mmc->cmdq_ctx;
+          unsigned long flags;"""
+          if s.count(old) != 1:
+              raise SystemExit("Expected one cmdq_finish_data local declaration block")
+          s = s.replace(old, new, 1)
+          old = """#if defined(CONFIG_MMC_DW_DEBUG)
+          \tif (cq_host->ops->cmdq_log) {"""
+          new = """#if defined(CONFIG_MMC_DW_DEBUG)
+          \tu32 dbr = cmdq_readl(cq_host, CQTDBR);
+          \tif (cq_host->ops->cmdq_log) {"""
+          if s.count(old) != 1:
+              raise SystemExit("Expected one CMDQ debug logging block")
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          print("Scope CMDQ doorbell snapshot to MMC_DW_DEBUG, where it is consumed")
+
           p = Path("kernel-src/drivers/trace/exynos7885-itmon.c")
           s = p.read_text()
           old = """static void itmon_switch_scandump(void)
