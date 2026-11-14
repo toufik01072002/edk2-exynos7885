@@ -64,7 +64,7 @@ require("python3 BootShim/test_handoff_contract.py" in WORKFLOW,
 
 # The incoming Linux kexec register state is not a source of DTB or arguments
 # for this exact PrePi entry path; don't introduce an implicit x0-x3 contract.
-require(not re.search(r"\\b(mov|ldr)\\s+x[0-3]\\s*,", candidate),
+require(not re.search(r"\b(mov|ldr)\s+x[0-3]\s*,", candidate),
         "candidate unexpectedly writes an undocumented x0-x3 entry contract")
 
 print("PASS: ARM64 BootShim handoff candidate source contract")
