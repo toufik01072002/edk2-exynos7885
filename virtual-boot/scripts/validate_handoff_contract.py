@@ -18,7 +18,7 @@ assert "UNIMPLEMENTED" in manifest["kexec"]["argument_contract"]
 
 # Trace the actual argument path from machine_kexec through cpu_soft_restart.
 # Current implementation passes kimage->head, kimage_start, and a zero arg2.
-machine_kexec_compact = re.sub(r"\\s+", "", machine_kexec)
+machine_kexec_compact = re.sub(r"\s+", "", machine_kexec)
 expected_call = (
     "cpu_soft_restart(in_crash_kexec?0:is_hyp_mode_available(),"
     "reboot_code_buffer_phys,kimage->head,kimage_start,0);"
@@ -27,10 +27,10 @@ assert expected_call in machine_kexec_compact, (
     "machine_kexec argument tuple changed; re-audit the handoff ABI"
 )
 for pattern in (
-    r"mov\\s+x18,\\s*x1",
-    r"mov\\s+x0,\\s*x2",
-    r"mov\\s+x1,\\s*x3",
-    r"mov\\s+x2,\\s*x4",
+    r"mov\s+x18,\s*x1",
+    r"mov\s+x0,\s*x2",
+    r"mov\s+x1,\s*x3",
+    r"mov\s+x2,\s*x4",
 ):
     assert re.search(pattern, reset), f"cpu_soft_restart argument mapping changed: {pattern}"
 
