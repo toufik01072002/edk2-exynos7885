@@ -744,13 +744,20 @@ jobs:
           sha256=$(sha256sum virtual-boot-output/exynos7885-a205w-virtual.dtb | cut -d' ' -f1)
           echo "sha256=$sha256" >> $GITHUB_OUTPUT
 
+      - name: Stage kernel artifacts with stable flat names
+        run: |
+          mkdir -p virtual-boot-artifacts
+          cp kernel-src/out/arch/arm64/boot/Image virtual-boot-artifacts/Image
+          cp virtual-boot-output/exynos7885-a205w-virtual.dtb virtual-boot-artifacts/exynos7885-a205w-virtual.dtb
+          test -s virtual-boot-artifacts/Image
+          test -s virtual-boot-artifacts/exynos7885-a205w-virtual.dtb
+          ls -lh virtual-boot-artifacts/
+
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: virtual-boot-kernel
-          path: |
-            kernel-src/out/arch/arm64/boot/Image
-            virtual-boot-output/exynos7885-a205w-virtual.dtb
+          path: virtual-boot-artifacts/*
 
   build-initramfs:
     name: Build initramfs
