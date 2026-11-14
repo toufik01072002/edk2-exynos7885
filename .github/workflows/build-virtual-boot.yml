@@ -317,9 +317,9 @@ jobs:
           from pathlib import Path
           makefile = Path('kernel-src/drivers/misc/Makefile')
           source = makefile.read_text()
-          entry = 'obj-y += a20-handoff-mailbox.o\\n'
+          entry = 'obj-y += a20-handoff-mailbox.o\n'
           if entry not in source:
-              makefile.write_text(source + '\\n# Samsung A20 Virtual Boot mailbox writer\\n' + entry)
+              makefile.write_text(source.rstrip('\n') + '\n\n# Samsung A20 Virtual Boot mailbox writer\n' + entry)
           PY
           python3 virtual-boot-project/BootShim/test_mailbox_driver.py
           grep -Fq 'obj-y += a20-handoff-mailbox.o' kernel-src/drivers/misc/Makefile
