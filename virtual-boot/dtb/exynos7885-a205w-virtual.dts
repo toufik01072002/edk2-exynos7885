@@ -422,6 +422,16 @@
         ranges;
     };
 
+    /* DISPAUD power domain: authentic Exynos 7885 definition. */
+    pd_dispaud: pd-dispaud@11c84020 {
+        compatible = "samsung,exynos-pd";
+        reg = <0x0 0x11c84020 0x20>;
+        cal_id = <0xB1380000>;
+        status = "okay";
+        power-down-ok = <PD_OK_AUD>;
+        need_smc = <0x148F0000>;
+    };
+
     /* DECON (display) */
     decon_f: decon_f@0x14860000 {
         compatible = "samsung,exynos7885-decon";
