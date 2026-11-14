@@ -435,6 +435,16 @@ jobs:
           p.write_text(s)
           print("Removed stale CMDQ crypto callback incompatible with cmdq_host_ops")
 
+          p = Path("kernel-src/drivers/mmc/host/sdhci.c")
+          s = p.read_text()
+          old = "\tsdhci_set_blk_size_reg(host, 512, 0);"
+          new = "\tsdhci_writew(host, SDHCI_MAKE_BLKSZ(0, 512), SDHCI_BLOCK_SIZE);"
+          if s.count(old) != 1:
+              raise SystemExit("Expected one CMDQ block-size register call, found %d" % s.count(old))
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          print("Use the SDHCI block-size register directly for CMDQ (512-byte blocks)")
+
           p = Path("kernel-src/drivers/trace/exynos7885-itmon.c")
           s = p.read_text()
           old = """static void itmon_switch_scandump(void)
