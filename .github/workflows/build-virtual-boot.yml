@@ -54,7 +54,7 @@ jobs:
         run: |
           mkdir -p "$GITHUB_WORKSPACE/toolchain"
           wget -q \
-            "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/423c0265176bcabd1c885f8cf6f0cedf67d3f59b.tar.gz" \
+            "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/77a9b08d6a44208afb100c9d210c712319f9d4b7.tar.gz" \
             -O /tmp/gcc49.tar.gz
           tar -xzf /tmp/gcc49.tar.gz \
             -C "$GITHUB_WORKSPACE/toolchain"
