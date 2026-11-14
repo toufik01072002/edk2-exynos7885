@@ -621,23 +621,31 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           p = Path("kernel-src/drivers/usb/gadget/configfs.c")
           s = p.read_text()
-          pattern = re.compile(r"(?m)^static void clear_current_usb_link\(.*?^}\n", re.S)
-          matches = list(pattern.finditer(s))
-          if len(matches) == 1:
-              block = matches[0].group(0)
-              if "#ifdef CONFIG_USB_CONFIGFS_UEVENT" not in block:
-                  s = s[:matches[0].start()] + "#ifdef CONFIG_USB_CONFIGFS_UEVENT\n" + block + "#endif /* CONFIG_USB_CONFIGFS_UEVENT */\n" + s[matches[0].end():]
-                  p.write_text(s)
-          elif len(matches) != 0:
-              raise SystemExit("Unexpected duplicate clear_current_usb_link definitions")
-          else:
-              if not re.search(r"#ifdef CONFIG_USB_CONFIGFS_UEVENT\nstatic void clear_current_usb_link\(", s):
+          marker = "static void clear_current_usb_link("
+          start = s.find(marker)
+          if start < 0:
+              guarded = "#ifdef CONFIG_USB_CONFIGFS_UEVENT\nstatic void clear_current_usb_link("
+              if guarded in s:
+                  print("configfs helper already guarded")
+              else:
                   raise SystemExit("Cannot locate clear_current_usb_link definition")
-          print("Guarded clear_current_usb_link with CONFIG_USB_CONFIGFS_UEVENT")
+          else:
+              line_start = s.rfind("\n", 0, start) + 1
+              end = s.find("\n}\n", start)
+              if end < 0:
+                  raise SystemExit("Cannot locate end of clear_current_usb_link")
+              end += len("\n}\n")
+              block = s[line_start:end]
+              prefix = s[:line_start]
+              if prefix.rstrip().endswith("#ifdef CONFIG_USB_CONFIGFS_UEVENT"):
+                  print("configfs helper already guarded")
+              else:
+                  s = prefix + "#ifdef CONFIG_USB_CONFIGFS_UEVENT\n" + block + "#endif /* CONFIG_USB_CONFIGFS_UEVENT */\n" + s[end:]
+                  p.write_text(s)
+                  print("Guarded clear_current_usb_link with CONFIG_USB_CONFIGFS_UEVENT")
           PY
 
       - name: Apply SEC_DEBUG and EHCI compatibility fixes
