@@ -74,6 +74,11 @@ jobs:
           /tmp/bootshim-mailbox-test
           echo "PASS: BootShim validates the descriptor at its exported in-image mailbox"
 
+      - name: Test offline descriptor-to-mailbox image staging
+        run: |
+          python3 project/BootShim/test_patch_descriptor_mailbox.py
+          echo "PASS: descriptor can be staged into the BootShim image without changing bytes outside the mailbox"
+
       - name: Compile and run fail-closed SEC entry evidence gate
         run: |
           cc -std=c11 -Wall -Wextra -Werror \
