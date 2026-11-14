@@ -5,7 +5,7 @@
 - **Git Commit**: GIT_COMMIT_PLACEHOLDER
 - **Kernel Source**: https://github.com/toufik01072002/Kernel_SM-A205W
 - **Kernel Branch**: kexec-arm64-4.4-d-work
-- **Kernel Commit**: 1e70ef871acb9ea0cd79a531b18e98f61debfc71
+- **Kernel Commit**: 14eaa7b1aad3814d69f7c575c3215aa7edbad6dc
 
 ## Component Status
 
@@ -28,7 +28,7 @@
 - **UEFI FD Region**: Moved to 0x90020000-0x90220000 (2 MiB) with no-map; ECT window 0x90000000-0x90020000 is separately reserved
 - **CPUs**: 8 cores (2x A73 + 6x A53) with correct idle states
 - **Peripherals**: UART2 (console), I2C4, MMC0, USB, DECON, ABOX, PWM, RTC, Watchdog, ADC, Thermal
-- **Status**: Source created, **PENDING COMPILATION AND BINARY VALIDATION**
+- **Status**: Compiled in build #259; binary DTB validation passed
 
 ### 🔄 DTB Binary Validation
 - **Requirement**: Validate the compiled DTB binary with `dtc`/`fdtget` (not regex) against `DeviceMemoryMap.h`
@@ -39,25 +39,25 @@
   4. Reservations contained within RAM banks
   5. /memreserve/ entries from exynos7885-rmem.dtsi
   6. Load addresses compatible with memory map
-- **Current Status**: NOT YET VALIDATED - requires successful build first
+- **Current Status**: PASSED in build #259 using dtc/fdtget against DeviceMemoryMap.h
 
 ### 🔄 Initramfs (Defined in build-virtual-boot.yml)
 - **Base**: BusyBox 1.36.1 static (ARM64)
 - **Init Script**: Diagnostics, hardware info, interactive shell
 - **Tools**: hwinfo
 - **Filesystem**: proc, sysfs, devtmpfs, tmpfs mounted at boot
-- **Status**: Design complete, **PENDING BUILD**
+- **Status**: Built and verified in build #259 (BusyBox static ARM64; initramfs extraction checks passed)
 
 ### 🔄 GitHub Actions Workflow (.github/workflows/build-virtual-boot.yml)
 - **Job 1**: build-kernel - Clone Kernel_SM-A205W (kexec-arm64-4.4-d-work, commit 1e70ef87), build Image + DTB
 - **Job 2**: build-initramfs - Build BusyBox static, create initramfs.cpio.gz
 - **Job 3**: build-bundle - Create manifest, SHA256SUMS, documentation
-- **Status**: Workflow corrections published; first successful GitHub Actions run still pending.
+- **Status**: PASSED — GitHub Actions build #259 (run 43649235450), all four jobs successful.
   - Kernel checkout exposes the exact commit output.
   - DTS is preprocessed with the kernel include paths before `dtc` compilation.
   - Kernel artifacts are staged at stable paths before upload.
   - Binary DTB validation receives both the DTB and `DeviceMemoryMap.h`.
-  - Initramfs and bundle jobs still require execution evidence.
+  - Initramfs and bundle artifacts were created and uploaded successfully.
 
 ## Memory Map Validation - REQUIRED CHECKS
 
@@ -104,8 +104,8 @@
 - All 14 fixed reservations are represented as `no-map` regions in the Virtual Boot DTS.
 - The stock Samsung dynamic CMA/ABOX allocations are intentionally pinned or omitted in this diagnostic-only DTB so they cannot consume memory reserved by EDK2.
 
-### Validation Status: **PENDING**
-The binary validator now uses `dtc`/`fdtget`, checks the FDT header and all three `/memory` banks, verifies every fixed reservation is inside RAM and carries `no-map`, and requires exact parity between fixed DTB reservations and all `MEM_RES` descriptors. It has not yet been executed against a compiled DTB.
+### Validation Status: **PASSED — build #259**
+The binary validator now uses `dtc`/`fdtget`, checks the FDT header and all three `/memory` banks, verifies every fixed reservation is inside RAM and carries `no-map`, and requires exact parity between fixed DTB reservations and all `MEM_RES` descriptors. It ran successfully against the compiled DTB in build #259.
 
 ## Kernel Branch Selection Analysis
 
@@ -129,25 +129,26 @@ Contains 14 commits ahead of base:
 
 **Rationale**: The work branch contains explicit KEXEC support for Exynos7885 and A20 build workflow, making it the correct choice for Virtual Boot.
 
-## Outstanding Issues (Must Fix Before Phase 1 Complete)
+## Remaining Phase 2 Engineering Work
 
-1. **DTB Compilation**: Must compile using authentic Samsung DTS chain from `arch/arm64/boot/dts/exynos/dtbo/`
-2. **Binary DTB Validation**: Replace regex validator with libfdt-based validation
-3. **First CI execution**: Run the corrected workflow and fix the first real compiler or validation failure
-4. **Initramfs Build**: Install aarch64-linux-gnu-gcc in build job, verify BusyBox ARM64 static build
-5. **Memory Address Assignment**: DTB at 0x88000000 collides with trampoline (Phase 2) - document clearly
-6. **No Placeholders**: Manifest must contain real SHA256, real commit, real build date
-7. **Model Correction**: Galaxy A20 (not A20e) throughout all documentation
+Phase 1 bundle generation and binary validation are complete. The following runtime items remain before any handoff can be enabled:
 
-## Next Steps (Order Mandatory)
+1. Implement and validate a trampoline with a proven physical memory layout.
+2. Correct the ordinary ARM64 kexec register contract: the current relocation path clears x0-x3, so the incoming FDT pointer cannot be assumed to reach BootShim.
+3. Quiesce secondary CPUs safely before ordinary kexec; the current kernel path is not yet safe for multicore handoff.
+4. Quiesce DMA-capable devices before transferring memory ownership.
+5. Rebuild the TWRP recovery DTBO from the updated kernel DTS reservation before testing the reserved FD address on hardware.
+6. Prove the SEC entry and UEFI execution on hardware. CI/static inspection is not runtime boot evidence.
 
-A. ✅ Compare kernel branches - COMPLETE (kexec-arm64-4.4-d-work selected)
-B. ✅ Identify authentic DTS/DTBO chain - COMPLETE
-C. 🔄 Correct DTS and DTB compilation inputs - PREPARED, BUILD PENDING
-D. 🔄 Validate memory from binary DTB - VALIDATOR IMPLEMENTED, EXECUTION PENDING
-E. ✅ Correct kernel config checks and build workflow - CORRECTIONS PUBLISHED
-F. 🔄 Build initramfs with proper dependencies - PENDING
-G. 🔄 Generate bundle, hashes, reports - PENDING
+## Completed Phase 1 Milestones
+
+A. ✅ Kernel branch and exact commit pinned: `14eaa7b1aad3814d69f7c575c3215aa7edbad6dc`
+B. ✅ Samsung DTS/DTBO source chain integrated for the virtual target
+C. ✅ Virtual Boot kernel Image and DTB compiled in build #259
+D. ✅ Compiled DTB binary validated against `DeviceMemoryMap.h`
+E. ✅ BusyBox static ARM64 initramfs built and extraction-checked
+F. ✅ EDK2 UEFI FD integrated at `0x90020000`; ECT kept separate at `0x90000000-0x90020000`
+G. ✅ Bundle created; every entry in `SHA256SUMS` verified against the downloaded artifact
 
 ## Phase 2 Boundary
 This report covers Phase 1 only. The following are explicitly NOT part of Phase 1:
