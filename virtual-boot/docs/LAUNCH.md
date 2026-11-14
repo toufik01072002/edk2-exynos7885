@@ -4,7 +4,7 @@
 This package provides a standalone ARM64 Virtual Boot environment for Samsung SM-A205W (Galaxy A20, Exynos 7885).
 It is designed to be loaded via kexec from TWRP recovery.
 
-**Phase 1 Status**: Build and validation of independent Virtual Boot components only.
+**Phase 1 Status**: Build #259 successful; kernel, DTB, initramfs, EDK2 firmware bundle and SHA256 checks verified.
 **Phase 2 (Future)**: Linux → UEFI handoff and TWRP button integration.
 
 ## Hardware Identification
@@ -20,12 +20,13 @@ It is designed to be loaded via kexec from TWRP recovery.
 - `hardware-manifest.json` - Hardware specification and memory map
 - `SHA256SUMS` - Integrity verification
 
-## Memory Layout (Reference - to be validated against compiled DTB)
+## Memory Layout (Build #259 - compiled DTB validated)
 ```
 Kernel load:      0x80080000
 Initramfs load:   0x84000000
 DTB load:         0x88000000
-UEFI FD (target): 0x90000000-0x90200000 (2 MiB reserved)
+ECT reserve:      0x90000000-0x90020000 (128 KiB)
+UEFI FD:          0x90020000-0x90220000 (2 MiB reserved)
 Trampoline:       NOT ASSIGNED (Phase 2)
 ```
 
@@ -35,7 +36,8 @@ Trampoline:       NOT ASSIGNED (Phase 2)
 | RAM Bank 0 | 0x80000000 - 0xBBC00000 | 956 MiB | System RAM |
 | RAM Bank 1 | 0xC0000000 - 0x100000000 | 1024 MiB | System RAM |
 | RAM Bank 2 | 0x880000000 - 0x8C0000000 | 1024 MiB | System RAM (>4GB) |
-| UEFI FD | 0x90000000 - 0x90200000 | 2 MiB | Reserved |
+| ECT | 0x90000000 - 0x90020000 | 128 KiB | Reserved |
+| UEFI FD | 0x90020000 - 0x90220000 | 2 MiB | Reserved |
 
 ### Reserved Regions (from Samsung DTB)
 - TIMA: 0xB8000000-0xB8200000
@@ -57,7 +59,7 @@ the end-to-end runtime path has not been validated.
 
 Outstanding blockers for a safe launch:
 
-- The exact physical placement of the combined BootShim + FD image is unresolved.
+- The runtime physical placement and execution of the combined BootShim + FD image have not been proven.
 - The target kernel's ordinary kexec path clears x0-x3 before branching; the
   incoming FDT pointer therefore cannot be assumed to reach BootShim.
 - The EDK2 SEC entry address and its required execution state are known from
@@ -80,9 +82,9 @@ sha256sum -c SHA256SUMS
 ```
 
 ## Phase 2 (Future - Not Implemented)
-- [ ] Trampoline binary (ARM64 assembly) compilation and integration
-- [ ] Automated Linux → UEFI handoff in init script
-- [ ] TWRP "Start EDK2" button action modification
+- [ ] Implement and validate an ARM64 trampoline for the handoff
+- [ ] Resolve ARM64 kexec register handoff (x0-x3) and secondary CPU quiescence
+- [ ] Quiesce DMA-capable devices and integrate the validated handoff into TWRP
 - [ ] End-to-end testing on SM-A205W hardware
 
 ## Security Notes
