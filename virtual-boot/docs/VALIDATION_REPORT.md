@@ -24,8 +24,8 @@
   - The custom DTS intentionally selects and adapts the hardware nodes needed for the diagnostic kernel; it is not a verbatim merge of the complete base DTS and DTBO overlay.
 - **Model**: Samsung Galaxy A20 (SM-A205W) - corrected from A20e
 - **Memory Regions**: Defined per Samsung DTB (3 banks + Bank 3 empty)
-- **Reserved Regions**: All 13 fixed EDK2 MEM_RES descriptors are mirrored as no-map reservations in the Virtual Boot DTB
-- **UEFI FD Region**: Added at 0x90000000-0x90200000 (2 MiB) with no-map
+- **Reserved Regions**: All 14 fixed EDK2 MEM_RES descriptors are mirrored as no-map reservations in the Virtual Boot DTB
+- **UEFI FD Region**: Moved to 0x90020000-0x90220000 (2 MiB) with no-map; ECT window 0x90000000-0x90020000 is separately reserved
 - **CPUs**: 8 cores (2x A73 + 6x A53) with correct idle states
 - **Peripherals**: UART2 (console), I2C4, MMC0, USB, DECON, ABOX, PWM, RTC, Watchdog, ADC, Thermal
 - **Status**: Source created, **PENDING COMPILATION AND BINARY VALIDATION**
@@ -65,8 +65,9 @@
 | Region | Address | Size |
 |--------|---------|------|
 | RAM Bank 0 Low | 0x80000000 | 0x10000000 (256 MiB) |
-| UEFI FD | 0x90000000 | 0x00200000 (2 MiB) |
-| RAM Bank 0 Mid | 0x90200000 | 0x27E00000 (638 MiB) |
+| ECT + alignment reserve | 0x90000000 | 0x00020000 (128 KiB) |
+| UEFI FD | 0x90020000 | 0x00200000 (2 MiB) |
+| RAM Bank 0 Mid | 0x90220000 | 0x27DE0000 (638 MiB) |
 | TIMA Reserved | 0xB8000000 | 0x00200000 (2 MiB) |
 | RAM Bank 0 High | 0xB8200000 | 0x03A00000 (58 MiB) |
 | seclog Reserved | 0xC0000000 | 0x00080000 (512 KiB) |
@@ -99,7 +100,8 @@
 - CMA cma-3: 0x8BA000000-0x8BB400000 (20 MiB)
 - CMA crypto: 0x8BB800000-0x8BD800000 (32 MiB)
 - CMA video_frame: 0x8BD800000-0x8C0000000 (40 MiB)
-- All 13 fixed reservations are represented as `no-map` regions in the Virtual Boot DTS.
+- The ECT parameter area (0x90000000-0x90020000) and relocated UEFI FD (0x90020000-0x90220000) are represented as separate `no-map` regions.
+- All 14 fixed reservations are represented as `no-map` regions in the Virtual Boot DTS.
 - The stock Samsung dynamic CMA/ABOX allocations are intentionally pinned or omitted in this diagnostic-only DTB so they cannot consume memory reserved by EDK2.
 
 ### Validation Status: **PENDING**
