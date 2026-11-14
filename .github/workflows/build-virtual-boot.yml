@@ -1140,6 +1140,66 @@ jobs:
               "physical_load_addresses": "CONFIGURATION_CANDIDATES_ONLY_NOT_RUNTIME_RESERVATIONS",
               "note": "Phase 1 diagnostics only; all listed load addresses are unverified candidates, no UEFI FD address or trampoline is assigned, and no handoff is enabled."
             },
+            "handoff_protocol": {
+              "name": "SM-A205W-ARM64-HANDOFF",
+              "version": 1,
+              "byte_order": "little-endian",
+              "header_size": 256,
+              "producer": "virtual-boot-initramfs",
+              "consumer": "BootShim",
+              "transport": "UNASSIGNED",
+              "descriptor_address": null,
+              "descriptor_capacity": null,
+              "state": "DISABLED",
+              "required_flags": [
+                "KERNEL_VALID",
+                "INITRAMFS_VALID",
+                "DTB_VALID",
+                "RANGES_RESERVED",
+                "CACHE_STATE_KNOWN",
+                "EL_STATE_KNOWN"
+              ],
+              "integrity": {
+                "algorithm": "SHA-256",
+                "required": true
+              },
+              "segments": {
+                "kernel": {
+                  "physical_address": null,
+                  "size": null,
+                  "sha256": null
+                },
+                "initramfs": {
+                  "physical_address": null,
+                  "size": null,
+                  "sha256": null
+                },
+                "dtb": {
+                  "physical_address": null,
+                  "size": null,
+                  "sha256": null
+                },
+                "bootshim": {
+                  "physical_address": null,
+                  "size": null,
+                  "sha256": null
+                },
+                "uefi_fd": {
+                  "physical_address": null,
+                  "size": null,
+                  "sha256": null
+                }
+              },
+              "activation_requirements": {
+                "physical_reservations_verified": false,
+                "kernel_register_contract_verified": false,
+                "el_mmu_cache_contract_verified": false,
+                "dma_quiescence_verified": false,
+                "secondary_cpu_state_verified": false,
+                "runtime_hardware_validation": false
+              },
+              "note": "Versioned descriptor definition only. Transport and physical addresses are intentionally unassigned; handoff must remain disabled."
+            },
             "validation": {
               "dtb_memory_map": "PASSED - binary FDT validated with fdtget",
               "dtb_source_authentic": "YES - built from Samsung DTS/DTBO chain",
@@ -1158,6 +1218,15 @@ jobs:
           assert m["kexec"]["physical_load_addresses"] == "CONFIGURATION_CANDIDATES_ONLY_NOT_RUNTIME_RESERVATIONS"
           assert "uefi_fd_candidate_unverified" in m["memory_map"]
           assert "reserved_reference_only" in m["memory_map"]
+          p = m["handoff_protocol"]
+          assert p["name"] == "SM-A205W-ARM64-HANDOFF"
+          assert p["version"] == 1 and p["header_size"] == 256
+          assert p["transport"] == "UNASSIGNED"
+          assert p["descriptor_address"] is None and p["descriptor_capacity"] is None
+          assert p["state"] == "DISABLED"
+          assert all(v is False for v in p["activation_requirements"].values())
+          assert all(all(value is None for value in segment.values()) for segment in p["segments"].values())
+          print("PASS: bundled manifest carries the disabled v1 handoff ABI and all activation gates")
           print("PASS: manifest does not claim a physical UEFI FD or reservation")
           PY
 
