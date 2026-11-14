@@ -449,10 +449,22 @@ jobs:
           sed -i 's/# CONFIG_KEXEC is not set/CONFIG_KEXEC=y/' .config
           make -j$(nproc) CC=aarch64-linux-gnu-gcc CROSS_COMPILE=aarch64-linux-gnu- STRIP=aarch64-linux-gnu-strip
 
+      - name: Build A20 mailbox publisher
+        run: |
+          aarch64-linux-gnu-gcc -Os -static -Wall -Wextra -Werror \
+            virtual-boot-project/virtual-boot/initramfs/a20-handoff-publish.c \
+            -o a20-handoff-publish
+          file a20-handoff-publish
+          aarch64-linux-gnu-strip a20-handoff-publish
+
       - name: Create initramfs structure
         run: |
           mkdir -p initramfs/{bin,sbin,etc,proc,sys,dev,lib,lib64,mnt,root,tmp,var,run}
           mkdir -p initramfs/usr/{bin,sbin,lib,lib64}
+
+      - name: Install A20 mailbox publisher
+        run: |
+          install -D a20-handoff-publish initramfs/bin/a20-handoff-publish
 
       - name: Copy BusyBox and create symlinks
         run: |
