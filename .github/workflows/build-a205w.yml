@@ -60,6 +60,11 @@ jobs:
           git clone https://github.com/tianocore/edk2-platforms.git
           ls -la
 
+      - name: Validate build script syntax
+        run: |
+          bash -n build.sh
+          bash -n build_bootshim.sh
+
       - name: Compiler
         working-directory: edk2-exynos7885
         run: |
