@@ -617,6 +617,29 @@ jobs:
           print("Added linux/sched.h declaration for local_clock()")
           PY
 
+      - name: Guard Samsung configfs USB link helper
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("kernel-src/drivers/usb/gadget/configfs.c")
+          s = p.read_text()
+          pattern = re.compile(r"(?m)^static void clear_current_usb_link\\(.*?^}\\n", re.S)
+          matches = list(pattern.finditer(s))
+          if len(matches) == 1:
+              block = matches[0].group(0)
+              if "#ifdef CONFIG_USB_CONFIGFS_UEVENT" not in block:
+                  s = s[:matches[0].start()] + "#ifdef CONFIG_USB_CONFIGFS_UEVENT\\n" + block + "#endif /* CONFIG_USB_CONFIGFS_UEVENT */\\n" + s[matches[0].end():]
+                  p.write_text(s)
+          elif len(matches) != 0:
+              raise SystemExit("Unexpected duplicate clear_current_usb_link definitions")
+          else:
+              if not re.search(r"#ifdef CONFIG_USB_CONFIGFS_UEVENT\\nstatic void clear_current_usb_link\\(", s):
+                  raise SystemExit("Cannot locate clear_current_usb_link definition")
+          print("Guarded clear_current_usb_link with CONFIG_USB_CONFIGFS_UEVENT")
+          PY
+
       - name: Apply SEC_DEBUG and EHCI compatibility fixes
         run: |
           python3 virtual-boot-project/virtual-boot/scripts/fix_kernel_debug_compat.py
