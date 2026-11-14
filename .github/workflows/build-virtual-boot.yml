@@ -676,11 +676,20 @@ jobs:
 
       - name: Verify EDK2 firmware artifact
         run: |
-          test -d edk2-artifacts/UEFI
+          test -s edk2-artifacts/UEFI
           test -s edk2-artifacts/phase2-fd-manifest.json
-          find edk2-artifacts/UEFI -type f -size +0c -print
-          test -n "$(find edk2-artifacts/UEFI -type f -size +0c -print -quit)"
           python3 -m json.tool edk2-artifacts/phase2-fd-manifest.json >/dev/null
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          manifest = json.loads(Path("edk2-artifacts/phase2-fd-manifest.json").read_text())
+          fd = manifest.get("combined_image", {})
+          if fd.get("path") != "workspace/UEFI":
+              raise SystemExit("Unexpected combined UEFI image path")
+          if int(fd.get("length_bytes", 0)) != Path("edk2-artifacts/UEFI").stat().st_size:
+              raise SystemExit("UEFI image size does not match manifest")
+          print("Validated UEFI image:", Path("edk2-artifacts/UEFI").stat().st_size, "bytes")
+          PY
 
       - name: Verify all artifacts exist
         run: |
@@ -702,10 +711,11 @@ jobs:
       - name: Integrate validated EDK2 firmware into bundle
         run: |
           mkdir -p virtual-boot-output/edk2
-          cp -a edk2-artifacts/UEFI virtual-boot-output/edk2/
+          cp edk2-artifacts/UEFI virtual-boot-output/edk2/UEFI
           cp edk2-artifacts/phase2-fd-manifest.json virtual-boot-output/edk2/
-          find virtual-boot-output/edk2 -type f -size +0c -print
-          test -n "$(find virtual-boot-output/edk2 -type f -size +0c -print -quit)"
+          test -s virtual-boot-output/edk2/UEFI
+          test -s virtual-boot-output/edk2/phase2-fd-manifest.json
+          sha256sum virtual-boot-output/edk2/UEFI
 
       - name: Include kernel compatibility patch
         run: |
