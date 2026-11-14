@@ -40,7 +40,7 @@ jobs:
       - name: Validate BootShim in-image descriptor mailbox layout
         run: |
           python3 project/BootShim/validate_descriptor_mailbox.py
-          echo "PASS: BootShim mailbox is reserved without enabling handoff"
+          echo "PASS: BootShim mailbox and PrePi SEC entry branch are wired"
 
       - name: Compile handoff descriptor ABI layout test
         run: |
