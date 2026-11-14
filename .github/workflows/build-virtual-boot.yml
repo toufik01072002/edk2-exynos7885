@@ -592,6 +592,22 @@ jobs:
 
           PY
 
+      - name: Fix Samsung extra-info local_clock declaration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("kernel-src/drivers/staging/samsung/sec_debug_extra_info.c")
+          s = p.read_text()
+          include = "#include <linux/sched.h>"
+          anchor = "#include <linux/module.h>"
+          if include not in s:
+              if anchor not in s:
+                  raise SystemExit("Cannot locate sec_debug_extra_info include anchor")
+              s = s.replace(anchor, anchor + "\\n" + include, 1)
+              p.write_text(s)
+          print("Added linux/sched.h declaration for local_clock()")
+          PY
+
       - name: Apply SEC_DEBUG and EHCI compatibility fixes
         run: |
           python3 virtual-boot-project/virtual-boot/scripts/fix_kernel_debug_compat.py
