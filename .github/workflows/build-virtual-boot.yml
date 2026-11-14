@@ -571,17 +571,13 @@ jobs:
           fi
           echo ""
 
-          # Check for UEFI FD at expected location
-          echo "[INFO] Checking for UEFI FD at 0x90020000..."
-          if [ -c /dev/mem ]; then
-            dd if=/dev/mem of=/tmp/uefi_check.bin bs=1 count=8 skip=$((0x90020030)) 2>/dev/null
-            if hexdump -C /tmp/uefi_check.bin 2>/dev/null | grep -q "41 52 4d 36"; then
-              echo "[OK] ARM64 magic found at 0x90020030 - UEFI FD present"
-            else
-              echo "[WARN] ARM64 magic NOT found at 0x90020030"
-            fi
+          # The FD is staged as a file; BootShim has not copied it to RAM yet.
+          echo "[INFO] Checking packaged EDK2 firmware..."
+          if [ -s /edk2/UEFI.fd ]; then
+            echo "[OK] EDK2 FD present: $(wc -c < /edk2/UEFI.fd) bytes"
+            sha256sum /edk2/UEFI.fd
           else
-            echo "[WARN] /dev/mem not available"
+            echo "[ERROR] /edk2/UEFI.fd is missing"
           fi
           echo ""
 
@@ -662,6 +658,10 @@ jobs:
           test -f init
           test -x bin/busybox
           test -x sbin/hwinfo
+          test -x sbin/edk2-kexec
+          test "$(wc -c < edk2/BootShim.bin)" -eq 65536
+          test "$(wc -c < edk2/UEFI.fd)" -eq 2097152
+          test -s edk2/phase2-fd-manifest.json
           cd ..
 
       - name: Generate SHA256
