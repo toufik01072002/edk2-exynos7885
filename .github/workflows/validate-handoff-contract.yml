@@ -46,6 +46,17 @@ jobs:
           cc -std=c11 -Wall -Wextra -Werror -Iproject/virtual-boot/include project/virtual-boot/src/a20_handoff_validate.c project/virtual-boot/tests/handoff_descriptor_validation.c -o /tmp/handoff-validation
           /tmp/handoff-validation
 
+      - name: Compile and run BootShim consumer boundary tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/virtual-boot/include -Iproject/BootShim \
+            project/virtual-boot/src/a20_handoff_validate.c \
+            project/BootShim/descriptor_consumer.c \
+            project/BootShim/test_descriptor_consumer.c \
+            -o /tmp/bootshim-consumer-test
+          /tmp/bootshim-consumer-test
+          echo "PASS: BootShim accepts only structurally valid descriptor bytes"
+
       - name: Validate fail-closed handoff contract
         run: |
           python3 project/virtual-boot/scripts/validate_handoff_contract.py \
