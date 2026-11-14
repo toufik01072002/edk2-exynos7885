@@ -668,29 +668,18 @@ jobs:
           p = Path("kernel-src/drivers/cpufreq/exynos-acme.c")
           s = p.read_text()
 
-          domain_mask = re.compile(
-              r"(?m)^[ \\t]*if \\(ap_fuse != 2\\)\\r?\\n"
-              r"[ \\t]*cpulist_parse\\(buf, &domain->cpus\\);\\r?\\n"
-              r"[ \\t]*else\\r?\\n"
-              r"[ \\t]*cpulist_parse\\(\\"0-3\\", &domain->cpus\\);"
-          )
-          s, mask_count = domain_mask.subn(
-              "\\tcpulist_parse(buf, &domain->cpus);", s, count=1
-          )
+          domain_mask = re.compile(r'''(?m)^[ \t]*if \(ap_fuse != 2\)\r?\n[ \t]*cpulist_parse\(buf, &domain->cpus\);\r?\n[ \t]*else\r?\n[ \t]*cpulist_parse\("0-3", &domain->cpus\);''')
+          s, mask_count = domain_mask.subn("\\tcpulist_parse(buf, &domain->cpus);", s, count=1)
           if mask_count == 0 and "ap_fuse != 2" in s:
               raise SystemExit("Could not safely replace legacy AP-fuse CPU-mask branch")
 
-          domain_skip = re.compile(
-              r"(?m)^[ \\t]*if \\(domain_id >= 1 && ap_fuse == 2\\)\\r?\\n"
-              r"[ \\t]*continue;[ \\t]*\\r?\\n?"
-          )
+          domain_skip = re.compile(r'''(?m)^[ \t]*if \(domain_id >= 1 && ap_fuse == 2\)\r?\n[ \t]*continue;[ \t]*\r?\n?''')
           s, skip_count = domain_skip.subn("", s, count=1)
           if skip_count == 0 and "ap_fuse == 2" in s:
               raise SystemExit("Could not safely remove legacy AP-fuse domain skip")
 
           if "ap_fuse" in s:
               raise SystemExit("Unresolved ap_fuse reference remains in exynos-acme.c")
-
           if "cpulist_parse(buf, &domain->cpus);" not in s:
               raise SystemExit("Device Tree sibling-cpus parsing is missing")
 
