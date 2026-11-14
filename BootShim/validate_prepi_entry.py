@@ -242,7 +242,9 @@ def main() -> None:
                 "physical_address_status": "must_be_resolved_by_runtime_loader"
             },
             "sec_entry": {
-                "address": sec["entry_address"],
+                "linked_address": sec["entry_address"],
+                "runtime_address": None,
+                "runtime_address_status": "UNVERIFIED",
                 "fd_offset": sec["entry_fd_offset"],
                 "requires_executable_mapping": True
             },
@@ -264,7 +266,9 @@ def main() -> None:
             ]
         },
         "fd": {
-            "base": f"0x{fd_base:08X}",
+            "linked_image_base": f"0x{fd_base:08X}",
+            "runtime_physical_load_address": None,
+            "runtime_placement_status": "UNVERIFIED",
             "size": len(fd),
             "sha256": sha256(fd),
             "bundle_offset": len(shim),
