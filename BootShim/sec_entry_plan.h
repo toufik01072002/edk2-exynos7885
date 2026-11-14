@@ -6,7 +6,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "sec_entry_gate.h"
+#include "sec_handoff_adapter.h"
 
 struct bootshim_sec_entry_plan {
     uint64_t sec_entry;
