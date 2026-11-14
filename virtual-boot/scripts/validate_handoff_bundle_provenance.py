@@ -50,10 +50,12 @@ def main():
             raise SystemExit(name + " provenance does not match bundled bytes")
         if segment.get("physical_address") is not None:
             raise SystemExit(name + " unexpectedly has a physical address")
-        manifest_segment = manifest
+        manifest_value = manifest
         for key in manifest_path:
-            manifest_segment = manifest_segment.get(key, {})
-        if manifest_segment.get("sha256") != actual_hash:
+            if not isinstance(manifest_value, dict) or key not in manifest_value:
+                raise SystemExit(name + " manifest metadata is missing: " + ".".join(manifest_path))
+            manifest_value = manifest_value[key]
+        if manifest_value != actual_hash:
             raise SystemExit(name + " manifest SHA-256 does not match bundled bytes")
 
     for name in ("bootshim", "uefi_fd"):
