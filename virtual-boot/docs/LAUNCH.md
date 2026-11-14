@@ -79,3 +79,19 @@ This verifies file integrity only. It does not validate the boot path.
 5. Keep the TWRP launch action fail-closed until hardware evidence validates the complete chain.
 
 No phone partitions are modified by these build steps. No flash or on-device execution is authorized by this bundle.
+
+
+## Versioned ARM64 handoff descriptor (protocol v1)
+
+The project now defines a versioned, little-endian descriptor contract named
+`SM-A205W-ARM64-HANDOFF`. Its 256-byte header identifies the initramfs as
+producer and BootShim as consumer. The descriptor reserves fields for the
+kernel, initramfs, DTB, BootShim and UEFI FD physical ranges and SHA-256 digests.
+
+This is an ABI definition only, not an implemented transport. The descriptor
+address/capacity, every segment physical address/size/digest, and the transport
+are deliberately unassigned. The descriptor state is `DISABLED`. Physical
+reservation, kernel register, EL/MMU/cache, DMA-quiescence, secondary-CPU and
+runtime-hardware gates all remain false. CI validates these invariants and
+fails if any field is accidentally activated. No code consumes this descriptor
+and no branch to SEC or EDK2 is enabled.
