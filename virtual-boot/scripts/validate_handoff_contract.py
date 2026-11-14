@@ -5,14 +5,32 @@ import re
 import sys
 from pathlib import Path
 
-manifest_path, reloc_path, trampoline_path = map(Path, sys.argv[1:4])
+manifest_path, reloc_path, trampoline_path, reset_path, machine_kexec_path = map(Path, sys.argv[1:6])
 manifest = json.loads(manifest_path.read_text())
 reloc = reloc_path.read_text()
 trampoline = trampoline_path.read_text()
+reset = reset_path.read_text()
+machine_kexec = machine_kexec_path.read_text()
 
 assert manifest["kexec"]["trampoline_load_address"] is None
 assert manifest["kexec"]["uefi_handoff_addr"] is None
 assert "UNIMPLEMENTED" in manifest["kexec"]["argument_contract"]
+
+# Trace the actual argument path from machine_kexec through cpu_soft_restart.
+# Current implementation passes kimage->head, kimage_start, and a zero arg2.
+call = re.search(
+    r"cpu_soft_restart\\(in_crash_kexec\\s*\\?\\s*0\\s*:\\s*is_hyp_mode_available\\(\\)\\s*,"
+    r"\\s*reboot_code_buffer_phys\\s*,\\s*kimage->head\\s*,\\s*kimage_start\\s*,\\s*0\\s*\\)",
+    machine_kexec, re.S
+)
+assert call, "machine_kexec argument tuple changed; re-audit the handoff ABI"
+for pattern in (
+    r"mov\\s+x18,\\s*x1",
+    r"mov\\s+x0,\\s*x2",
+    r"mov\\s+x1,\\s*x3",
+    r"mov\\s+x2,\\s*x4",
+):
+    assert re.search(pattern, reset), f"cpu_soft_restart argument mapping changed: {pattern}"
 
 # This vendor kexec implementation deliberately zeroes all four argument
 # registers before jumping to the new image. The handoff must not assume x0=DTB.
@@ -91,7 +109,8 @@ for i, (name, start, end) in enumerate(ranges):
             f"Proposed load windows overlap: {name} and {other}"
         )
 
-print("PASS: kernel kexec argument behavior is explicitly acknowledged")
+print("PASS: machine_kexec -> cpu_soft_restart argument flow is verified")
+print("PASS: relocation entry argument clearing is explicitly acknowledged")
 print("PASS: versioned handoff descriptor ABI is structurally valid and remains unassigned")
 print("PASS: trampoline remains fail-closed and has no fixed load address")
 print("PASS: proposed kernel/initramfs/DTB windows do not overlap")
