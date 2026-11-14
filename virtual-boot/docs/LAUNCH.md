@@ -26,6 +26,7 @@ Kernel load:      0x80080000
 Initramfs load:   0x84000000
 DTB load:         0x88000000
 UEFI FD (target): 0x90000000-0x90200000 (2 MiB reserved)
+Handoff mailbox:  0x90200000-0x90201000 (4 KiB, no-map)
 Trampoline:       NOT ASSIGNED (Phase 2)
 ```
 
