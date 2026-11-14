@@ -13,9 +13,9 @@ def require(condition, message):
     if not condition:
         raise SystemExit(f"FAIL: {message}")
 
-# Normalize source whitespace so the contract is independent of tabs/spaces.
-ASM = re.sub(r"\\s+", " ", ASM_RAW)
-require('.ascii "ARM\\\\x64"' in ASM, "ARM64 Image magic is missing")
+# Normalize tabs and spaces before checking assembly instruction order.
+ASM = re.sub(r"\s+", " ", ASM_RAW)
+require('.ascii "ARM\\x64"' in ASM, "ARM64 Image magic is missing")
 require(".org 0x10000" in ASM, "BootShim prefix is not fixed at 64 KiB")
 require("UEFI_SIZE != 0x00200000" in ASM, "FD size is not compile-time fixed at 2 MiB")
 require("SEC_ENTRY != 0x90008278" in ASM, "PrePi SEC entry constant changed unexpectedly")
@@ -36,11 +36,11 @@ for instruction in sequence:
 
 require("ENABLE_HANDOFF=0" in BUILD, "packaged BootShim build must force handoff off")
 require("make handoff-candidate" in BUILD, "handoff candidate is not assembled in CI build")
-require("ENABLE_HANDOFF ?= 0" in re.sub(r"\\s+", " ", MAKE),
+require("ENABLE_HANDOFF ?= 0" in re.sub(r"\s+", " ", MAKE),
         "Makefile default must remain disabled")
 require("python3 BootShim/test_handoff_contract.py" in WORKFLOW,
         "GitHub Actions does not execute this handoff contract test")
-require(not re.search(r"\\b(mov|ldr)\\s+x[0-3]\\s*,", candidate),
+require(not re.search(r"\b(mov|ldr)\s+x[0-3]\s*,", candidate),
         "candidate unexpectedly writes an undocumented x0-x3 entry contract")
 
 print("PASS: ARM64 BootShim handoff candidate source contract")
