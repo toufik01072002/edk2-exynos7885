@@ -69,6 +69,11 @@ jobs:
         run: |
           python3 BootShim/test_handoff_contract.py
 
+      - name: Valider le chargeur kexec a segments fixes
+        working-directory: edk2-exynos7885
+        run: |
+          python3 BootShim/test_fixed_segment_loader.py
+
       - name: Valider le FD et le bundle BootShim
         working-directory: edk2-exynos7885
         run: |
