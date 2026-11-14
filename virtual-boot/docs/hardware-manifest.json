@@ -31,7 +31,7 @@
     "sha256": "INITRAMFS_SHA256_PLACEHOLDER"
   },
   "memory_map": {
-    "bank0": "0x80000000-0xBBC00000 (956 MiB)",
+    "bank0": "0x80000000-0xBDA00000 (986 MiB)",
     "bank1": "0xC0000000-0x100000000 (1024 MiB)",
     "bank2": "0x880000000-0x8C0000000 (1024 MiB, >4GB)",
     "uefi_fd": "0x90000000-0x90200000 (2 MiB)"
@@ -50,5 +50,65 @@
     "dtb_source_authentic": "YES - built from Samsung DTS/DTBO chain",
     "dtb_validation_method": "libfdt-based binary DTB parsing (not regex)",
     "runtime_hardware_validation": "NOT_PERFORMED"
+  },
+  "handoff_protocol": {
+    "name": "SM-A205W-ARM64-HANDOFF",
+    "version": 1,
+    "byte_order": "little-endian",
+    "header_size": 256,
+    "producer": "virtual-boot-initramfs",
+    "consumer": "BootShim",
+    "transport": "UNASSIGNED",
+    "descriptor_address": null,
+    "descriptor_capacity": null,
+    "state": "DISABLED",
+    "required_flags": [
+      "KERNEL_VALID",
+      "INITRAMFS_VALID",
+      "DTB_VALID",
+      "RANGES_RESERVED",
+      "CACHE_STATE_KNOWN",
+      "EL_STATE_KNOWN"
+    ],
+    "integrity": {
+      "algorithm": "SHA-256",
+      "required": true
+    },
+    "segments": {
+      "kernel": {
+        "physical_address": null,
+        "size": null,
+        "sha256": null
+      },
+      "initramfs": {
+        "physical_address": null,
+        "size": null,
+        "sha256": null
+      },
+      "dtb": {
+        "physical_address": null,
+        "size": null,
+        "sha256": null
+      },
+      "bootshim": {
+        "physical_address": null,
+        "size": null,
+        "sha256": null
+      },
+      "uefi_fd": {
+        "physical_address": null,
+        "size": null,
+        "sha256": null
+      }
+    },
+    "activation_requirements": {
+      "physical_reservations_verified": false,
+      "kernel_register_contract_verified": false,
+      "el_mmu_cache_contract_verified": false,
+      "dma_quiescence_verified": false,
+      "secondary_cpu_state_verified": false,
+      "runtime_hardware_validation": false
+    },
+    "note": "Versioned descriptor definition only. Transport and physical addresses are intentionally unassigned; handoff must remain disabled."
   }
 }

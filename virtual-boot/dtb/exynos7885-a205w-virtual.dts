@@ -15,6 +15,7 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/sysmmu/sysmmu.h>
 #include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/power/exynos-power.h>
 
 /dts-v1/;
 
@@ -420,6 +421,16 @@
         status = "okay";
         #phy-cells = <1>;
         ranges;
+    };
+
+    /* DISPAUD power domain: authentic Exynos 7885 definition. */
+    pd_dispaud: pd-dispaud@11c84020 {
+        compatible = "samsung,exynos-pd";
+        reg = <0x0 0x11c84020 0x20>;
+        cal_id = <0xB1380000>;
+        status = "okay";
+        power-down-ok = <PD_OK_AUD>;
+        need_smc = <0x148F0000>;
     };
 
     /* DECON (display) */

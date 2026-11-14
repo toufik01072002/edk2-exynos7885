@@ -2,7 +2,9 @@ name: Build Virtual Boot ARM64 (SM-A205W)
 
 on:
   push:
-    branches: [feature/kexec-arm64-virtual-boot]
+    branches:
+      - feature/kexec-arm64-virtual-boot
+      - integrate/fd-sec-contract
     paths:
       - 'virtual-boot/**'
       - 'twrp-uefi-loader/**'
@@ -15,9 +17,9 @@ on:
         required: true
         default: "kexec-arm64-4.4-d-work"
       kernel_commit:
-        description: "Expected commit SHA (1e70ef871acb9ea0cd79a531b18e98f61debfc71)"
+        description: "Expected commit SHA (7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88)"
         required: true
-        default: "1e70ef871acb9ea0cd79a531b18e98f61debfc71"
+        default: "7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88"
 
 permissions:
   contents: read
@@ -52,7 +54,7 @@ jobs:
         run: |
           mkdir -p "$GITHUB_WORKSPACE/toolchain"
           wget -q \
-            "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/423c0265176bcabd1c885f8cf6f0cedf67d3f59b.tar.gz" \
+            "https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/77a9b08d6a44208afb100c9d210c712319f9d4b7.tar.gz" \
             -O /tmp/gcc49.tar.gz
           tar -xzf /tmp/gcc49.tar.gz \
             -C "$GITHUB_WORKSPACE/toolchain"
@@ -64,7 +66,7 @@ jobs:
         id: clone_kernel
         env:
           KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'kexec-arm64-4.4-d-work' }}
-          EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit || '1e70ef871acb9ea0cd79a531b18e98f61debfc71' }}
+          EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit || '7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88' }}
         run: |
           git clone --recursive https://github.com/toufik01072002/Kernel_SM-A205W.git kernel-src
           cd kernel-src
@@ -101,6 +103,41 @@ jobs:
 
           make O=out ARCH=arm64 CROSS_COMPILE="$CROSS_COMPILE" \
             olddefconfig
+
+          echo "=== Verify Samsung provider configuration ==="
+          required_configs=(
+            CONFIG_STAGING CONFIG_ARCH_EXYNOS CONFIG_TRACE CONFIG_EXYNOS_SNAPSHOT CONFIG_EXYNOS_PMU
+            CONFIG_SEC_EXT CONFIG_SEC_REBOOT CONFIG_SEC_DEBUG
+            CONFIG_INPUT CONFIG_HID CONFIG_UHID
+            CONFIG_USB_GADGET CONFIG_USB_CONFIGFS CONFIG_USB_CONFIGFS_F_ACC CONFIG_USB_F_ACC
+            CONFIG_MMC_CQ_HCI CONFIG_MMC_DW CONFIG_MMC_DW_EXYNOS
+            CONFIG_ARM_EXYNOS_ACME CONFIG_EXYNOS_THERMAL CONFIG_KEYBOARD_GPIO
+            CONFIG_SEC_BOOTSTAT CONFIG_LOCKUP_DETECTOR
+            CONFIG_HARDLOCKUP_DETECTOR_OTHER_CPU
+          )
+          for symbol in "${required_configs[@]}"; do
+            grep -qx "${symbol}=y" out/.config || {
+              echo "ERROR: required Samsung provider config missing after olddefconfig: ${symbol}"
+              exit 1
+            }
+          done
+
+          echo "=== Verify authentic provider Makefile wiring ==="
+          grep -Fq 'obj-$(CONFIG_EXYNOS_PMU)' drivers/soc/samsung/Makefile
+          grep -Fq 'obj-$(CONFIG_ARCH_EXYNOS)' drivers/soc/samsung/Makefile
+          grep -Fq 'obj-$(CONFIG_EXYNOS_SNAPSHOT)' drivers/trace/Makefile
+          grep -Fq 'obj-$(CONFIG_UHID)' drivers/hid/Makefile
+          grep -Fq 'obj-$(CONFIG_USB_F_ACC)' drivers/usb/gadget/function/Makefile
+          grep -Fq 'obj-$(CONFIG_MMC_CQ_HCI)' drivers/mmc/host/Makefile
+          grep -Fq 'obj-$(CONFIG_MMC_DW_EXYNOS)' drivers/mmc/host/Makefile
+          grep -Fq 'obj-$(CONFIG_ARM_EXYNOS_ACME)' drivers/cpufreq/Makefile
+          grep -Fq 'obj-$(CONFIG_EXYNOS_THERMAL)' drivers/thermal/samsung/Makefile
+          grep -Fq 'obj-$(CONFIG_KEYBOARD_GPIO)' drivers/input/keyboard/Makefile
+          grep -Fq 'obj-$(CONFIG_SEC_BOOTSTAT)' drivers/staging/samsung/Makefile
+          grep -Fq 'obj-$(CONFIG_SEC_DEBUG)' drivers/staging/samsung/Makefile
+          grep -Fq 'ATOMIC_NOTIFIER_HEAD(hardlockup_notifier_list)' kernel/watchdog.c
+          grep -Fq 'atomic_notifier_chain_register(&hardlockup_notifier_list' drivers/clocksource/exynos_mct.c
+          echo "PASS: all real Samsung provider objects and dependencies are selected"
 
           echo "=== Resolved Virtual Boot kernel configuration ==="
           grep -E '^(CONFIG_KEXEC=|CONFIG_ECT=|# CONFIG_ECT is not set|CONFIG_NR_CPUS=)' out/.config || true
@@ -405,6 +442,34 @@ jobs:
           p.write_text(s)
           print("Removed stale CMDQ crypto callback incompatible with cmdq_host_ops")
 
+          p = Path("kernel-src/drivers/mmc/host/sdhci.c")
+          s = p.read_text()
+          old = "\tsdhci_set_blk_size_reg(host, 512, 0);"
+          new = "\tsdhci_writew(host, SDHCI_MAKE_BLKSZ(0, 512), SDHCI_BLOCK_SIZE);"
+          if s.count(old) != 1:
+              raise SystemExit("Expected one CMDQ block-size register call, found %d" % s.count(old))
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          print("Use the SDHCI block-size register directly for CMDQ (512-byte blocks)")
+
+          p = Path("kernel-src/drivers/mmc/host/cmdq_hci.c")
+          s = p.read_text()
+          start = s.index("static void cmdq_finish_data(")
+          next_func = s.find("\nstatic ", start + 1)
+          if next_func < 0:
+              raise SystemExit("Cannot locate end of cmdq_finish_data")
+          body = s[start:next_func]
+          decl = "\tu32 dbr = cmdq_readl(cq_host, CQTDBR);"
+          if body.count(decl) != 1:
+              raise SystemExit("Expected one dbr declaration in cmdq_finish_data")
+          guarded = ("#if defined(CONFIG_MMC_DW_DEBUG) || defined(CONFIG_MMC_CMDQ_DEBUG)\n"
+                     "\tu32 dbr = cmdq_readl(cq_host, CQTDBR);\n"
+                     "#endif")
+          body = body.replace(decl, guarded, 1)
+          s = s[:start] + body + s[next_func:]
+          p.write_text(s)
+          print("Compile CMDQ doorbell snapshot only when a debug consumer is enabled")
+
           p = Path("kernel-src/drivers/trace/exynos7885-itmon.c")
           s = p.read_text()
           old = """static void itmon_switch_scandump(void)
@@ -468,6 +533,33 @@ jobs:
               raise SystemExit("Unexpected sec_debug include guards in exynos-ss.c")
           p.write_text(s)
           print("Made sec_debug declarations visible whenever CONFIG_SEC_DEBUG is enabled")
+
+          p = Path("kernel-src/include/linux/sec_ext.h")
+          s = p.read_text()
+          old = """#else
+          #define sec_set_param(a,b)			{-1)
+          #endif /* CONFIG_SEC_PARAM */"""
+          new = """#else
+          static inline int sec_set_param(unsigned long offset, char val)
+          {
+          	return -1;
+          }
+          static inline int sec_set_param_str(unsigned long offset, const char *val, int size)
+          {
+          	return -1;
+          }
+          static inline int sec_get_param_str(unsigned long offset, char *val)
+          {
+          	return -1;
+          }
+          #endif /* CONFIG_SEC_PARAM */"""
+          if old not in s:
+              if new not in s:
+                  raise SystemExit("Unexpected CONFIG_SEC_PARAM fallback definitions")
+          else:
+              s = s.replace(old, new, 1)
+              p.write_text(s)
+          print("Provide valid -1 fallbacks for disabled SEC_PARAM APIs")
           PY
 
       - name: Fix Exynos trace debug declarations and console debugger stack usage
@@ -513,40 +605,90 @@ jobs:
           p.write_text(s)
           print("Moved persistent ECD callback table from 2 KiB stack to static storage")
 
-          # Keep Samsung upload hooks out of builds without SEC_DEBUG.
-          p = Path("kernel-src/drivers/trace/exynos-ss.c")
-          s = p.read_text()
-          old = """\t\tif (sec_debug_get_debug_level() &&
-\t\t\t(__raw_readl(exynos_ss_get_base_vaddr() + ESS_OFFSET_SCRATCH)
-\t\t\t\t\t== ESS_SIGN_SCRATCH) &&
-\t\t\tsec_debug_enter_upload())
-\t\t\texynos_sdm_dump_secure_region();"""
-          new = """#ifdef CONFIG_SEC_DEBUG
-\t\tif (sec_debug_get_debug_level() &&
-\t\t\t(__raw_readl(exynos_ss_get_base_vaddr() + ESS_OFFSET_SCRATCH)
-\t\t\t\t\t== ESS_SIGN_SCRATCH) &&
-\t\t\tsec_debug_enter_upload())
-\t\t\texynos_sdm_dump_secure_region();
-#endif /* CONFIG_SEC_DEBUG */"""
-          if old in s:
-              s = s.replace(old, new, 1)
-          elif new not in s:
-              raise SystemExit("Cannot locate Exynos snapshot secure-upload hook")
-          p.write_text(s)
-          print("Guarded Exynos secure-upload hooks with CONFIG_SEC_DEBUG")
 
-          # This vendor EHCI tree has ehci_dbg but no ehci_vdbg helper.
-          p = Path("kernel-src/drivers/usb/host/ehci-hub.c")
-          s = p.read_text()
-          old = 'ehci_vdbg (ehci, "port %d reset\\n", wIndex + 1);'
-          new = 'ehci_dbg (ehci, "port %d reset\\n", wIndex + 1);'
-          if old in s:
-              s = s.replace(old, new, 1)
-          elif new not in s:
-              raise SystemExit("Cannot locate EHCI verbose reset diagnostic")
-          p.write_text(s)
-          print("Replaced unavailable ehci_vdbg with supported ehci_dbg")
           PY
+
+      - name: Fix Samsung extra-info local_clock declaration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("kernel-src/drivers/staging/samsung/sec_debug_extra_info.c")
+          s = p.read_text()
+          include = "#include <linux/sched.h>"
+          anchor = "#include <linux/module.h>"
+          if include not in s:
+              if anchor not in s:
+                  raise SystemExit("Cannot locate sec_debug_extra_info include anchor")
+              s = s.replace(anchor, anchor + "\n" + include, 1)
+              p.write_text(s)
+          print("Added linux/sched.h declaration for local_clock()")
+          PY
+
+      - name: Guard Samsung configfs USB link helper
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("kernel-src/drivers/usb/gadget/configfs.c")
+          s = p.read_text()
+          marker = "static void clear_current_usb_link("
+          start = s.find(marker)
+          if start < 0:
+              guarded = "#ifdef CONFIG_USB_CONFIGFS_UEVENT\nstatic void clear_current_usb_link("
+              if guarded in s:
+                  print("configfs helper already guarded")
+              else:
+                  raise SystemExit("Cannot locate clear_current_usb_link definition")
+          else:
+              line_start = s.rfind("\n", 0, start) + 1
+              end = s.find("\n}\n", start)
+              if end < 0:
+                  raise SystemExit("Cannot locate end of clear_current_usb_link")
+              end += len("\n}\n")
+              block = s[line_start:end]
+              prefix = s[:line_start]
+              if prefix.rstrip().endswith("#ifdef CONFIG_USB_CONFIGFS_UEVENT"):
+                  print("configfs helper already guarded")
+              else:
+                  s = prefix + "#ifdef CONFIG_USB_CONFIGFS_UEVENT\n" + block + "#endif /* CONFIG_USB_CONFIGFS_UEVENT */\n" + s[end:]
+                  p.write_text(s)
+                  print("Guarded clear_current_usb_link with CONFIG_USB_CONFIGFS_UEVENT")
+          PY
+
+      - name: Apply SEC_DEBUG and EHCI compatibility fixes
+        run: |
+          python3 virtual-boot-project/virtual-boot/scripts/fix_kernel_debug_compat.py
+
+      - name: Remove undefined legacy AP fuse dependency from Exynos ACME
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path("kernel-src/drivers/cpufreq/exynos-acme.c")
+          s = p.read_text()
+
+          domain_mask = re.compile(r'''(?m)^[ \t]*if \(ap_fuse != 2\)\r?\n[ \t]*cpulist_parse\(buf, &domain->cpus\);\r?\n[ \t]*else\r?\n[ \t]*cpulist_parse\("0-3", &domain->cpus\);''')
+          s, mask_count = domain_mask.subn("\\tcpulist_parse(buf, &domain->cpus);", s, count=1)
+          if mask_count == 0 and "ap_fuse != 2" in s:
+              raise SystemExit("Could not safely replace legacy AP-fuse CPU-mask branch")
+
+          domain_skip = re.compile(r'''(?m)^[ \t]*if \(domain_id >= 1 && ap_fuse == 2\)\r?\n[ \t]*continue;[ \t]*\r?\n?''')
+          s, skip_count = domain_skip.subn("", s, count=1)
+          if skip_count == 0 and "ap_fuse == 2" in s:
+              raise SystemExit("Could not safely remove legacy AP-fuse domain skip")
+
+          if "ap_fuse" in s:
+              raise SystemExit("Unresolved ap_fuse reference remains in exynos-acme.c")
+          if "cpulist_parse(buf, &domain->cpus);" not in s:
+              raise SystemExit("Device Tree sibling-cpus parsing is missing")
+
+          p.write_text(s)
+          print("PASS: Exynos ACME uses Device Tree sibling-cpus; no ap_fuse references remain")
+          PY
+
+          grep -n -E 'sibling-cpus|cpulist_parse|ap_fuse' kernel-src/drivers/cpufreq/exynos-acme.c
+          ! grep -q 'ap_fuse' kernel-src/drivers/cpufreq/exynos-acme.c
 
       - name: Prepare embedded binaries for out-of-tree build
         run: |
@@ -576,6 +718,8 @@ jobs:
             -undef -D__DTS__ -x assembler-with-cpp \
             virtual-boot-project/virtual-boot/dtb/exynos7885-a205w-virtual.dts \
             > /tmp/exynos7885-a205w-virtual.pp.dts
+          echo "=== Confirm DTS root cell properties survived preprocessing ==="
+          grep -nE '^[[:space:]]*#(address|size)-cells[[:space:]]*=' /tmp/exynos7885-a205w-virtual.pp.dts
           dtc -Wno-unit_address_vs_reg -I dts -O dtb \
             -o virtual-boot-output/exynos7885-a205w-virtual.dtb \
             /tmp/exynos7885-a205w-virtual.pp.dts
@@ -600,13 +744,20 @@ jobs:
           sha256=$(sha256sum virtual-boot-output/exynos7885-a205w-virtual.dtb | cut -d' ' -f1)
           echo "sha256=$sha256" >> $GITHUB_OUTPUT
 
+      - name: Stage kernel artifacts with stable flat names
+        run: |
+          mkdir -p virtual-boot-artifacts
+          cp kernel-src/out/arch/arm64/boot/Image virtual-boot-artifacts/Image
+          cp virtual-boot-output/exynos7885-a205w-virtual.dtb virtual-boot-artifacts/exynos7885-a205w-virtual.dtb
+          test -s virtual-boot-artifacts/Image
+          test -s virtual-boot-artifacts/exynos7885-a205w-virtual.dtb
+          ls -lh virtual-boot-artifacts/
+
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
           name: virtual-boot-kernel
-          path: |
-            kernel-src/out/arch/arm64/boot/Image
-            virtual-boot-output/exynos7885-a205w-virtual.dtb
+          path: virtual-boot-artifacts/*
 
   build-initramfs:
     name: Build initramfs
@@ -638,7 +789,9 @@ jobs:
           sed -i 's/# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
           sed -i 's/# CONFIG_FEATURE_INDIVIDUAL is not set/CONFIG_FEATURE_INDIVIDUAL=y/' .config
           sed -i 's/# CONFIG_KEXEC is not set/CONFIG_KEXEC=y/' .config
-          make -j$(nproc) CC=aarch64-linux-gnu-gcc
+          make -j"$(nproc)" \
+            CC=aarch64-linux-gnu-gcc \
+            STRIP=aarch64-linux-gnu-strip
 
       - name: Create initramfs structure
         run: |
@@ -931,7 +1084,7 @@ jobs:
               "sha256": "$INITRAMFS_SHA256"
             },
             "memory_map": {
-              "bank0": "0x80000000-0xBBC00000 (956 MiB)",
+              "bank0": "0x80000000-0xBDA00000 (986 MiB)",
               "bank1": "0xC0000000-0x100000000 (1024 MiB)",
               "bank2": "0x880000000-0x8C0000000 (1024 MiB, >4GB)",
               "uefi_fd": "0x90000000-0x90200000 (2 MiB)",
@@ -1014,4 +1167,12 @@ jobs:
           grep -F "EDK2 launch blocked: ARM64 handoff is not implemented and validated" \
             /tmp/uefi_loader_test.log
           echo "PASS: standalone loader refuses the unvalidated handoff"
+
+      - name: Assert loader has no kexec execution path
+        run: |
+          if grep -nE 'kexec_load|__NR_reboot|syscall[[:space:]]*\\(' twrp-uefi-loader/uefi_loader.c; then
+            echo "ERROR: executable kexec path found in TWRP loader"
+            exit 1
+          fi
+          echo "PASS: TWRP loader contains no kexec/reboot syscall path"
 

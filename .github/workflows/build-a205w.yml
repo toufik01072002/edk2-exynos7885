@@ -8,10 +8,16 @@ on:
         required: false
         default: ""
   push:
-    branches: [main]
+    branches: [main, feature/kexec-arm64-virtual-boot, integrate/fd-sec-contract]
     paths:
       - "EXYNOS7885Pkg/**"
+      - "tools/**"
       - "BootShim/**"
+      - "virtual-boot/docs/hardware-manifest.json"
+      - "virtual-boot/scripts/validate_handoff_contract.py"
+      - "kernel/arch/arm64/kernel/cpu-reset.S"
+      - "kernel/arch/arm64/kernel/machine_kexec.c"
+      - "twrp-uefi-loader/trampoline.S"
       - "build*.sh"
       - "firstrun.sh"
       - ".github/workflows/build-a205w.yml"
@@ -36,6 +42,13 @@ jobs:
             device-tree-compiler
           sudo sed -i '/^from gki\.generate_gki_certificate import generate_gki_certificate$/d' /usr/bin/mkbootimg
 
+      - name: Checkout vendor kernel for handoff ABI validation
+        uses: actions/checkout@v4
+        with:
+          repository: toufik01072002/Kernel_SM-A205W
+          ref: 7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88
+          path: kernel
+
       - name: Cloner EDK2 et edk2-platforms
         env:
           EDK2_REF: ${{ github.event.inputs.edk2_ref }}
@@ -59,6 +72,14 @@ jobs:
         run: |
           sha256sum -c SHA256SUMS
           python3 ../tools/verify_bundle.py
+          python3 ../BootShim/validate_prepi_entry.py
+          python3 ../BootShim/test_prepi_entry_abi.py
+          python3 ../virtual-boot/scripts/validate_handoff_contract.py \
+            ../virtual-boot/docs/hardware-manifest.json \
+            ../../kernel/arch/arm64/kernel/relocate_kernel.S \
+            ../twrp-uefi-loader/trampoline.S \
+            ../../kernel/arch/arm64/kernel/cpu-reset.S \
+            ../../kernel/arch/arm64/kernel/machine_kexec.c
           test -s UEFI
 
       - name: Publier les fichiers
@@ -70,3 +91,4 @@ jobs:
             edk2-exynos7885/workspace/UEFI
             edk2-exynos7885/workspace/UEFI.manifest.json
             edk2-exynos7885/workspace/SHA256SUMS
+            edk2-exynos7885/workspace/UEFI.sec-manifest.json

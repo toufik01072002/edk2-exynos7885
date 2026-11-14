@@ -2,12 +2,19 @@ name: Validate ARM64 handoff contract
 
 on:
   push:
-    branches: [feature/kexec-arm64-virtual-boot]
+    branches: [feature/kexec-arm64-virtual-boot, integrate/fd-sec-contract]
     paths:
       - 'virtual-boot/docs/hardware-manifest.json'
       - 'virtual-boot/scripts/validate_handoff_contract.py'
+      - 'virtual-boot/include/a20_handoff.h'
+      - 'virtual-boot/include/a20_handoff_validate.h'
+      - 'virtual-boot/src/**'
+      - 'virtual-boot/tests/handoff_descriptor_validation.c'
+      - 'virtual-boot/tests/handoff_abi_layout.c'
       - 'twrp-uefi-loader/trampoline.S'
       - 'twrp-uefi-loader/trampoline.ld'
+      - 'BootShim/**'
+      - 'EXYNOS7885Pkg/PrePi/**'
       - '.github/workflows/validate-handoff-contract.yml'
   workflow_dispatch:
 
@@ -23,16 +30,27 @@ jobs:
         with:
           path: project
 
-      - name: Checkout pinned vendor kernel
+      - name: Checkout vendor kernel matching the Virtual Boot build
         uses: actions/checkout@v4
         with:
           repository: toufik01072002/Kernel_SM-A205W
-          ref: 1e70ef871acb9ea0cd79a531b18e98f61debfc71
+          ref: 7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88
           path: kernel
+
+      - name: Compile handoff descriptor ABI layout test
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -fsyntax-only project/virtual-boot/tests/handoff_abi_layout.c
+
+      - name: Compile and run descriptor validation tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -Iproject/virtual-boot/include project/virtual-boot/src/a20_handoff_validate.c project/virtual-boot/tests/handoff_descriptor_validation.c -o /tmp/handoff-validation
+          /tmp/handoff-validation
 
       - name: Validate fail-closed handoff contract
         run: |
           python3 project/virtual-boot/scripts/validate_handoff_contract.py \
             project/virtual-boot/docs/hardware-manifest.json \
             kernel/arch/arm64/kernel/relocate_kernel.S \
-            project/twrp-uefi-loader/trampoline.S
+            project/twrp-uefi-loader/trampoline.S \
+            kernel/arch/arm64/kernel/cpu-reset.S \
+            kernel/arch/arm64/kernel/machine_kexec.c
