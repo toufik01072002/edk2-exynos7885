@@ -521,3 +521,26 @@ that the selected kernel segment is `0x80080000`, the source FD range does
 not overlap the reserved destination, and DTB/purgatory allocations remain
 outside the FD reservation. This is not an execution test. Until that
 evidence exists, do not enable the candidate path or the TWRP launcher.
+
+
+## Linux mailbox writer — source integration (2026-11-14)
+
+The Virtual Boot kernel build now carries a built-in platform driver at
+`drivers/misc/a20-handoff-mailbox.c`. The Virtual Boot DTS binds the
+`samsung,a20-handoff-producer` device to the reserved
+`samsung,a20-handoff-mailbox` region through `memory-region`.
+
+The driver exposes a single write-only endpoint, `/dev/a20-handoff`.
+A producer must submit exactly one 4096-byte ABI record with the expected
+magic, version, 56-byte header, a record length between 56 and 4096, and
+zero in the CRC field. The driver computes the reflected IEEE CRC-32 using
+`crc32_le(~0U, data, record_size) ^ ~0U`, clears the mailbox magic,
+copies the full record, applies a write barrier, and publishes the 64-bit
+magic last. This makes a partially written record fail the consumer's magic
+or CRC validation.
+
+This source integration does not yet include the initramfs userspace record
+builder, does not consume the mailbox in BootShim, and does not prove cache
+or runtime mapping behavior on the handset. CI must compile the driver and
+validate its source contract before this step is considered complete.
+The WFE gate, `ENABLE_HANDOFF=0`, and disabled TWRP launcher remain intact.
