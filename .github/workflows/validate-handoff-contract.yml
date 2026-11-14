@@ -62,6 +62,18 @@ jobs:
           /tmp/bootshim-consumer-test
           echo "PASS: BootShim accepts only structurally valid descriptor bytes"
 
+      - name: Compile and run in-image descriptor mailbox consumer tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/virtual-boot/include -Iproject/BootShim \
+            project/virtual-boot/src/a20_handoff_validate.c \
+            project/BootShim/descriptor_consumer.c \
+            project/BootShim/descriptor_mailbox.c \
+            project/BootShim/test_descriptor_mailbox.c \
+            -o /tmp/bootshim-mailbox-test
+          /tmp/bootshim-mailbox-test
+          echo "PASS: BootShim validates the descriptor at its exported in-image mailbox"
+
       - name: Compile and run fail-closed SEC entry evidence gate
         run: |
           cc -std=c11 -Wall -Wextra -Werror \

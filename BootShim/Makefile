@@ -6,7 +6,7 @@ OBJCOPY           = $(CROSS_COMPILE)objcopy
 
 # Compile the complete validation/plan path as freestanding ARM64 objects.
 # Keep it out of the active image until descriptor transport is real.
-all: BootShim.elf BootShim.bin sec_entry_gate.o sec_handoff_adapter.o sec_entry_plan.o
+all: BootShim.elf BootShim.bin descriptor_mailbox.o sec_entry_gate.o sec_handoff_adapter.o sec_entry_plan.o
 
 BootShim.bin: BootShim.elf
 	$(OBJCOPY) -O binary $< $@
@@ -29,3 +29,7 @@ sec_entry_plan.o: sec_entry_plan.c sec_entry_plan.h sec_handoff_adapter.h sec_en
 		-I. -I../virtual-boot/include -c sec_entry_plan.c -o $@
 
 BootShim.S:
+
+descriptor_mailbox.o: descriptor_mailbox.c descriptor_mailbox.h descriptor_consumer.h
+	$(CC) -std=c11 -Wall -Wextra -Werror -ffreestanding -fno-builtin \
+		-fno-stack-protector -fno-pic -fno-pie -c descriptor_mailbox.c -o $@
