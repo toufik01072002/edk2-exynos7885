@@ -15,7 +15,7 @@ TEXT_OFFSET = 0x80000
 
 RAM0_LOW = (0x80000000, 0x90000000)       # [start, end)
 FD_RANGE = (0x90000000, 0x90200000)       # reserved, 2 MiB
-RAM0_MID = (0x90200000, 0xB8000000)       # [start, end)
+RAM0_MID = (0x90201000, 0xB8000000)       # mailbox at 0x90200000-0x90201000 is reserved
 RAM_RANGES = (RAM0_LOW, RAM0_MID)
 
 FD_BASE = FD_RANGE[0]

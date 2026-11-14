@@ -16,6 +16,12 @@ The Phase 1 kernel, DTB, initramfs and bundle build passed in GitHub Actions run
 - `EXYNOS7885Pkg/EXYNOS7885Pkg.fdf` defines an EDK2 FD at base 0x90000000 with size 0x00200000. `DeviceMemoryMap.h` reserves the same 2 MiB as `BootShim/FD`, and the Virtual Boot DTB marks that range no-map.
 - The selected kernel branch's `arch/arm64/kernel/machine_kexec.c` includes a guard that BUGs if more than one CPU is online for a normal kexec. SMP shutdown requirements must therefore be resolved explicitly before any launch attempt.
 
+## Phase 2 progress (2026-11-14)
+
+- Added a fixed 4 KiB handoff mailbox at physical address `0x90200000`, immediately after the 2 MiB UEFI FD reservation. The adjacent usable RAM descriptor now begins at `0x90201000`.
+- Mirrored the mailbox as a `no-map` reserved-memory node in the Virtual Boot DTS and as a `MEM_RES` descriptor in `DeviceMemoryMap.h`. This establishes a stable physical rendezvous point despite ordinary kexec clearing x0-x3.
+- This step reserves and specifies the mailbox only. It does not yet write a record, read it in BootShim, or enable the WFE-gated transfer. Producer/consumer implementation and checksum validation remain next.
+
 ## Phase 2 progress (2026-11-13)
 
 - The FD packaging gate is integrated in CI and passed in EDK2 build run 19.
@@ -515,3 +521,38 @@ that the selected kernel segment is `0x80080000`, the source FD range does
 not overlap the reserved destination, and DTB/purgatory allocations remain
 outside the FD reservation. This is not an execution test. Until that
 evidence exists, do not enable the candidate path or the TWRP launcher.
+
+
+## Linux mailbox writer — source integration (2026-11-14)
+
+The Virtual Boot kernel build now carries a built-in platform driver at
+`drivers/misc/a20-handoff-mailbox.c`. The Virtual Boot DTS binds the
+`samsung,a20-handoff-producer` device to the reserved
+`samsung,a20-handoff-mailbox` region through `memory-region`.
+
+The driver exposes a single write-only endpoint, `/dev/a20-handoff`.
+A producer must submit exactly one 4096-byte ABI record with the expected
+magic, version, 56-byte header, a record length between 56 and 4096, and
+zero in the CRC field. The driver computes the reflected IEEE CRC-32 using
+`crc32_le(~0U, data, record_size) ^ ~0U`, clears the mailbox magic,
+copies the full record, applies a write barrier, and publishes the 64-bit
+magic last. This makes a partially written record fail the consumer's magic
+or CRC validation.
+
+This source integration does not yet include the initramfs userspace record
+builder, does not consume the mailbox in BootShim, and does not prove cache
+or runtime mapping behavior on the handset. CI must compile the driver and
+validate its source contract before this step is considered complete.
+The WFE gate, `ENABLE_HANDOFF=0`, and disabled TWRP launcher remain intact.
+
+
+### Initramfs publisher utility
+
+A static ARM64 utility, `/bin/a20-handoff-publish`, is now built and packaged
+into the initramfs. It accepts explicit physical DTB and command-line address
+and size pairs, rejects incomplete pairs, integer overflow, and payload sizes
+above the kexec DTB bound (2 MiB) or command-line bound (4 KiB), then submits
+the fixed 4 KiB record to `/dev/a20-handoff`. The kernel driver computes the
+CRC32. The utility is packaged but deliberately not invoked by the diagnostic
+init script yet: the exact persistent physical placement and lifetime of the
+DTB and command line must be established before supplying those addresses.

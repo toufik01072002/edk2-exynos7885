@@ -7,6 +7,14 @@ on:
       - '.github/workflows/build-virtual-boot.yml'
       - 'virtual-boot/**'
       - 'EXYNOS7885Pkg/Include/Configuration/DeviceMemoryMap.h'
+      - 'BootShim/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-virtual-boot.yml'
+      - 'virtual-boot/**'
+      - 'EXYNOS7885Pkg/Include/Configuration/DeviceMemoryMap.h'
+      - 'BootShim/**'
   workflow_dispatch:
     inputs:
       kernel_ref:
@@ -302,6 +310,20 @@ jobs:
           grep -Fq 'bool acc_dev_status;' kernel-src/drivers/usb/dwc3/gadget.c
           grep -Fq 'bool lcd_is_on = true;' kernel-src/drivers/hid/hid-input.c
 
+      - name: Integrate A20 handoff mailbox writer
+        run: |
+          install -D virtual-boot-project/virtual-boot/kernel/a20-handoff-mailbox.c kernel-src/drivers/misc/a20-handoff-mailbox.c
+          python3 - <<'PY'
+          from pathlib import Path
+          makefile = Path('kernel-src/drivers/misc/Makefile')
+          source = makefile.read_text()
+          entry = 'obj-y += a20-handoff-mailbox.o\n'
+          if entry not in source:
+              makefile.write_text(source.rstrip('\n') + '\n\n# Samsung A20 Virtual Boot mailbox writer\n' + entry)
+          PY
+          python3 virtual-boot-project/BootShim/test_mailbox_driver.py
+          grep -Fq 'obj-y += a20-handoff-mailbox.o' kernel-src/drivers/misc/Makefile
+
       - name: Copy Virtual Boot kernel config
         run: |
           cp virtual-boot-project/virtual-boot/kernel/config_virtual_boot kernel-src/arch/arm64/configs/virtual_boot_defconfig
@@ -427,10 +449,22 @@ jobs:
           sed -i 's/# CONFIG_KEXEC is not set/CONFIG_KEXEC=y/' .config
           make -j$(nproc) CC=aarch64-linux-gnu-gcc CROSS_COMPILE=aarch64-linux-gnu- STRIP=aarch64-linux-gnu-strip
 
+      - name: Build A20 mailbox publisher
+        run: |
+          aarch64-linux-gnu-gcc -Os -static -Wall -Wextra -Werror \
+            virtual-boot-project/virtual-boot/initramfs/a20-handoff-publish.c \
+            -o a20-handoff-publish
+          file a20-handoff-publish
+          aarch64-linux-gnu-strip a20-handoff-publish
+
       - name: Create initramfs structure
         run: |
           mkdir -p initramfs/{bin,sbin,etc,proc,sys,dev,lib,lib64,mnt,root,tmp,var,run}
           mkdir -p initramfs/usr/{bin,sbin,lib,lib64}
+
+      - name: Install A20 mailbox publisher
+        run: |
+          install -D a20-handoff-publish initramfs/bin/a20-handoff-publish
 
       - name: Copy BusyBox and create symlinks
         run: |
@@ -629,6 +663,7 @@ jobs:
           python3 virtual-boot-project/virtual-boot/scripts/validate_dtb_binary.py \
             kernel-artifacts/exynos7885-a205w-virtual.dtb \
             virtual-boot-project/EXYNOS7885Pkg/Include/Configuration/DeviceMemoryMap.h
+          python3 virtual-boot-project/BootShim/test_handoff_mailbox.py
 
       - name: Confirm memory-map validator completed
         run: echo "Binary DTB and DeviceMemoryMap.h checks completed successfully."
