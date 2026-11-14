@@ -880,6 +880,11 @@ jobs:
           fi
           echo ""
 
+          # Read-only handoff diagnostics; this never reserves RAM or enables execution
+          echo "[INFO] Running fail-closed handoff memory probe..."
+          /sbin/handoff-probe
+          echo ""
+
           # Interactive shell for diagnostics
           echo "[INFO] Entering diagnostic shell."
           echo "[INFO] Available: hwinfo, dmesg, cat /proc/*, ls /sys/*, etc."
@@ -938,6 +943,14 @@ jobs:
           HWINFOEOF
           chmod +x initramfs/sbin/hwinfo
 
+      - name: Install fail-closed runtime handoff probe
+        run: |
+          install -m 0755 virtual-boot-project/virtual-boot/scripts/handoff-runtime-probe.sh initramfs/sbin/handoff-probe
+          grep -Fq 'state=DISABLED' virtual-boot-project/virtual-boot/scripts/handoff-runtime-probe.sh
+          grep -Fq 'physical_reservations=UNVERIFIED' virtual-boot-project/virtual-boot/scripts/handoff-runtime-probe.sh
+          grep -Fq 'descriptor_address=UNASSIGNED' virtual-boot-project/virtual-boot/scripts/handoff-runtime-probe.sh
+          echo "PASS: runtime probe is read-only and fail-closed"
+
       - name: Build initramfs
         run: |
           cd initramfs
@@ -954,6 +967,7 @@ jobs:
           test -f init
           test -x bin/busybox
           test -x sbin/hwinfo
+          test -x sbin/handoff-probe
           cd ..
 
       - name: Generate SHA256
