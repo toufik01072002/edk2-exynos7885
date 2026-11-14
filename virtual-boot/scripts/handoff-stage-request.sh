@@ -22,6 +22,11 @@ if [ -e "$OUTPUT" ]; then
     exit 1
 fi
 
-$STAGER "$BOOTSHIM" "$DESCRIPTOR" "$OUTPUT"
+if [ ! -x "$STAGER" ]; then
+    echo "HANDOFF STAGING BLOCKED: stager is not executable: $STAGER"
+    exit 1
+fi
+
+"$STAGER" "$BOOTSHIM" "$DESCRIPTOR" "$OUTPUT"
 echo "Staged image: $OUTPUT"
 echo "STATUS: offline file staging only; no physical-memory write, kexec, or SEC transfer."
