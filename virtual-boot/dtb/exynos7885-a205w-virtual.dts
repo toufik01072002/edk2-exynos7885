@@ -157,6 +157,13 @@
             reg = <0x0 0x90000000 0x00200000>;
             no-map;
         };
+
+        /* Fixed 4 KiB mailbox; survives kexec register clearing. */
+        a20_handoff_mailbox: handoff-mailbox@90200000 {
+            compatible = "samsung,a20-handoff-mailbox";
+            reg = <0x0 0x90200000 0x00001000>;
+            no-map;
+        };
     };
 
     /* CPUs - from exynos7885.dts */
