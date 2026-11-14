@@ -37,4 +37,6 @@ jobs:
           python3 project/virtual-boot/scripts/validate_handoff_contract.py \
             project/virtual-boot/docs/hardware-manifest.json \
             kernel/arch/arm64/kernel/relocate_kernel.S \
-            project/twrp-uefi-loader/trampoline.S
+            project/twrp-uefi-loader/trampoline.S \
+            kernel/arch/arm64/kernel/cpu-reset.S \
+            kernel/arch/arm64/kernel/machine_kexec.c
