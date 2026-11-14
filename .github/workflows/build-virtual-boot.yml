@@ -110,7 +110,9 @@ jobs:
             CONFIG_SEC_EXT CONFIG_SEC_REBOOT CONFIG_SEC_DEBUG
             CONFIG_INPUT CONFIG_HID CONFIG_UHID
             CONFIG_USB_GADGET CONFIG_USB_CONFIGFS CONFIG_USB_CONFIGFS_F_ACC CONFIG_USB_F_ACC
-            CONFIG_MMC_CQ_HCI CONFIG_LOCKUP_DETECTOR
+            CONFIG_MMC_CQ_HCI CONFIG_MMC_DW CONFIG_MMC_DW_EXYNOS
+            CONFIG_ARM_EXYNOS_ACME CONFIG_EXYNOS_THERMAL CONFIG_KEYBOARD_GPIO
+            CONFIG_SEC_BOOTSTAT CONFIG_LOCKUP_DETECTOR
             CONFIG_HARDLOCKUP_DETECTOR_OTHER_CPU
           )
           for symbol in "${required_configs[@]}"; do
@@ -127,6 +129,11 @@ jobs:
           grep -Fq 'obj-$(CONFIG_UHID)' drivers/hid/Makefile
           grep -Fq 'obj-$(CONFIG_USB_F_ACC)' drivers/usb/gadget/function/Makefile
           grep -Fq 'obj-$(CONFIG_MMC_CQ_HCI)' drivers/mmc/host/Makefile
+          grep -Fq 'obj-$(CONFIG_MMC_DW_EXYNOS)' drivers/mmc/host/Makefile
+          grep -Fq 'obj-$(CONFIG_ARM_EXYNOS_ACME)' drivers/cpufreq/Makefile
+          grep -Fq 'obj-$(CONFIG_EXYNOS_THERMAL)' drivers/thermal/samsung/Makefile
+          grep -Fq 'obj-$(CONFIG_KEYBOARD_GPIO)' drivers/input/keyboard/Makefile
+          grep -Fq 'obj-$(CONFIG_SEC_BOOTSTAT)' drivers/staging/samsung/Makefile
           grep -Fq 'obj-$(CONFIG_SEC_DEBUG)' drivers/staging/samsung/Makefile
           grep -Fq 'ATOMIC_NOTIFIER_HEAD(hardlockup_notifier_list)' kernel/watchdog.c
           grep -Fq 'atomic_notifier_chain_register(&hardlockup_notifier_list' drivers/clocksource/exynos_mct.c
