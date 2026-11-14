@@ -80,6 +80,21 @@ def main():
         raise RuntimeError(f"Expected at least 3 non-empty RAM banks, got {len(ram)}")
     check_nonoverlap(ram, "RAM bank")
 
+    # Pin the binary DTB to the documented SM-A205W RAM banks.
+    # Each tuple is (base, size), with a half-open address range.
+    expected_ram = {
+        "memory@80000000": (0x80000000, 0x3DA00000),
+        "memory@C0000000": (0xC0000000, 0x40000000),
+        "memory@880000000": (0x880000000, 0x40000000),
+    }
+    actual_ram = {name: (addr, size) for name, addr, size in ram}
+    for name, expected in expected_ram.items():
+        if actual_ram.get(name) != expected:
+            raise RuntimeError(
+                f"{name} range mismatch: got {actual_ram.get(name)!r}, "
+                f"expected {expected!r}"
+            )
+
     parent = "/reserved-memory"
     rac, rsc = prop(dtb, parent, "#address-cells"), prop(dtb, parent, "#size-cells")
     if rac is None or rsc is None:
