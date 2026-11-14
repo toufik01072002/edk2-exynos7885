@@ -7,6 +7,9 @@ on:
       - 'virtual-boot/docs/hardware-manifest.json'
       - 'virtual-boot/scripts/validate_handoff_contract.py'
       - 'virtual-boot/include/a20_handoff.h'
+      - 'virtual-boot/include/a20_handoff_validate.h'
+      - 'virtual-boot/src/**'
+      - 'virtual-boot/tests/handoff_descriptor_validation.c'
       - 'virtual-boot/tests/handoff_abi_layout.c'
       - 'twrp-uefi-loader/trampoline.S'
       - 'twrp-uefi-loader/trampoline.ld'
@@ -37,6 +40,11 @@ jobs:
       - name: Compile handoff descriptor ABI layout test
         run: |
           cc -std=c11 -Wall -Wextra -Werror -fsyntax-only project/virtual-boot/tests/handoff_abi_layout.c
+
+      - name: Compile and run descriptor validation tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -Iproject/virtual-boot/include \\\n            project/virtual-boot/src/a20_handoff_validate.c \\\n            project/virtual-boot/tests/handoff_descriptor_validation.c \\\n            -o /tmp/handoff-validation
+          /tmp/handoff-validation
 
       - name: Validate fail-closed handoff contract
         run: |
