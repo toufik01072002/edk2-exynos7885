@@ -866,18 +866,9 @@ jobs:
           fi
           echo ""
 
-          # Check for UEFI FD at expected location
-          echo "[INFO] Checking for UEFI FD at 0x90000000..."
-          if [ -c /dev/mem ]; then
-            dd if=/dev/mem of=/tmp/uefi_check.bin bs=1 count=8 skip=$((0x90000030)) 2>/dev/null
-            if hexdump -C /tmp/uefi_check.bin 2>/dev/null | grep -q "41 52 4d 36"; then
-              echo "[OK] ARM64 magic found at 0x90000030 - UEFI FD present"
-            else
-              echo "[WARN] ARM64 magic NOT found at 0x90000030"
-            fi
-          else
-            echo "[WARN] /dev/mem not available"
-          fi
+          # No /dev/mem access: the historical UEFI FD address is unassigned.
+          echo "[INFO] UEFI FD presence check skipped: physical address is UNASSIGNED."
+          echo "[INFO] No physical memory is read or modified by this diagnostic."
           echo ""
 
           # Read-only handoff diagnostics; this never reserves RAM or enables execution
@@ -1121,8 +1112,8 @@ jobs:
               "bank0": "0x80000000-0xBDA00000 (986 MiB)",
               "bank1": "0xC0000000-0x100000000 (1024 MiB)",
               "bank2": "0x880000000-0x8C0000000 (1024 MiB, >4GB)",
-              "uefi_fd": "0x90000000-0x90200000 (2 MiB)",
-              "reserved": [
+              "uefi_fd_candidate_unverified": "0x90000000-0x90200000 (historical candidate only; NOT reserved or assigned)",
+              "reserved_reference_only": [
                 "TIMA: 0xB8000000-0xB8200000",
                 "seclog: 0xC0000000-0xC0080000",
                 "WiFi/BT: 0xE9000000-0xE9400000",
@@ -1140,8 +1131,9 @@ jobs:
               "kernel_entry": "0x80080000",
               "dtb_addr": "0x88000000",
               "initrd_addr": "0x84000000",
-              "uefi_handoff_addr": "0x90000000",
-              "note": "Phase 1 only - trampoline not assigned"
+              "uefi_handoff_addr": null,
+              "physical_load_addresses": "CONFIGURATION_CANDIDATES_ONLY_NOT_RUNTIME_RESERVATIONS",
+              "note": "Phase 1 diagnostics only; all listed load addresses are unverified candidates, no UEFI FD address or trampoline is assigned, and no handoff is enabled."
             },
             "validation": {
               "dtb_memory_map": "PASSED - binary FDT validated with fdtget",
