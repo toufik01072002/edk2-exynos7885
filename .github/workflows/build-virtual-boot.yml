@@ -936,15 +936,16 @@ jobs:
           zip -qr "$GITHUB_WORKSPACE/$ARCHIVE" .
           cd "$GITHUB_WORKSPACE"
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          REPO="toufik01072002/edk2-exynos7885"
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
             echo "Updating existing Virtual Boot distribution release"
           else
-            gh release create "$TAG" \
+            gh release create "$TAG" --repo "$REPO" \
               --title "Virtual Boot ARM64 bundle (latest successful build)" \
               --notes "Automatically published from a successful Virtual Boot CI build. Contains the SM-A205W kernel, DTB, initramfs, EDK2 payload metadata, hardware manifest and SHA256SUMS." \
               --prerelease
           fi
 
-          gh release upload "$TAG" "$ARCHIVE" --clobber
+          gh release upload "$TAG" "$ARCHIVE" --repo "$REPO" --clobber
           echo "Published public asset:"
-          gh release view "$TAG" --json assets --jq '.assets[] | select(.name == "virtual-boot-bundle.zip") | .url'
+          gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[] | select(.name == "virtual-boot-bundle.zip") | .url'
