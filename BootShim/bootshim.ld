@@ -31,7 +31,7 @@ SECTIONS
     ASSERT(SIZEOF(.sec_offset) == 8, "SEC offset slot must be 8 bytes")
     ASSERT(ADDR(.stack) + SIZEOF(.stack) == 0x10000, "private stack must end at 64 KiB")
 
-    /DISCARD/ :
+    /DISCARD/ : {
         *(.comment)
         *(.note*)
         *(.eh_frame*)

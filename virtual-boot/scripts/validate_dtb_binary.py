@@ -83,7 +83,7 @@ def main():
     # Pin the binary DTB to the documented SM-A205W RAM banks.
     # Each tuple is (base, size), with a half-open address range.
     expected_ram = {
-        "memory@80000000": (0x80000000, 0x3DA00000),
+        "memory@80000000": (0x80000000, 0x3BC00000),
         "memory@C0000000": (0xC0000000, 0x40000000),
         "memory@880000000": (0x880000000, 0x40000000),
     }
