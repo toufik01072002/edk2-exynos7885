@@ -18,7 +18,7 @@ static void fixture(uint8_t *d)
 {
     unsigned int i, j;
     static const uint64_t addr[5] = {
-        0x10000000, 0x12000000, 0x14000000, 0x8fff0000, 0x90000000
+        0x10000000, 0x12000000, 0x14000000, 0x8fff0000, 0x90020000
     };
 
     memset(d, 0, A20_HANDOFF_HEADER_SIZE);
@@ -43,7 +43,7 @@ static struct bootshim_sec_entry_evidence evidence(void)
         .bootshim_base = 0x8fff0000,
         .fd_base = 0x90000000,
         .fd_size = 0x200000,
-        .sec_entry = 0x90080000,
+        .sec_entry = 0x900A0000,
         .stack_base = 0x8fff0000 + BOOTSHIM_STACK_OFFSET,
         .stack_size = BOOTSHIM_STACK_SIZE,
         .stack_pointer = 0x8fff0000 + BOOTSHIM_IMAGE_SIZE,
