@@ -64,14 +64,17 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
 
 //--------------------- DDR --------------------- */
 // RAM Bank 0: 0x80000000 - 0xBBC00000 (956 MiB)
-// Usable RAM in Bank 0:
-    {"RAM Bank 0 Low",    0x80000000, 0x0FFF0000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x80000000-0x8FFF0000
+// Usable RAM below the Samsung ECT parameter area:
+    {"RAM Bank 0 Low",    0x80000000, 0x10000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x80000000-0x90000000
 
-// BootShim (64 KiB) + linked EDK2 FD (2 MiB); full bundle reservation:
-    {"BootShim+FD",       0x8FFF0000, 0x00210000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK},    // 0x8FFF0000-0x90210000
+// Samsung ECT parameter area plus alignment padding (ECT uses 0x19000 bytes):
+    {"ECT Reserved",      0x90000000, 0x00020000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK},    // 0x90000000-0x90020000
 
-// Usable RAM after the complete bundle, before TIMA:
-    {"RAM Bank 0 Mid",    0x90210000, 0x27DF0000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x90210000-0xB8000000
+// Fixed 2 MiB EDK2 firmware volume, linked at 0x90020000:
+    {"UEFI FD Reserved",  0x90020000, 0x00200000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_BACK},    // 0x90020000-0x90220000
+
+// Usable RAM after the EDK2 FD, before TIMA:
+    {"RAM Bank 0 Mid",    0x90220000, 0x27DE0000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},    // 0x90220000-0xB8000000
 
 // Reserved regions within bank 0:
     {"TIMA Reserved",     0xB8000000, 0x00200000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},
