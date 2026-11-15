@@ -1,13 +1,20 @@
 /*
  * SM-A205W - EDK2 BootShim
- * Position-independent entry: establish a private stack, then branch to the
- * PrePi SEC entry offset embedded by the post-EDK2 bundle build.
- * The combined UEFI bundle is also carried in the Virtual Boot initramfs.
  *
- * 0x0000-0xCFFF code; 0xD000 descriptor mailbox; 0xD100 SEC offset;
- * 0xE000-0xFFFF private 8 KiB stack; FD begins at bundle offset 0x10000.
+ * Validation-only pre-SEC path. The descriptor mailbox is structurally
+ * validated before any SEC transfer could be considered. Even a valid
+ * descriptor is not sufficient: runtime placement, CPU state, DMA quiescence,
+ * and secondary-core quiescence are not yet established. Therefore this
+ * image deliberately halts after validation and never branches to SEC.
+ *
+ * Fixed image layout:
+ *   0x0000        position-independent entry
+ *   0x1000-0xCFFF freestanding descriptor validator code
+ *   0xD000        256-byte handoff descriptor mailbox
+ *   0xD100        patched SEC entry bundle offset (not executed)
+ *   0xE000-0xFFFF private 8 KiB stack
  */
-.section .text
+.section .text.entry,"ax"
 .balign 16
 .global _Head
 .type _Head, %function
@@ -20,18 +27,28 @@ _PrepareStack:
     and     x10, x9, #0xF
     cbnz    x10, _StackFault
 
-    /* Resolve the real PrePi SEC entry relative to the loaded bundle base. */
-    adr     x16, _Head
-    adr     x17, _SecEntryOffset
-    ldr     x17, [x17]
-    add     x16, x16, x17
-    br      x16
+    /* Validate the embedded v1 descriptor through the linked C consumer. */
+    bl      bootshim_validate_embedded_handoff_descriptor
+    cbnz    w0, _DescriptorFault
+
+    /*
+     * Structural validity is not runtime handoff authorization.
+     * Stay fail-closed until an independent runtime evidence provider and
+     * machine-state transition have been implemented and validated.
+     */
+_RuntimeEvidenceUnavailable:
+    wfe
+    b       _RuntimeEvidenceUnavailable
+
+_DescriptorFault:
+    wfe
+    b       _DescriptorFault
 
 _StackFault:
     wfe
     b       _StackFault
 
-.org 0xD000, 0
+.section .mailbox,"aw",%progbits
 .balign 16
 .global _HandoffDescriptorMailbox
 .type _HandoffDescriptorMailbox, %object
@@ -39,8 +56,8 @@ _HandoffDescriptorMailbox:
 .space 0x100, 0
 .size _HandoffDescriptorMailbox, . - _HandoffDescriptorMailbox
 
-/* Patched with 0x10000 + the actual SEC entry offset inside the FD. */
-.org 0xD100, 0
+/* Patched with 0x10000 + actual PrePi SEC entry offset; not executed yet. */
+.section .sec_offset,"a",%progbits
 .balign 8
 .global _SecEntryOffset
 .type _SecEntryOffset, %object
@@ -48,12 +65,10 @@ _SecEntryOffset:
 .quad 0
 .size _SecEntryOffset, . - _SecEntryOffset
 
-.org 0xE000, 0
+.section .stack,"aw",%nobits
+.balign 16
 .global _BootShimStackBottom
 _BootShimStackBottom:
-.space 0x2000, 0
+.space 0x2000
 .global _BootShimStackTop
 _BootShimStackTop:
-
-.org 0x10000, 0
-.size _Head, . - _Head
