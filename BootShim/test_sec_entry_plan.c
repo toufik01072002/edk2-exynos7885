@@ -39,7 +39,7 @@ static struct bootshim_sec_entry_evidence make_evidence(void)
 {
     struct bootshim_sec_entry_evidence e = {
         .bootshim_base = 0x8fff0000,
-        .fd_base = 0x90000000,
+        .fd_base = 0x90020000,
         .fd_size = 0x200000,
         .sec_entry = 0x900A0000,
         .stack_base = 0x8fff0000 + BOOTSHIM_STACK_OFFSET,
