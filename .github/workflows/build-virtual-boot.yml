@@ -1089,6 +1089,14 @@ jobs:
         run: |
           python3 virtual-boot-project/BootShim/test_ect_fd_layout.py
 
+      - name: Run host-side SEC evidence gate regression tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            virtual-boot-project/BootShim/sec_entry_gate.c \
+            virtual-boot-project/BootShim/test_sec_entry_gate.c \
+            -o /tmp/test-sec-entry-gate
+          /tmp/test-sec-entry-gate
+
       - name: Validate memory map against reference
         run: |
           echo "=== Memory Map Reference Validation ==="
