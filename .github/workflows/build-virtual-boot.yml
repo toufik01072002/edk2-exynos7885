@@ -47,6 +47,8 @@ jobs:
       - name: Checkout Virtual Boot project
         uses: actions/checkout@v4
         with:
+          repository: toufik01072002/edk2-exynos7885
+          ref: integrate/fd-sec-contract
           path: virtual-boot-project
           submodules: false
 
@@ -777,6 +779,8 @@ jobs:
       - name: Checkout Virtual Boot project
         uses: actions/checkout@v4
         with:
+          repository: toufik01072002/edk2-exynos7885
+          ref: integrate/fd-sec-contract
           path: virtual-boot-project
           submodules: false
 
@@ -1055,6 +1059,8 @@ jobs:
       - name: Checkout Virtual Boot project
         uses: actions/checkout@v4
         with:
+          repository: toufik01072002/edk2-exynos7885
+          ref: integrate/fd-sec-contract
           path: virtual-boot-project
           submodules: false
 
@@ -1089,6 +1095,8 @@ jobs:
       - name: Checkout Virtual Boot project
         uses: actions/checkout@v4
         with:
+          repository: toufik01072002/edk2-exynos7885
+          ref: integrate/fd-sec-contract
           path: virtual-boot-project
           submodules: false
 
@@ -1375,6 +1383,9 @@ jobs:
     steps:
       - name: Checkout Virtual Boot project
         uses: actions/checkout@v4
+        with:
+          repository: toufik01072002/edk2-exynos7885
+          ref: integrate/fd-sec-contract
 
       - name: Compile standalone loader safety test
         run: |
