@@ -16,11 +16,11 @@ all: BootShim.bin verify
 
 BootShim.elf: BootShim.S bootshim.ld $(OBJS)
 	$(CC) -c -ffreestanding -fno-pic -fno-pie BootShim.S -o BootShim-entry.o
-	$(CC) -nostdlib -no-pie -Wl,--build-id=none -Wl,--no-undefined \
+	$(CC) -nostdlib -static -no-pie -Wl,--build-id=none -Wl,--no-undefined \
 		-Wl,-T,bootshim.ld BootShim-entry.o $(OBJS) -o $@
 
 BootShim.bin: BootShim.elf
-	$(OBJCOPY) -O binary $< $@
+	$(OBJCOPY) -O binary --gap-fill=0 --pad-to=0x10000 $< $@
 
 descriptor_mailbox.o: descriptor_mailbox.c descriptor_mailbox.h descriptor_consumer.h
 	$(CC) $(CFLAGS) $(INCLUDES) -c $< -o $@
