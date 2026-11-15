@@ -34,7 +34,9 @@
     "bank0": "0x80000000-0xBDA00000 (986 MiB)",
     "bank1": "0xC0000000-0x100000000 (1024 MiB)",
     "bank2": "0x880000000-0x8C0000000 (1024 MiB, >4GB)",
-    "uefi_bundle_candidate_unverified": "0x8FFF0000-0x9020FFFF (64 KiB BootShim + 2 MiB FD; target-DTB reservation only, NOT proof of source-kernel reservation or runtime assignment)"
+    "ect_reserved": "0x90000000-0x90020000 (128 KiB reservation; Samsung ECT parameter block uses 0x19000 bytes)",
+    "uefi_fd_reserved": "0x90020000-0x90220000 (2 MiB fixed EDK2 FD destination; reservation declaration is not proof of runtime placement)",
+    "bootshim_runtime_placement": "UNASSIGNED; BootShim is position-independent and must be staged in a separately verified RAM range"
   },
   "kexec": {
     "kernel_entry": "0x80080000",
