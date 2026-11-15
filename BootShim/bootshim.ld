@@ -25,7 +25,13 @@ SECTIONS
     . = 0x0000E000;
     .stack (NOLOAD) : { KEEP(*(.stack)) }
 
-    /DISCARD/ : {
+    ASSERT(SIZEOF(.text.entry) <= 0x1000, "BootShim entry exceeds its code window")
+    ASSERT(ADDR(.text.validation) + SIZEOF(.text.validation) <= 0xD000, "validation code overlaps descriptor mailbox")
+    ASSERT(SIZEOF(.mailbox) == 0x100, "descriptor mailbox must be 256 bytes")
+    ASSERT(SIZEOF(.sec_offset) == 8, "SEC offset slot must be 8 bytes")
+    ASSERT(ADDR(.stack) + SIZEOF(.stack) == 0x10000, "private stack must end at 64 KiB")
+
+    /DISCARD/ :
         *(.comment)
         *(.note*)
         *(.eh_frame*)
