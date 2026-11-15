@@ -45,6 +45,8 @@ def main() -> None:
         require(re.search(pattern, dts, re.S) is not None,
                 f"Virtual Boot DTS is missing the matching no-map reservation: {pattern}")
 
+    require("reg = <0x0 0x80000000 0x3BC00000>;" in dts,
+            "Virtual Boot DTS bank 0 must match the established 956 MiB map")
     require("BOOTSHIM_FD_LINK_BASE     UINT64_C(0x90020000)" in gate_h,
             "SEC evidence gate FD base does not match the ECT-safe destination")
     require("ranges_overlap(e->bootshim_base, shim_end, e->fd_base, fd_end)" in gate_c,
