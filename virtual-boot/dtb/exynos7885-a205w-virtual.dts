@@ -141,10 +141,17 @@
             alloc-ranges = <0x0 0x80000000 0x80000000>;
         };
 
-        /* UEFI FD region for Virtual Boot */
-        uefi_bundle_reserved: uefi-bundle@8fff0000 {
-            compatible = "samsung,uefi-bundle-reserved";
-            reg = <0x0 0x8FFF0000 0x00210000>;
+        /* Preserve Samsung ECT parameters and alignment padding. */
+        ect_reserved: ect-parameters@90000000 {
+            compatible = "samsung,ect-parameters-reserved";
+            reg = <0x0 0x90000000 0x00020000>;
+            no-map;
+        };
+
+        /* Fixed 2 MiB EDK2 FD, linked at 0x90020000. */
+        uefi_fd_reserved: uefi-fd@90020000 {
+            compatible = "samsung,uefi-fd-reserved";
+            reg = <0x0 0x90020000 0x00200000>;
             no-map;
         };
     };
