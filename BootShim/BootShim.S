@@ -36,6 +36,7 @@ _PrepareStack:
      * Stay fail-closed until an independent runtime evidence provider and
      * machine-state transition have been implemented and validated.
      */
+.global _RuntimeEvidenceUnavailable
 _RuntimeEvidenceUnavailable:
     wfe
     b       _RuntimeEvidenceUnavailable
