@@ -53,16 +53,6 @@ def main():
     dtb = ap.parse_args().dtb
     ac, sc = prop(dtb, "/", "#address-cells"), prop(dtb, "/", "#size-cells")
     if ac is None or sc is None:
-        print("=== DTB root property listing (fdtget -p) ===", file=sys.stderr)
-        listing = subprocess.run(["fdtget", "-p", dtb, "/"], text=True,
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        print(listing.stdout, file=sys.stderr)
-        print(listing.stderr, file=sys.stderr)
-        print("=== Decompiled DTB root (dtc) ===", file=sys.stderr)
-        dump = subprocess.run(["dtc", "-I", "dtb", "-O", "dts", dtb],
-                              text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        print("\\n".join(dump.stdout.splitlines()[:75]), file=sys.stderr)
-        print(dump.stderr, file=sys.stderr)
         raise RuntimeError("DTB root lacks address/size cells")
     ac, sc = int(ac, 16), int(sc, 16)
     if ac not in (1, 2) or sc not in (1, 2):
@@ -80,8 +70,6 @@ def main():
         raise RuntimeError(f"Expected at least 3 non-empty RAM banks, got {len(ram)}")
     check_nonoverlap(ram, "RAM bank")
 
-    # Pin the binary DTB to the documented SM-A205W RAM banks.
-    # Each tuple is (base, size), with a half-open address range.
     expected_ram = {
         "memory@80000000": (0x80000000, 0x3BC00000),
         "memory@C0000000": (0xC0000000, 0x40000000),
@@ -91,8 +79,7 @@ def main():
     for name, expected in expected_ram.items():
         if actual_ram.get(name) != expected:
             raise RuntimeError(
-                f"{name} range mismatch: got {actual_ram.get(name)!r}, "
-                f"expected {expected!r}"
+                f"{name} range mismatch: got {actual_ram.get(name)!r}, expected {expected!r}"
             )
 
     parent = "/reserved-memory"
@@ -109,14 +96,25 @@ def main():
     for name, addr, size in reserved:
         if not any(addr >= base and addr + size <= base + length for _, base, length in ram):
             raise RuntimeError(f"{name} at 0x{addr:x}+0x{size:x} is outside RAM")
-    if sum(1 for _, a, s in reserved if a == 0x8FFF0000 and s == 0x210000) != 1:
-        raise RuntimeError("Expected exactly one 0x210000-byte BootShim+FD reservation at 0x8FFF0000")
+
+    # The device tree reserves ECT and the 2 MiB EDK2 FD as separate,
+    # adjacent regions at the exact addresses used by DeviceMemoryMap.h/FDF.
+    expected_reserved = {
+        "ect-parameters@90000000": (0x90000000, 0x00020000),
+        "uefi-fd@90020000": (0x90020000, 0x00200000),
+    }
+    actual_reserved = {name: (addr, size) for name, addr, size in reserved}
+    for name, expected in expected_reserved.items():
+        if actual_reserved.get(name) != expected:
+            raise RuntimeError(
+                f"{name} reservation mismatch: got {actual_reserved.get(name)!r}, expected {expected!r}"
+            )
 
     print(f"DTB identity: {model}")
     print(f"RAM banks: {len(ram)}; fixed reserved regions: {len(reserved)}")
     for n, a, s in sorted(ram + reserved, key=lambda x: x[1]):
         print(f"{n}: 0x{a:x}-0x{a+s-1:x}")
-    print("PASS: binary FDT identity, RAM ranges, reserved ranges and UEFI reservation")
+    print("PASS: binary FDT identity, RAM ranges, reserved ranges, ECT and 2 MiB UEFI FD")
     return 0
 
 if __name__ == "__main__":

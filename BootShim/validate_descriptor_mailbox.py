@@ -1,35 +1,50 @@
 #!/usr/bin/env python3
-"""Validate BootShim mailbox, SEC offset slot, stack and real entry branch."""
+"""Check the current validation-only BootShim layout and fail-closed path."""
 import re
 from pathlib import Path
 
-source = Path(__file__).with_name("BootShim.S").read_text()
+root = Path(__file__).parent
+asm = (root / "BootShim.S").read_text()
+ld = (root / "bootshim.ld").read_text()
 
-def require(pattern, message):
+def require(source, pattern, message):
     if not re.search(pattern, source, re.MULTILINE):
         raise SystemExit("FAIL: " + message)
 
-require(r"^\.org\s+0xD000,\s*0$", "mailbox must begin at image offset 0xD000")
-require(r"^_HandoffDescriptorMailbox:\s*$", "mailbox symbol is missing")
-require(r"^\.space\s+0x100,\s*0$", "mailbox must be exactly 256 bytes")
-require(r"^\.org\s+0xD100,\s*0$", "SEC entry offset slot must begin at 0xD100")
-require(r"^_SecEntryOffset:\s*$", "SEC entry offset symbol is missing")
-require(r"^\.quad\s+0$", "SEC entry offset must be build-patched as a 64-bit value")
-require(r"^\.org\s+0xE000,\s*0$", "private stack must begin at 0xE000")
-require(r"^_BootShimStackBottom:\s*$", "stack bottom symbol is missing")
-require(r"^\.space\s+0x2000,\s*0$", "private stack must remain 8 KiB")
-require(r"^_BootShimStackTop:\s*$", "stack top symbol is missing")
-require(r"^\.org\s+0x10000,\s*0$", "FD boundary must remain at 64 KiB")
-require(r"adr\s+x9,\s*_BootShimStackTop", "stack must remain position-independent")
-require(r"adr\s+x16,\s*_Head", "bundle base must be derived from the current PC")
-require(r"adr\s+x17,\s*_SecEntryOffset", "SEC offset slot must be addressed position-independently")
-require(r"ldr\s+x17,\s*\[x17\]", "SEC bundle offset must be loaded")
-require(r"add\s+x16,\s*x16,\s*x17", "SEC entry address must be computed from bundle base plus offset")
-require(r"br\s+x16", "BootShim must branch to the built PrePi SEC entry")
+# The linker script, not assembler .org directives, owns fixed image offsets.
+require(ld, r"^    \. = 0x00000000;\s*$", "entry section must start at image offset zero")
+require(ld, r"^    \. = 0x0000D000;\s*$", "mailbox output section must start at 0xD000")
+require(ld, r"^    \.mailbox\s*:", "mailbox output section is missing")
+require(ld, r"^    \. = 0x0000D100;\s*$", "SEC offset slot must start at 0xD100")
+require(ld, r"^    \.sec_offset\s*:", "SEC offset output section is missing")
+require(ld, r"^    \. = 0x0000E000;\s*$", "private stack must start at 0xE000")
+require(ld, r"^    \.stack\s*\(NOLOAD\)", "private stack output section is missing")
 
-assert 0xD000 + 0x100 == 0xD100
-assert 0xD108 <= 0xE000
-assert 0xE000 + 0x2000 == 0x10000
-print("PASS: 256-byte descriptor mailbox and 64-bit SEC entry offset slot are in-image")
-print("PASS: BootShim installs its private stack and branches to the build-resolved PrePi SEC entry")
-print("STATUS: bundle-relative branch is wired; runtime physical placement remains unassigned")
+require(asm, r"^\.global _Head$", "global BootShim entry symbol is missing")
+require(asm, r"^_Head:\s*$", "BootShim entry label is missing")
+require(asm, r"adr\s+x9,\s*_BootShimStackTop", "stack must be installed position-independently")
+require(asm, r"bl\s+bootshim_validate_embedded_handoff_descriptor",
+        "entry must call the linked descriptor validator")
+require(asm, r"cbnz\s+w0,\s*_DescriptorFault",
+        "invalid descriptor must enter the fault halt")
+require(asm, r"^_RuntimeEvidenceUnavailable:\s*$", "runtime evidence halt is missing")
+require(asm, r"^_DescriptorFault:\s*$", "descriptor fault halt is missing")
+require(asm, r"^\.section \.mailbox,", "mailbox must be an in-image section")
+require(asm, r"^_HandoffDescriptorMailbox:\s*$", "mailbox symbol is missing")
+require(asm, r"^\.space\s+0x100,\s*0$", "mailbox must be exactly 256 bytes")
+require(asm, r"^\.section \.sec_offset,", "SEC offset slot must be an in-image section")
+require(asm, r"^_SecEntryOffset:\s*$", "SEC offset symbol is missing")
+require(asm, r"^\.quad\s+0$", "SEC offset slot must remain zero/unpatched")
+require(asm, r"^\.section \.stack,", "private stack section is missing")
+require(asm, r"^\.space\s+0x2000$", "private stack must remain 8 KiB")
+
+# This phase is deliberately validation-only: never branch to SEC or kexec.
+if re.search(r"^\s*(?:br|blr)\s+x(?:16|17)\b", asm, re.MULTILINE):
+    raise SystemExit("FAIL: SEC transfer instruction is forbidden in validation-only BootShim")
+if re.search(r"_SecEntryOffset", asm[asm.find("_Head:"):asm.find(".section .mailbox")]):
+    raise SystemExit("FAIL: entry path must not consume the SEC offset slot")
+if re.search(r"\bkexec\b", asm):
+    raise SystemExit("FAIL: BootShim must not invoke kexec")
+
+print("PASS: BootShim entry, descriptor mailbox, SEC slot and private stack layout")
+print("PASS: invalid descriptors halt; valid descriptors remain fail-closed without SEC transfer")

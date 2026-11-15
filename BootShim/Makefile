@@ -42,11 +42,11 @@ sec_entry_plan.o: sec_entry_plan.c sec_entry_plan.h sec_handoff_adapter.h sec_en
 
 verify: BootShim.bin BootShim.elf
 	test "$$(wc -c < BootShim.bin)" -eq 65536
-	$(NM) -n BootShim.elf | grep -Eq ' 0000000000000000 T _Head$$'
-	$(NM) -n BootShim.elf | grep -Eq ' 000000000000d000 D _HandoffDescriptorMailbox$$'
-	$(NM) -n BootShim.elf | grep -Eq ' 000000000000d100 R _SecEntryOffset$$'
+	$(NM) -n BootShim.elf | grep -Eq '^[0-9a-fA-F]+ T _Head$$'
+	$(NM) -n BootShim.elf | grep -Eq '^[0-9a-fA-F]+ D _HandoffDescriptorMailbox$$'
+	$(NM) -n BootShim.elf | grep -Eq '^[0-9a-fA-F]+ R _SecEntryOffset$$'
 	$(NM) -n BootShim.elf | grep -q 'bootshim_validate_embedded_handoff_descriptor'
-	$(NM) -n BootShim.elf | grep -Eq ' 0000000000010000 B _BootShimStackTop$$'
+	$(NM) -n BootShim.elf | grep -Eq '^[0-9a-fA-F]+ B _BootShimStackTop$$'
 	python3 -c 'from pathlib import Path; b=Path("BootShim.bin").read_bytes(); assert len(b)==0x10000; assert b[0xD000:0xD100]==bytes(0x100); assert b[0xD100:0xD108]==bytes(8); print("PASS: fixed 64 KiB BootShim, mailbox, SEC slot and stack layout")'
 
 clean:
