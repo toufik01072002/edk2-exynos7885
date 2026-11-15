@@ -1234,7 +1234,7 @@ jobs:
               "sha256": "$INITRAMFS_SHA256"
             },
             "memory_map": {
-              "bank0": "0x80000000-0xBDA00000 (986 MiB)",
+              "bank0": "0x80000000-0xBBC00000 (956 MiB)",
               "bank1": "0xC0000000-0x100000000 (1024 MiB)",
               "bank2": "0x880000000-0x8C0000000 (1024 MiB, >4GB)",
               "ect_reserved": "0x90000000-0x90020000 (128 KiB reservation; Samsung ECT parameter block uses 0x19000 bytes)",
