@@ -10,6 +10,12 @@ static bool add_overflows(uint64_t base, uint64_t size)
     return size > UINT64_MAX - base;
 }
 
+static bool ranges_overlap(uint64_t a_start, uint64_t a_end,
+                           uint64_t b_start, uint64_t b_end)
+{
+    return a_start < b_end && b_start < a_end;
+}
+
 int bootshim_validate_sec_entry_evidence(
     const struct bootshim_sec_entry_evidence *e)
 {
@@ -31,10 +37,13 @@ int bootshim_validate_sec_entry_evidence(
     fd_end = e->fd_base + e->fd_size;
     stack_end = e->stack_base + e->stack_size;
 
-    /* The FD is XIP-linked at 0x90000000; a different runtime base is unsafe. */
+    /* The ECT window is 0x90000000-0x90020000. The fixed FD starts
+     * immediately after it; the position-independent BootShim is staged
+     * separately in RAM and must not overlap the FD destination.
+     */
     if (e->fd_base != BOOTSHIM_FD_LINK_BASE ||
         e->fd_size != BOOTSHIM_FD_SIZE ||
-        shim_end != e->fd_base)
+        ranges_overlap(e->bootshim_base, shim_end, e->fd_base, fd_end))
         return BOOTSHIM_SEC_GATE_LAYOUT;
 
     if (e->stack_base != e->bootshim_base + BOOTSHIM_STACK_OFFSET ||
