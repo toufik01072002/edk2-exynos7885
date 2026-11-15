@@ -21,7 +21,7 @@ on:
         default: "14eaa7b1aad3814d69f7c575c3215aa7edbad6dc"
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 concurrency:
@@ -923,3 +923,28 @@ jobs:
           ls -la virtual-boot-output/
           echo ""
           cat virtual-boot-output/SHA256SUMS
+
+      - name: Publish public Virtual Boot bundle release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="virtual-boot-latest"
+          ARCHIVE="virtual-boot-bundle.zip"
+
+          cd virtual-boot-output
+          zip -qr "$GITHUB_WORKSPACE/$ARCHIVE" .
+          cd "$GITHUB_WORKSPACE"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Updating existing Virtual Boot distribution release"
+          else
+            gh release create "$TAG" \
+              --title "Virtual Boot ARM64 bundle (latest successful build)" \
+              --notes "Automatically published from a successful Virtual Boot CI build. Contains the SM-A205W kernel, DTB, initramfs, EDK2 payload metadata, hardware manifest and SHA256SUMS." \
+              --prerelease
+          fi
+
+          gh release upload "$TAG" "$ARCHIVE" --clobber
+          echo "Published public asset:"
+          gh release view "$TAG" --json assets --jq '.assets[] | select(.name == "virtual-boot-bundle.zip") | .url'
