@@ -1233,7 +1233,9 @@ jobs:
               "bank0": "0x80000000-0xBDA00000 (986 MiB)",
               "bank1": "0xC0000000-0x100000000 (1024 MiB)",
               "bank2": "0x880000000-0x8C0000000 (1024 MiB, >4GB)",
-              "uefi_bundle_candidate_unverified": "0x8FFF0000-0x9020FFFF (64 KiB BootShim + 2 MiB FD; target-DTB reservation only, NOT proof of source-kernel reservation or runtime assignment)",
+              "ect_reserved": "0x90000000-0x90020000 (128 KiB reservation; Samsung ECT parameter block uses 0x19000 bytes)",
+              "uefi_fd_reserved": "0x90020000-0x90220000 (2 MiB fixed EDK2 FD destination; reservation declaration is not proof of runtime placement)",
+              "bootshim_runtime_placement": "UNASSIGNED; BootShim is position-independent and must be staged in a separately verified RAM range",
               "reserved_reference_only": [
                 "TIMA: 0xB8000000-0xB8200000",
                 "seclog: 0xC0000000-0xC0080000",
@@ -1332,7 +1334,9 @@ jobs:
           m = json.loads(Path("virtual-boot-output/hardware-manifest.json").read_text())
           assert m["kexec"]["uefi_handoff_addr"] is None
           assert m["kexec"]["physical_load_addresses"] == "CONFIGURATION_CANDIDATES_ONLY_NOT_RUNTIME_RESERVATIONS"
-          assert "uefi_bundle_candidate_unverified" in m["memory_map"]
+          assert m["memory_map"]["ect_reserved"].startswith("0x90000000-0x90020000")
+          assert m["memory_map"]["uefi_fd_reserved"].startswith("0x90020000-0x90220000")
+          assert m["memory_map"]["bootshim_runtime_placement"].startswith("UNASSIGNED")
           assert "reserved_reference_only" in m["memory_map"]
           p = m["handoff_protocol"]
           assert p["name"] == "SM-A205W-ARM64-HANDOFF"
@@ -1343,7 +1347,7 @@ jobs:
           assert all(v is False for v in p["activation_requirements"].values())
           assert all(all(value is None for value in segment.values()) for segment in p["segments"].values())
           print("PASS: bundled manifest carries the disabled v1 handoff ABI and all activation gates")
-          print("PASS: manifest does not claim a physical UEFI FD or reservation")
+          print("PASS: manifest separates the ECT reservation, fixed FD destination, and unassigned BootShim placement")
           PY
 
       - name: Test bundle provenance validator
