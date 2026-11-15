@@ -78,9 +78,14 @@ jobs:
           KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'kexec-arm64-4.4-d-work' }}
           EXPECTED_COMMIT: ${{ github.event.inputs.kernel_commit || '7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88' }}
         run: |
-          git clone --recursive https://github.com/toufik01072002/Kernel_SM-A205W.git kernel-src
+          git clone --recursive --branch "$KERNEL_REF" https://github.com/toufik01072002/Kernel_SM-A205W.git kernel-src
           cd kernel-src
-          git checkout "$KERNEL_REF"
+          git fetch origin "$EXPECTED_COMMIT"
+          git merge-base --is-ancestor "$EXPECTED_COMMIT" "origin/$KERNEL_REF" || {
+            echo "ERROR: Expected kernel commit is not part of the selected branch."
+            exit 1
+          }
+          git checkout --detach "$EXPECTED_COMMIT"
           ACTUAL_COMMIT=$(git rev-parse HEAD)
           echo "Actual commit: $ACTUAL_COMMIT"
           echo "Expected commit: $EXPECTED_COMMIT"
