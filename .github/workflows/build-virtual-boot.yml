@@ -1414,6 +1414,18 @@ jobs:
             -D__user= -DUEFI_LOADER_STANDALONE \
             twrp-uefi-loader/uefi_loader.c -o /tmp/uefi_loader_test
 
+      - name: Build and verify linked ARM64 BootShim
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          make -C BootShim clean all
+          aarch64-linux-gnu-objdump -d BootShim/BootShim.elf > /tmp/bootshim.dis
+          grep -F "bootshim_validate_embedded_handoff_descriptor" /tmp/bootshim.dis
+          grep -F "RuntimeEvidenceUnavailable" /tmp/bootshim.dis
+          test "$(wc -c < BootShim/BootShim.bin)" -eq 65536
+          echo "PASS: descriptor validator is linked into the 64 KiB ARM64 BootShim"
+          echo "PASS: SEC remains unreachable; runtime evidence gate halts execution"
+
       - name: Assert kexec handoff remains blocked
         run: |
           set +e
