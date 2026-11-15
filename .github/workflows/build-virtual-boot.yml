@@ -1085,10 +1085,14 @@ jobs:
           python3 virtual-boot-project/virtual-boot/scripts/validate_dtb_binary.py \
             kernel-artifacts/exynos7885-a205w-virtual.dtb
 
+      - name: Validate ECT and fixed EDK2 FD reservations
+        run: |
+          python3 virtual-boot-project/BootShim/test_ect_fd_layout.py
+
       - name: Validate memory map against reference
         run: |
           echo "=== Memory Map Reference Validation ==="
-          echo "Reference: DeviceMemoryMap.h (commit f4af1d3)"
+          echo "Reference: DeviceMemoryMap.h on integrate/fd-sec-contract"
           echo "Checking key regions in DTB..."
           true
 
