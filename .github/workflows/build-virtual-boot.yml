@@ -585,8 +585,11 @@ jobs:
           echo "[INFO] Entering diagnostic shell."
           echo "[INFO] Available: hwinfo, dmesg, cat /proc/*, ls /sys/*, etc."
           echo "[INFO] Fixed-segment BootShim and EDK2 FD are packaged."
-          echo "[INFO] Optional loader staging test: /sbin/edk2-kexec --load-only"
-          echo "[INFO] This command only stages kexec segments; it does NOT reboot or execute."
+          echo "[INFO] Stage fixed kexec segments: /sbin/edk2-kexec --load-only"
+          echo "[INFO] This command only stages segments; it does NOT reboot or execute."
+          echo "[WARN] Actual handoff is explicit and non-returning:"
+          echo "[WARN] /sbin/edk2-kexec --execute"
+          echo "[WARN] Run --execute only after a successful --load-only and a deliberate decision to transfer to EDK2."
           echo "[INFO] Clear a staged image with: /sbin/edk2-kexec --unload"
           echo ""
           exec /bin/sh
