@@ -87,28 +87,40 @@ static int read_exact(const char *path, size_t expected, unsigned char **out)
     return 0;
 }
 
+/*
+ * The normal kexec reboot path has not yet been validated end-to-end for
+ * the EDK2/BootShim handoff on the SM-A205W. Keep execution fail-closed.
+ *
+ * Define VIRTUAL_BOOT_HANDOFF_VALIDATED only after the kernel shutdown,
+ * interrupt/DMA quiescence, BootShim register contract and on-device handoff
+ * have each been independently validated.
+ */
+#ifndef VIRTUAL_BOOT_HANDOFF_VALIDATED
+static int execute_image(void)
+{
+    fputs("BLOCKED: EDK2 handoff execution is not enabled in this build.\\n"
+          "The image may be staged with --load-only and removed with --unload.\\n",
+          stderr);
+    return 3;
+}
+#else
 static int execute_image(void)
 {
     long rc;
 
     if (geteuid() != 0) {
-        fputs("ERROR: root privileges are required for kexec execution.\n",
+        fputs("ERROR: root privileges are required for kexec execution.\\n",
               stderr);
         return 1;
     }
 
-    /*
-     * The kernel's kernel_kexec() path performs restart preparation,
-     * migrates to the reboot CPU, calls machine_shutdown() (which disables
-     * non-boot CPUs on this ARM64 kernel), then enters machine_kexec().
-     * Do not attempt userspace CPU-offline or peripheral shutdown here.
-     */
     sync();
     rc = syscall(__NR_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
                  LINUX_REBOOT_CMD_KEXEC, NULL);
-    fprintf(stderr, "KEXEC reboot returned: %s\n", strerror(errno));
+    fprintf(stderr, "KEXEC reboot returned: %s\\n", strerror(errno));
     return rc == 0 ? 0 : 1;
 }
+#endif
 
 static int unload_image(void)
 {
