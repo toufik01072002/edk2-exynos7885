@@ -450,8 +450,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          RUN_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/build-a205w.yml/runs?status=success&per_page=20" --jq '[.workflow_runs[] | select(.conclusion == "success")][0].id')
-          test -n "$RUN_ID" && test "$RUN_ID" != "null"
+          # Pin to the validated EDK2 artifact from run #142. The newest
+          # successful run on other branches may predate the FD manifest.
+          RUN_ID=43651855417
+          test -n "$RUN_ID"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "Using EDK2 workflow run: $RUN_ID"
 
@@ -738,8 +740,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          RUN_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/build-a205w.yml/runs?status=success&per_page=20" --jq '[.workflow_runs[] | select(.conclusion == "success")][0].id')
-          test -n "$RUN_ID" && test "$RUN_ID" != "null"
+          # Pin to the validated EDK2 artifact from run #142. The newest
+          # successful run on other branches may predate the FD manifest.
+          RUN_ID=43651855417
+          test -n "$RUN_ID"
           echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           echo "Using successful EDK2 workflow run: $RUN_ID"
 
