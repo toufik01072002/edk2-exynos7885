@@ -111,9 +111,9 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
 
 // RAM Bank 2: 0x880000000 - 0x8C0000000 (1024 MiB) - ABOVE 4GB!
 // CMA pools - must be reserved, not usable system memory:
-    {"CMA Pool cma-3",    0x8BA000000, 0x01400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 20 MiB
-    {"CMA Pool crypto",   0x8BB800000, 0x02000000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 32 MiB
-    {"CMA Pool video_fr", 0x8BD800000, 0x02800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 40 MiB
+    // {"CMA Pool cma-3",    0x8BA000000, 0x01400000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 20 MiB
+    // {"CMA Pool crypto",   0x8BB800000, 0x02000000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 32 MiB
+    // {"CMA Pool video_fr", 0x8BD800000, 0x02800000, AddMem, MEM_RES, SYS_MEM_CAP, Reserv, WRITE_THROUGH_XN},  // 40 MiB
 
 // Usable RAM in Bank 2 (excluding known CMA pools):
 // Bank 2 is 0x880000000 - 0x8C0000000 (1024 MiB total)
@@ -123,9 +123,9 @@ static ARM_MEMORY_REGION_DESCRIPTOR_EX gDeviceMemoryDescriptorEx[] = {
 //   video_frame: 0x8BD800000-0x8C0000000 (40 MiB)
 // Remaining RAM in Bank 2 is usable (not reserved by memblock):
 //   0x880000000 - 0x8BA000000 = 928 MiB
-    {"RAM Bank 2 Low",    0x880000000, 0x3A000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0x880000000-0x8BA000000 (928 MiB)
+    // {"RAM Bank 2 Low",    0x880000000, 0x3A000000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0x880000000-0x8BA000000 (928 MiB)
 //   0x8BB400000 - 0x8BB800000 = 4 MiB (gap between cma-3 and crypto)
-    {"RAM Bank 2 Gap1",   0x8BB400000, 0x00400000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0x8BB400000-0x8BB800000 (4 MiB)
+    // {"RAM Bank 2 Gap1",   0x8BB400000, 0x00400000, AddMem, SYS_MEM, SYS_MEM_CAP, Conv,   WRITE_BACK},   // 0x8BB400000-0x8BB800000 (4 MiB)
 //   After crypto ends at 0x8BD800000, video_frame starts at 0x8BD800000 and ends at 0x8C0000000
 //   No usable RAM after video_frame
 
