@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
   push:
-    branches: [main]
+    branches: [main, feature/kexec-arm64-virtual-boot]
     paths:
       - "EXYNOS7885Pkg/**"
       - "BootShim/**"
@@ -68,5 +68,7 @@ jobs:
           if-no-files-found: error
           path: |
             edk2-exynos7885/workspace/UEFI
-            edk2-exynos7885/workspace/UEFI.manifest.json
+            edk2-exynos7885/workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd
+            edk2-exynos7885/workspace/UEFI
+            edk2-exynos7885/workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd.manifest.json
             edk2-exynos7885/workspace/SHA256SUMS
