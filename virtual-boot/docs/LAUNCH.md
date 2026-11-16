@@ -5,7 +5,7 @@ This package provides a standalone ARM64 Virtual Boot environment for Samsung SM
 It is designed to be loaded via kexec from TWRP recovery.
 
 **Phase 1 Status**: Build #259 successful; kernel, DTB, initramfs, EDK2 firmware bundle and SHA256 checks verified.
-**Phase 2 (Future)**: Linux → UEFI handoff and TWRP button integration.
+**Phase 2 integration step 1**: fixed-segment BootShim + legacy `kexec_load` staging utility are built into the initramfs. This is a load-only integration; execution remains disabled.
 
 ## Hardware Identification
 - **Model**: Samsung Galaxy A20
@@ -51,7 +51,20 @@ Trampoline:       NOT ASSIGNED (Phase 2)
 - CMA crypto: 0x8BB800000-0x8BD800000
 - CMA video_frame: 0x8BD800000-0x8C0000000
 
-## Loading from TWRP (kexec) - NOT ENABLED
+## Second-stage BootShim staging - LOAD ONLY
+
+The initramfs now contains `/sbin/edk2-kexec`, `/edk2/BootShim.bin`, and `/edk2/UEFI.fd`.
+The custom loader bypasses the ARM64 Linux Image placement algorithm and requests two explicit physical segments through the target kernel's legacy `kexec_load()` interface:
+
+| Segment | Physical range | Purpose |
+|---|---|---|
+| BootShim | `0x80080000-0x80090000` | Entry point and private stack |
+| FD staging | `0x80400000-0x80600000` | Temporary source for the 2 MiB EDK2 FD |
+| FD destination | `0x90020000-0x90220000` | Reserved linked address; copied by BootShim |
+
+`/sbin/edk2-kexec --load-only` stages the two segments in the running kernel. `/sbin/edk2-kexec --unload` removes the staged image. The utility has no reboot or execution path. A successful load-only call would validate kernel acceptance of these explicit segment addresses, not BootShim execution.
+
+## UEFI execution - NOT ENABLED
 
 **Do not execute a kexec load or execute command on the SM-A205W yet.**
 The example below was removed because the Phase 1 bundle is diagnostic-only and
@@ -59,7 +72,7 @@ the end-to-end runtime path has not been validated.
 
 Outstanding blockers for a safe launch:
 
-- The runtime physical placement and execution of the combined BootShim + FD image have not been proven.
+- The fixed-segment loader has not yet been run on the SM-A205W; kernel acceptance of the two segments is not yet confirmed on-device.
 - The target kernel's ordinary kexec path clears x0-x3 before branching; the
   incoming FDT pointer therefore cannot be assumed to reach BootShim.
 - The EDK2 SEC entry address and its required execution state are known from
@@ -81,11 +94,13 @@ not runtime boot evidence.
 sha256sum -c SHA256SUMS
 ```
 
-## Phase 2 (Future - Not Implemented)
-- [ ] Implement and validate an ARM64 trampoline for the handoff
-- [ ] Resolve ARM64 kexec register handoff (x0-x3) and secondary CPU quiescence
-- [ ] Quiesce DMA-capable devices and integrate the validated handoff into TWRP
-- [ ] End-to-end testing on SM-A205W hardware
+## Remaining Phase 2 work
+- [x] Implement a fixed-segment `kexec_load()` staging utility and a separate BootShim candidate.
+- [x] Define non-overlapping BootShim, FD staging, and reserved FD physical ranges.
+- [ ] Run the loader in load-only mode on the SM-A205W and confirm kernel acceptance of both segments.
+- [ ] Validate CPU quiescence, exception level, MMU/cache state, and device shutdown before execution.
+- [ ] Execute the BootShim copy/SEC branch only after the handoff contract is reviewed.
+- [ ] Integrate the validated launch path into the TWRP button and perform end-to-end testing.
 
 ## Security Notes
 - No partitions (boot, recovery, vbmeta) are modified

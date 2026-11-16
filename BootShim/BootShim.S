@@ -14,6 +14,12 @@
 #ifndef SEC_ENTRY
 #error "SEC_ENTRY must be supplied by the build"
 #endif
+#ifndef BOOTSHIM_BASE
+#error "BOOTSHIM_BASE must be supplied by the build"
+#endif
+#ifndef FD_SOURCE
+#error "FD_SOURCE must be supplied by the build"
+#endif
 #if UEFI_BASE != 0x90020000
 #error "Unexpected fixed EDK2 FD base"
 #endif
@@ -28,8 +34,13 @@
 #endif
 
 _Head:
-	/* x1 is our position-independent FD source pointer. */
+#if ENABLE_HANDOFF
+	/* Fixed-segment kexec_load places the FD staging segment at FD_SOURCE. */
+	ldr	x1, =FD_SOURCE
+#else
+	/* Legacy packaged image keeps its concatenated payload and WFE gate. */
 	adr	x1, _Payload
+#endif
 	b	_Start
 
 	/* ARM64 Linux Image header: exactly 64 bytes. */
@@ -44,9 +55,10 @@ _Head:
 
 _Start:
 #if ENABLE_HANDOFF
-	/* Candidate path only; normal packaged build forces ENABLE_HANDOFF=0. */
+	/* Fixed-segment candidate: use a private stack inside the 64 KiB shim. */
+	ldr	x12, =(BOOTSHIM_BASE + 0x10000)
+	mov	sp, x12
 	mov	x9, x1
-	mov	sp, x9
 	ldr	x10, =UEFI_BASE
 	ldr	x11, =UEFI_SIZE
 1:

@@ -541,3 +541,35 @@ This change does not enable the handoff. `ENABLE_HANDOFF=0` and the BootShim
 WFE gate remain mandatory. CI must validate the updated FD address and DTB
 before any runtime placement test; no partition is to be flashed as part of
 this source integration.
+
+
+## Fixed-segment kexec integration (2026-11-14)
+
+The standard ARM64 Image-loader path is no longer the selected second-stage transport. A custom userspace loader now calls the target kernel's legacy `kexec_load()` syscall with explicit segment destinations. This avoids requiring the concatenated BootShim+FD payload to land at the FD's absolute linked address through the standard 2 MiB-aligned Image placement equation.
+
+### Explicit segment contract
+
+| Segment | Start | End (exclusive) | Size |
+|---|---:|---:|---:|
+| BootShim entry | `0x80080000` | `0x80090000` | 64 KiB |
+| FD staging source | `0x80400000` | `0x80600000` | 2 MiB |
+| EDK2 FD destination | `0x90020000` | `0x90220000` | 2 MiB |
+
+The first two ranges are inside the usable low RAM bank and do not overlap. The final FD range is the separately reserved EDK2 window, immediately after the ECT reservation. The fixed-segment loader provides two page-aligned `struct kexec_segment` entries and sets the kexec entry to `0x80080000`.
+
+The candidate BootShim now obtains its FD source from `0x80400000`, uses a private stack at the top of its 64 KiB segment, copies exactly 2 MiB to `0x90020000`, performs the required DSB/I-cache maintenance sequence, then branches to the artifact-validated PrePi SEC entry `0x90028278`.
+
+### Runtime staging utility
+
+`virtual-boot/loader/edk2-kexec.c` is packaged in the Virtual Boot initramfs as `/sbin/edk2-kexec`. It validates the exact BootShim/FD file sizes and EFI FV signature, then invokes `kexec_load()` with `KEXEC_ARCH_AARCH64`.
+
+- `--load-only`: stages the two segments in the kernel and returns.
+- `--unload`: removes the staged kexec image.
+- There is deliberately no reboot or execute operation in this utility.
+- The normal packaged BootShim remains WFE-gated; the fixed-segment candidate is kept as a separate file.
+
+### Current validation boundary
+
+The new source and address-contract tests validate the explicit segment map and the BootShim copy/branch sequence. CI compilation validates that the ARM64 candidate and static loader build. These are not yet on-device results: the load-only syscall still needs to be run on the SM-A205W to confirm the kernel accepts both destination segments. No execution of BootShim, no UEFI launch, and no phone partition writes are authorized by this integration step.
+
+The next hardware-facing milestone is strictly load-only: confirm `kexec_load()` accepts both segments, inspect the returned status, and unload the staged image. Only after that should CPU shutdown, exception-level and device-state handling be advanced toward actual execution.
