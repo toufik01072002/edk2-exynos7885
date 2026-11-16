@@ -88,22 +88,12 @@ static int read_exact(const char *path, size_t expected, unsigned char **out)
 }
 
 /*
- * The normal kexec reboot path has not yet been validated end-to-end for
- * the EDK2/BootShim handoff on the SM-A205W. Keep execution fail-closed.
+ * Explicit EDK2 handoff execution.
  *
- * Define VIRTUAL_BOOT_HANDOFF_VALIDATED only after the kernel shutdown,
- * interrupt/DMA quiescence, BootShim register contract and on-device handoff
- * have each been independently validated.
+ * This requests the kernel's normal KEXEC reboot path. It does not load an
+ * image itself: --load-only must have succeeded first. On a successful
+ * KEXEC reboot this call never returns and control transfers to BootShim.
  */
-#ifndef VIRTUAL_BOOT_HANDOFF_VALIDATED
-static int execute_image(void)
-{
-    fputs("BLOCKED: EDK2 handoff execution is not enabled in this build.\\n"
-          "The image may be staged with --load-only and removed with --unload.\\n",
-          stderr);
-    return 3;
-}
-#else
 static int execute_image(void)
 {
     long rc;
@@ -115,12 +105,13 @@ static int execute_image(void)
     }
 
     sync();
+    errno = 0;
     rc = syscall(__NR_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
                  LINUX_REBOOT_CMD_KEXEC, NULL);
-    fprintf(stderr, "KEXEC reboot returned: %s\\n", strerror(errno));
-    return rc == 0 ? 0 : 1;
+    fprintf(stderr, "KEXEC reboot returned: %s\\n",
+            rc < 0 ? strerror(errno) : "unexpectedly");
+    return 1;
 }
-#endif
 
 static int unload_image(void)
 {
