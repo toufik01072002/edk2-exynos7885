@@ -1,0 +1,38 @@
+name: Validate ARM64 handoff contract
+
+on:
+  push:
+    branches: [feature/kexec-arm64-virtual-boot]
+    paths:
+      - 'virtual-boot/docs/hardware-manifest.json'
+      - 'virtual-boot/scripts/validate_handoff_contract.py'
+      - 'twrp-uefi-loader/trampoline.S'
+      - 'twrp-uefi-loader/trampoline.ld'
+      - '.github/workflows/validate-handoff-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Virtual Boot project
+        uses: actions/checkout@v4
+        with:
+          path: project
+
+      - name: Checkout pinned vendor kernel
+        uses: actions/checkout@v4
+        with:
+          repository: toufik01072002/Kernel_SM-A205W
+          ref: 1e70ef871acb9ea0cd79a531b18e98f61debfc71
+          path: kernel
+
+      - name: Validate fail-closed handoff contract
+        run: |
+          python3 project/virtual-boot/scripts/validate_handoff_contract.py \
+            project/virtual-boot/docs/hardware-manifest.json \
+            kernel/arch/arm64/kernel/relocate_kernel.S \
+            project/twrp-uefi-loader/trampoline.S

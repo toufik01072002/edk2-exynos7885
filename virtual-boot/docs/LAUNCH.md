@@ -1,89 +1,79 @@
 # Virtual Boot ARM64 - Launch Documentation (Phase 1)
 
 ## Overview
-This package provides a standalone ARM64 Virtual Boot environment for Samsung SM-A205W (Galaxy A20, Exynos 7885).
-It is designed to be loaded via kexec from TWRP recovery.
 
-**Phase 1 Status**: Build and validation of independent Virtual Boot components only.
-**Phase 2 (Future)**: Linux → UEFI handoff and TWRP button integration.
+This package contains the Phase 1 diagnostic Linux environment for Samsung SM-A205W (Galaxy A20, Exynos 7885).
 
-## Hardware Identification
-- **Model**: Samsung Galaxy A20
-- **Reference**: SM-A205W
-- **Platform**: Exynos 7885
-- **Codename**: a20
+**Phase 1:** kernel, DTB and diagnostic initramfs are built and packaged by GitHub Actions.
+**Phase 2:** TWRP integration and the Linux-to-UEFI handoff are not implemented.
 
-## Components (Phase 1)
-- `Image` - Linux kernel (Virtual Boot minimal config, KEXEC enabled)
-- `exynos7885-a205w-virtual.dtb` - Device Tree Blob built from authentic Samsung DTS chain
-- `initramfs.cpio.gz` - Minimal userspace with BusyBox for diagnostics
-- `hardware-manifest.json` - Hardware specification and memory map
-- `SHA256SUMS` - Integrity verification
+## Hardware
 
-## Memory Layout (Reference - to be validated against compiled DTB)
-```
-Kernel load:      0x80080000
-Initramfs load:   0x84000000
-DTB load:         0x88000000
-UEFI FD (target): 0x90000000-0x90200000 (2 MiB reserved)
-Trampoline:       NOT ASSIGNED (Phase 2)
-```
+- Model: Samsung Galaxy A20 (SM-A205W)
+- Platform: Exynos 7885
+- Codename: a20
+- Architecture: AArch64
 
-### Reference Memory Regions (from DeviceMemoryMap.h)
-| Region | Address Range | Size | Type |
-|--------|--------------|------|------|
-| RAM Bank 0 | 0x80000000 - 0xBBC00000 | 956 MiB | System RAM |
-| RAM Bank 1 | 0xC0000000 - 0x100000000 | 1024 MiB | System RAM |
-| RAM Bank 2 | 0x880000000 - 0x8C0000000 | 1024 MiB | System RAM (>4GB) |
-| UEFI FD | 0x90000000 - 0x90200000 | 2 MiB | Reserved |
+## Bundle contents
 
-### Reserved Regions (from Samsung DTB)
-- TIMA: 0xB8000000-0xB8200000
-- seclog: 0xC0000000-0xC0080000
-- WiFi/BT: 0xE9000000-0xE9400000
-- ABOX: 0xE9400000-0xE9800000
-- Framebuffer: 0xEC000000-0xED400000
-- CMA video_stream: 0xF0C00000-0xF5400000
-- Modem/CP: 0xF5400000-0xFEC00000
-- GNSS: 0xFFC00000-0x100000000
-- CMA crypto: 0x8BB800000-0x8BD800000
-- CMA video_frame: 0x8BD800000-0x8C0000000
+- `Image` — standalone ARM64 Linux kernel with KEXEC support
+- `exynos7885-a205w-virtual.dtb` — Virtual Boot device tree
+- `initramfs.cpio.gz` — BusyBox diagnostic userspace
+- `hardware-manifest.json` — build identity, hashes and proposed memory map
+- `SHA256SUMS` — integrity checks for the bundle
+- `patches/` — kernel compatibility patches used for this build
 
-## Loading from TWRP (kexec) - Phase 1
-```bash
-# In TWRP recovery shell:
-kexec -l /sdcard/virtual-boot/Image \
-  --initrd=/sdcard/virtual-boot/initramfs.cpio.gz \
-  --dtb=/sdcard/virtual-boot/exynos7885-a205w-virtual.dtb \
-  --command-line="console=ttySAC2,115200 earlycon=exynos4210_serial,0x13820000 rootwait ro clk_ignore_unused"
-kexec -e
-```
+## Build #97
 
-## Boot Flow (Phase 1)
-1. TWRP loads Virtual Boot kernel + initramfs + DTB via kexec
-2. Virtual Boot kernel boots, mounts initramfs
-3. init script runs diagnostics, shows hardware info
-4. User can run `hwinfo`, inspect `/proc/*`, `/sys/*`
-5. **Phase 2 will add**: Automated UEFI handoff via trampoline
+The successful GitHub Actions run #97 produced the bundle from kernel commit `1e70ef871acb9ea0cd79a531b18e98f61debfc71`.
 
-## Available Commands in initramfs
-- `hwinfo` - Display hardware information (CPU, memory, DTB, kernel cmdline)
-- Standard BusyBox utilities: `ls`, `cat`, `dmesg`, `mount`, `dd`, `hexdump`, etc.
+The bundle is a build artifact, not a hardware boot validation. A successful compile and DTB structural validation do not prove that the memory map, peripheral shutdown, or handoff sequence is safe on the phone.
 
-## Verification
-```bash
-# Verify all artifacts
+## Launch status — BLOCKED
+
+**Do not run `kexec -l` or `kexec -e` on the SM-A205W with this bundle.**
+
+The end-to-end launch path is not validated. In particular:
+
+- The kernel's ordinary ARM64 kexec entry path does not guarantee that the incoming DTB pointer survives in x0-x3.
+- The current BootShim is deliberately fail-closed and loops in WFE; it does not enter EDK2.
+- The proposed trampoline is not a validated handoff implementation. Its current linker address `0x88000000` conflicts with the DTB load address in the manifest.
+- The exact physical placement and executable SEC entry point of the EDK2 firmware image have not been proven together.
+- Secondary CPU shutdown, GIC state, DMA-capable device quiescence, cache maintenance and exception-level transition still require a reviewed implementation.
+- The DTB and reserved-memory layout have passed the current CI structural checks only; this is not proof of runtime hardware compatibility.
+
+The TWRP action **Démarrer EDK2** must remain blocked until these issues have a tested implementation. Do not bypass the fail-closed guard.
+
+## Proposed memory addresses
+
+The manifest currently records these proposed addresses:
+
+| Component | Address |
+|---|---:|
+| Virtual Boot kernel | `0x80080000` |
+| Initramfs | `0x84000000` |
+| DTB | `0x88000000` |
+| UEFI firmware volume reservation | `0x90000000–0x90200000` |
+| Trampoline | Not assigned |
+
+These are not an authorization to load or execute the components. The DTB address and the old trampoline linker address collide; the layout must be redesigned before any launch attempt.
+
+## Integrity verification
+
+On a host or CI runner, extract the bundle and run:
+
+```sh
 sha256sum -c SHA256SUMS
 ```
 
-## Phase 2 (Future - Not Implemented)
-- [ ] Trampoline binary (ARM64 assembly) compilation and integration
-- [ ] Automated Linux → UEFI handoff in init script
-- [ ] TWRP "Start EDK2" button action modification
-- [ ] End-to-end testing on SM-A205W hardware
+This verifies file integrity only. It does not validate the boot path.
 
-## Security Notes
-- No partitions (boot, recovery, vbmeta) are modified
-- No user data is touched
-- TWRP kernel/ramdisk/interface unchanged
-- All builds via GitHub Actions only
+## Next engineering gates
+
+1. Define one non-overlapping physical layout for kernel, initramfs, DTB, trampoline and EDK2 firmware.
+2. Implement a handoff that receives explicit physical addresses rather than assuming x0-x3 survive kexec.
+3. Prove the required CPU, interrupt-controller, DMA and cache shutdown sequence for this Exynos platform.
+4. Build and statically validate the trampoline and BootShim in GitHub Actions.
+5. Keep the TWRP launch action fail-closed until hardware evidence validates the complete chain.
+
+No phone partitions are modified by these build steps. No flash or on-device execution is authorized by this bundle.

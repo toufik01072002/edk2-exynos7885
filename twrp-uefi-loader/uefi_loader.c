@@ -270,7 +270,24 @@ static long sys_kexec_load(unsigned long entry, unsigned long nr_segments,
  * Main loader logic
  * ============================================================ */
 
+#ifndef UEFI_HANDOFF_ENABLED
+#define UEFI_HANDOFF_ENABLED 0
+#endif
+
 int uefi_loader_main(void) {
+#if !UEFI_HANDOFF_ENABLED
+    /*
+     * Fail closed by default. The current BootShim is a WFE safety stub,
+     * the UEFI DTB builder is only a placeholder, and the physical handoff
+     * protocol has not been validated on the SM-A205W.
+     *
+     * Do not call kexec_load() or reboot(LINUX_REBOOT_CMD_KEXEC) until the
+     * complete ARM64 handoff implementation and its CI tests are ready.
+     */
+    set_state(UEFI_STATE_INCOMPATIBLE);
+    set_message("EDK2 launch blocked: ARM64 handoff is not implemented and validated");
+    return -1;
+#else
     void *fd_buffer = NULL;
     void *bs_buffer = NULL;
     void *combined_buffer = NULL;
@@ -428,6 +445,7 @@ cleanup:
     if (combined_buffer) free(combined_buffer);
     if (dtb_buffer) free(dtb_buffer);
     return (g_state == UEFI_STATE_BOOT_FAILED) ? -1 : 0;
+#endif
 }
 
 /* ============================================================
@@ -459,7 +477,11 @@ const char *uefi_loader_get_path(void) {
 /* Entry point for standalone execution (testing) */
 #ifdef UEFI_LOADER_STANDALONE
 int main(int argc, char **argv) {
+    int result;
     (void)argc; (void)argv;
-    return uefi_loader_main();
+    result = uefi_loader_main();
+    if (result != 0)
+        fprintf(stderr, "%s\n", uefi_loader_get_error());
+    return result;
 }
 #endif

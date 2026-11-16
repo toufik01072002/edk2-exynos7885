@@ -1,8 +1,9 @@
 /*
- * trampoline.ld - Linker script for ARM64 trampoline
+ * Linker script for the fail-closed, position-independent trampoline stub.
  *
- * The trampoline must be loaded at a known physical address by kexec.
- * We place it at 0x88000000 (in Bank 2, known free area).
+ * No physical VMA is assigned here. The old 0x88000000 address collided
+ * with the manifest's DTB load address. A runtime loader must not be added
+ * until a non-overlapping reserved-memory contract has been established.
  */
 
 OUTPUT_ARCH(aarch64)
@@ -10,8 +11,6 @@ ENTRY(_trampoline_entry)
 
 SECTIONS
 {
-    . = 0x88000000;
-
     .text : {
         *(.text*)
         *(.rodata*)
@@ -24,13 +23,6 @@ SECTIONS
     .bss : {
         *(.bss*)
         *(COMMON)
-    }
-
-    /* Stack at the end */
-    .bss.stack : {
-        trampoline_stack = .;
-        *(.bss.stack)
-        trampoline_stack_top = .;
     }
 
     /DISCARD/ : {
