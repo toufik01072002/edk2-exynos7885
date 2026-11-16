@@ -11,7 +11,8 @@ BUNDLE = WORKSPACE / "UEFI"
 MANIFEST = WORKSPACE / "UEFI.manifest.json"
 
 EXPECTED_COPY_SIZE = 0x00200000
-EXPECTED_LOAD_ADDRESS = "0x90000000"
+EXPECTED_BOOTSHIM_SIZE = 0x10000
+EXPECTED_LINKED_IMAGE_BASE = "0x90000000"
 
 def fail(message):
     print("BUNDLE VERIFICATION FAILED:", message, file=sys.stderr)
@@ -31,7 +32,8 @@ except Exception as exc:
 if metadata.get("format") != "7K-EDK2-BUNDLE":
     fail("Unknown bundle format")
 
-if metadata.get("format_version") != 1:
+version = metadata.get("format_version")
+if version not in (1, 2):
     fail("Unsupported manifest version")
 
 if metadata.get("architecture") != "AARCH64":
@@ -45,10 +47,12 @@ try:
     bs_offset = bs["offset"]
     bs_size = bs["size"]
     fd_offset = fd["offset"]
+    linked_image_base = fd["linked_image_base"]
+    runtime_load_address = fd["runtime_physical_load_address"]
+    runtime_placement_status = fd["runtime_placement_status"]
     fd_source_size = fd["source_size"]
     fd_padded_size = fd["padded_size"]
     fd_copy_size = fd["copy_size"]
-    load_address = fd["load_address"]
     declared_bundle_size = bundle_meta["size"]
 except (KeyError, TypeError):
     fail("Missing or invalid manifest fields")
@@ -56,11 +60,11 @@ except (KeyError, TypeError):
 if bs_offset != 0:
     fail("BootShim offset must be zero")
 
-if not 256 <= bs_size <= 65536:
-    fail("BootShim size outside accepted limits")
+if bs_size != EXPECTED_BOOTSHIM_SIZE:
+    fail("BootShim must occupy exactly 64 KiB")
 
-if fd_offset != bs_size:
-    fail("Firmware offset does not follow BootShim")
+if fd_offset != EXPECTED_BOOTSHIM_SIZE:
+    fail("Firmware must begin at bundle offset 0x10000")
 
 if fd_padded_size != EXPECTED_COPY_SIZE:
     fail("Unexpected padded firmware size")
@@ -68,8 +72,11 @@ if fd_padded_size != EXPECTED_COPY_SIZE:
 if fd_copy_size != EXPECTED_COPY_SIZE:
     fail("Unexpected BootShim copy size")
 
-if load_address != EXPECTED_LOAD_ADDRESS:
-    fail("Unexpected firmware destination address")
+if linked_image_base != EXPECTED_LINKED_IMAGE_BASE:
+    fail("Unexpected linked image base")
+
+if runtime_load_address is not None or runtime_placement_status != "UNVERIFIED":
+    fail("Runtime physical placement must remain explicitly unassigned")
 
 if not 0 < fd_source_size <= fd_padded_size:
     fail("Invalid original firmware size")
@@ -87,6 +94,21 @@ bootshim_data = data[bs_offset:bs_offset + bs_size]
 firmware_area = data[fd_offset:fd_offset + fd_padded_size]
 firmware_data = firmware_area[:fd_source_size]
 padding = firmware_area[fd_source_size:]
+
+if version == 2:
+    slot_text = bs.get("sec_entry_offset_slot")
+    entry_text = bs.get("sec_entry_bundle_offset")
+    try:
+        slot = int(slot_text, 0)
+        entry = int(entry_text, 0)
+    except (TypeError, ValueError):
+        fail("Version 2 manifest has invalid SEC entry offsets")
+    if slot != 0xD100:
+        fail("Unexpected BootShim SEC entry slot")
+    if not EXPECTED_BOOTSHIM_SIZE <= entry < EXPECTED_BOOTSHIM_SIZE + EXPECTED_COPY_SIZE or entry & 3:
+        fail("SEC entry bundle offset is outside the aligned FD range")
+    if int.from_bytes(bootshim_data[slot:slot + 8], "little") != entry:
+        fail("BootShim SEC entry slot differs from manifest")
 
 if sha256(bootshim_data) != bs.get("sha256"):
     fail("BootShim SHA-256 mismatch")
@@ -108,5 +130,6 @@ print("BootShim:", bs_size, "bytes")
 print("Firmware original:", fd_source_size, "bytes")
 print("Firmware padded:", fd_padded_size, "bytes")
 print("Bundle total:", len(data), "bytes")
-print("Firmware destination:", load_address)
+print("Firmware linked image base:", linked_image_base)
+print("Runtime physical load address: UNASSIGNED")
 print("All SHA-256 and layout checks passed")

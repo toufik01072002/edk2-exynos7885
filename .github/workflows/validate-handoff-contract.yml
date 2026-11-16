@@ -2,12 +2,19 @@ name: Validate ARM64 handoff contract
 
 on:
   push:
-    branches: [feature/kexec-arm64-virtual-boot]
+    branches: [feature/kexec-arm64-virtual-boot, integrate/fd-sec-contract]
     paths:
       - 'virtual-boot/docs/hardware-manifest.json'
       - 'virtual-boot/scripts/validate_handoff_contract.py'
+      - 'virtual-boot/include/a20_handoff.h'
+      - 'virtual-boot/include/a20_handoff_validate.h'
+      - 'virtual-boot/src/**'
+      - 'virtual-boot/tests/handoff_descriptor_validation.c'
+      - 'virtual-boot/tests/handoff_abi_layout.c'
       - 'twrp-uefi-loader/trampoline.S'
       - 'twrp-uefi-loader/trampoline.ld'
+      - 'BootShim/**'
+      - 'EXYNOS7885Pkg/PrePi/**'
       - '.github/workflows/validate-handoff-contract.yml'
   workflow_dispatch:
 
@@ -23,16 +30,112 @@ jobs:
         with:
           path: project
 
-      - name: Checkout pinned vendor kernel
+      - name: Checkout vendor kernel matching the Virtual Boot build
         uses: actions/checkout@v4
         with:
           repository: toufik01072002/Kernel_SM-A205W
-          ref: 1e70ef871acb9ea0cd79a531b18e98f61debfc71
+          ref: 7a4c4fc849ef30d08bdab229a6ec06fbdeeffe88
           path: kernel
+
+      - name: Validate BootShim in-image descriptor mailbox layout
+        run: |
+          python3 project/BootShim/validate_descriptor_mailbox.py
+          echo "PASS: BootShim mailbox and PrePi SEC entry branch are wired"
+
+      - name: Compile handoff descriptor ABI layout test
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -fsyntax-only project/virtual-boot/tests/handoff_abi_layout.c
+
+      - name: Compile and run descriptor validation tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -Iproject/virtual-boot/include project/virtual-boot/src/a20_handoff_validate.c project/virtual-boot/tests/handoff_descriptor_validation.c -o /tmp/handoff-validation
+          /tmp/handoff-validation
+
+      - name: Compile and run BootShim consumer boundary tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/virtual-boot/include -Iproject/BootShim \
+            project/virtual-boot/src/a20_handoff_validate.c \
+            project/BootShim/descriptor_consumer.c \
+            project/BootShim/test_descriptor_consumer.c \
+            -o /tmp/bootshim-consumer-test
+          /tmp/bootshim-consumer-test
+          echo "PASS: BootShim accepts only structurally valid descriptor bytes"
+
+      - name: Compile and run initramfs descriptor mailbox stager tests
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror project/virtual-boot/src/handoff_stage.c -o /tmp/handoff-stage
+          python3 project/virtual-boot/tests/test_handoff_stage.py /tmp/handoff-stage
+          echo "PASS: initramfs staging utility validates descriptor and preserves image boundaries"
+
+      - name: Compile and run in-image descriptor mailbox consumer tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/virtual-boot/include -Iproject/BootShim \
+            project/virtual-boot/src/a20_handoff_validate.c \
+            project/BootShim/descriptor_consumer.c \
+            project/BootShim/descriptor_mailbox.c \
+            project/BootShim/test_descriptor_mailbox.c \
+            -o /tmp/bootshim-mailbox-test
+          /tmp/bootshim-mailbox-test
+          echo "PASS: BootShim validates the descriptor at its exported in-image mailbox"
+
+      - name: Test offline descriptor-to-mailbox image staging
+        run: |
+          python3 project/BootShim/test_patch_descriptor_mailbox.py
+          echo "PASS: descriptor can be staged into the BootShim image without changing bytes outside the mailbox"
+
+      - name: Compile and run fail-closed SEC entry evidence gate
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/BootShim \
+            project/BootShim/sec_entry_gate.c \
+            project/BootShim/test_sec_entry_gate.c \
+            -o /tmp/sec-entry-gate-test
+          /tmp/sec-entry-gate-test
+          echo "PASS: SEC entry geometry and all runtime-evidence gates fail closed"
+
+      - name: Compile and run descriptor-bound SEC adapter tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/virtual-boot/include -Iproject/BootShim \
+            project/virtual-boot/src/a20_handoff_validate.c \
+            project/BootShim/sec_entry_gate.c \
+            project/BootShim/sec_handoff_adapter.c \
+            project/BootShim/test_sec_handoff_adapter.c \
+            -o /tmp/sec-handoff-adapter-test
+          /tmp/sec-handoff-adapter-test
+          echo "PASS: SEC adapter binds descriptor segments to runtime evidence and fails closed"
+
+      - name: Compile and run validated SEC entry plan tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/virtual-boot/include -Iproject/BootShim \
+            project/virtual-boot/src/a20_handoff_validate.c \
+            project/BootShim/sec_entry_gate.c \
+            project/BootShim/sec_handoff_adapter.c \
+            project/BootShim/sec_entry_plan.c \
+            project/BootShim/test_sec_entry_plan.c \
+            -o /tmp/sec-entry-plan-test
+          /tmp/sec-entry-plan-test
+          echo "PASS: SEC entry plan is emitted only after descriptor and runtime gates pass"
+
+      - name: Compile and run explicit LE producer serializer tests
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iproject/virtual-boot/include \
+            project/virtual-boot/src/a20_handoff_validate.c \
+            project/virtual-boot/src/a20_handoff_encode.c \
+            project/virtual-boot/tests/handoff_encode_test.c \
+            -o /tmp/handoff-encode-test
+          /tmp/handoff-encode-test
+          echo "PASS: producer serializer emits explicit LE ABI and rejects unassigned ranges"
 
       - name: Validate fail-closed handoff contract
         run: |
           python3 project/virtual-boot/scripts/validate_handoff_contract.py \
             project/virtual-boot/docs/hardware-manifest.json \
             kernel/arch/arm64/kernel/relocate_kernel.S \
-            project/twrp-uefi-loader/trampoline.S
+            project/twrp-uefi-loader/trampoline.S \
+            kernel/arch/arm64/kernel/cpu-reset.S \
+            kernel/arch/arm64/kernel/machine_kexec.c

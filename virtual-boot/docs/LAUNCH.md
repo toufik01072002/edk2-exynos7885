@@ -37,12 +37,14 @@ The end-to-end launch path is not validated. In particular:
 
 - The kernel's ordinary ARM64 kexec entry path does not guarantee that the incoming DTB pointer survives in x0-x3.
 - The current BootShim is deliberately fail-closed and loops in WFE; it does not enter EDK2.
-- The proposed trampoline is not a validated handoff implementation. Its current linker address `0x88000000` conflicts with the DTB load address in the manifest.
+- The trampoline remains a fail-closed WFE stub with no assigned physical load address; no runtime placement or entry sequence is implemented.
 - The exact physical placement and executable SEC entry point of the EDK2 firmware image have not been proven together.
 - Secondary CPU shutdown, GIC state, DMA-capable device quiescence, cache maintenance and exception-level transition still require a reviewed implementation.
-- The DTB and reserved-memory layout have passed the current CI structural checks only; this is not proof of runtime hardware compatibility.
+- The DTB binary passes structural checks, including the three expected SM-A205W RAM-bank ranges and fixed UEFI reservation; this is not proof of runtime hardware compatibility.
 
 The TWRP action **Démarrer EDK2** must remain blocked until these issues have a tested implementation. Do not bypass the fail-closed guard.
+
+The TWRP userspace loader is currently a launch gate only: it contains no `kexec_load` or reboot syscall path. CI compiles it and verifies that it refuses launch. This prevents a build-time define from re-enabling the old unvalidated prototype.
 
 ## Proposed memory addresses
 
@@ -54,7 +56,7 @@ The manifest currently records these proposed addresses:
 | Initramfs | `0x84000000` |
 | DTB | `0x88000000` |
 | UEFI firmware volume reservation | `0x90000000–0x90200000` |
-| Trampoline | Not assigned |
+| Trampoline | Not assigned (no physical VMA) |
 
 These are not an authorization to load or execute the components. The DTB address and the old trampoline linker address collide; the layout must be redesigned before any launch attempt.
 
@@ -77,3 +79,19 @@ This verifies file integrity only. It does not validate the boot path.
 5. Keep the TWRP launch action fail-closed until hardware evidence validates the complete chain.
 
 No phone partitions are modified by these build steps. No flash or on-device execution is authorized by this bundle.
+
+
+## Versioned ARM64 handoff descriptor (protocol v1)
+
+The project now defines a versioned, little-endian descriptor contract named
+`SM-A205W-ARM64-HANDOFF`. Its 256-byte header identifies the initramfs as
+producer and BootShim as consumer. The descriptor reserves fields for the
+kernel, initramfs, DTB, BootShim and UEFI FD physical ranges and SHA-256 digests.
+
+This is an ABI definition only, not an implemented transport. The descriptor
+address/capacity, every segment physical address/size/digest, and the transport
+are deliberately unassigned. The descriptor state is `DISABLED`. Physical
+reservation, kernel register, EL/MMU/cache, DMA-quiescence, secondary-CPU and
+runtime-hardware gates all remain false. CI validates these invariants and
+fails if any field is accidentally activated. No code consumes this descriptor
+and no branch to SEC or EDK2 is enabled.
