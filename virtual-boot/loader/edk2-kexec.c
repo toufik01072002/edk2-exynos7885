@@ -99,7 +99,7 @@ static int execute_image(void)
     long rc;
 
     if (geteuid() != 0) {
-        fputs("ERROR: root privileges are required for kexec execution.\\n",
+        fputs("ERROR: root privileges are required for kexec execution.\n",
               stderr);
         return 1;
     }
@@ -108,7 +108,7 @@ static int execute_image(void)
     errno = 0;
     rc = syscall(__NR_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
                  LINUX_REBOOT_CMD_KEXEC, NULL);
-    fprintf(stderr, "KEXEC reboot returned: %s\\n",
+    fprintf(stderr, "KEXEC reboot returned: %s\n",
             rc < 0 ? strerror(errno) : "unexpectedly");
     return 1;
 }
