@@ -1,13 +1,15 @@
 /*
  * Fixed-segment ARM64 kexec loader for the SM-A205W EDK2 handoff.
  *
- * This program only stages two kexec segments. It NEVER invokes reboot and
- * therefore cannot transfer execution to BootShim or EDK2.
+ * --load-only stages two fixed kexec segments without executing them.
+ * --execute invokes the kernel's normal KEXEC reboot path for an image that
+ * has already been staged. Execution is always an explicit user action.
  */
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/kexec.h>
+#include <linux/reboot.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,11 +38,13 @@ static void usage(const char *name)
     fprintf(stderr,
         "Usage:\n"
         "  %s --load-only [BootShim.bin UEFI.fd]\n"
+        "  %s --execute\n"
         "  %s --unload\n"
         "\n"
-        "Loads fixed physical kexec segments into the running kernel.\n"
-        "It does not reboot and does not execute BootShim.\n",
-        name, name);
+        "--load-only stages fixed physical segments and returns.\n"
+        "--execute requests the kernel's KEXEC reboot for the staged image.\n"
+        "Execution is non-returning on success and transfers to BootShim.\n",
+        name, name, name);
 }
 
 static int read_exact(const char *path, size_t expected, unsigned char **out)
@@ -83,6 +87,29 @@ static int read_exact(const char *path, size_t expected, unsigned char **out)
     return 0;
 }
 
+static int execute_image(void)
+{
+    long rc;
+
+    if (geteuid() != 0) {
+        fputs("ERROR: root privileges are required for kexec execution.\\n",
+              stderr);
+        return 1;
+    }
+
+    /*
+     * The kernel's kernel_kexec() path performs restart preparation,
+     * migrates to the reboot CPU, calls machine_shutdown() (which disables
+     * non-boot CPUs on this ARM64 kernel), then enters machine_kexec().
+     * Do not attempt userspace CPU-offline or peripheral shutdown here.
+     */
+    sync();
+    rc = syscall(__NR_reboot, LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2,
+                 LINUX_REBOOT_CMD_KEXEC, NULL);
+    fprintf(stderr, "KEXEC reboot returned: %s\\n", strerror(errno));
+    return rc == 0 ? 0 : 1;
+}
+
 static int unload_image(void)
 {
     long rc = syscall(__NR_kexec_load, 0UL, 0UL, NULL,
@@ -106,6 +133,8 @@ int main(int argc, char **argv)
 
     if (argc == 2 && strcmp(argv[1], "--unload") == 0)
         return unload_image();
+    if (argc == 2 && strcmp(argv[1], "--execute") == 0)
+        return execute_image();
 
     if ((argc != 2 && argc != 4) || strcmp(argv[1], "--load-only") != 0) {
         usage(argv[0]);
@@ -172,6 +201,7 @@ int main(int argc, char **argv)
     printf("  FD target after BootShim copy: 0x%08llx-0x%08llx\n",
            (unsigned long long)FD_BASE, (unsigned long long)FD_END);
     puts("LOAD-ONLY: image is staged in the kernel; no reboot or execution occurred.");
+    puts("To request the non-returning transfer explicitly, run: /sbin/edk2-kexec --execute");
     result = 0;
 
 out:
