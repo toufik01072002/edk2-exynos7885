@@ -10,9 +10,9 @@
 #include <Protocol/PlatformVirtualKeyboard.h>
 #include "EXYNOS7885PkgDxe.h"
 
-#define EXYNOS_GPA0_CON_ADDR  0x11CB0000
-#define EXYNOS_GPA0_DAT_ADDR  0x11CB0004
-#define EXYNOS_GPA0_PUD_ADDR  0x11CB0008
+#define EXYNOS_GPA1_CON_ADDR  0x11CB0020
+#define EXYNOS_GPA1_DAT_ADDR  0x11CB0024
+#define EXYNOS_GPA1_PUD_ADDR  0x11CB0028
 
 #define KEY_VOL_UP_BIT        (1 << 5)
 #define KEY_VOL_DOWN_BIT      (1 << 6)
@@ -21,8 +21,8 @@
 
 EFI_CPU_ARCH_PROTOCOL *gCpu;
 
-STATIC UINT32 mLastGpa0 = ALL_KEYS_MASK;
-STATIC UINT32 mLastPrintedGpa0 = 0xFFFFFFFF;
+STATIC UINT32 mLastGpa1 = ALL_KEYS_MASK;
+STATIC UINT32 mLastPrintedGpa1 = 0xFFFFFFFF;
 
 STATIC
 EFI_STATUS
@@ -31,15 +31,15 @@ VirtualKbdRegister (
   VOID
   )
 {
-  UINT32 Gpa0Con = MmioRead32 (EXYNOS_GPA0_CON_ADDR);
-  Gpa0Con &= ~0xFFF00000;
-  MmioWrite32 (EXYNOS_GPA0_CON_ADDR, Gpa0Con);
+  UINT32 Gpa1Con = MmioRead32 (EXYNOS_GPA1_CON_ADDR);
+  Gpa1Con &= ~0xFFF00000;
+  MmioWrite32 (EXYNOS_GPA1_CON_ADDR, Gpa1Con);
 
-  UINT32 Gpa0Pud = MmioRead32 (EXYNOS_GPA0_PUD_ADDR);
-  Gpa0Pud |= (0x3 << 10) | (0x3 << 12) | (0x3 << 14);
-  MmioWrite32 (EXYNOS_GPA0_PUD_ADDR, Gpa0Pud);
+  UINT32 Gpa1Pud = MmioRead32 (EXYNOS_GPA1_PUD_ADDR);
+  Gpa1Pud |= (0x3 << 10) | (0x3 << 12) | (0x3 << 14);
+  MmioWrite32 (EXYNOS_GPA1_PUD_ADDR, Gpa1Pud);
 
-  mLastGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR) & ALL_KEYS_MASK;
+  mLastGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & ALL_KEYS_MASK;
   return EFI_SUCCESS;
 }
 
@@ -50,7 +50,7 @@ VirtualKbdReset (
   VOID
   )
 {
-  mLastGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR) & ALL_KEYS_MASK;
+  mLastGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & ALL_KEYS_MASK;
   return EFI_SUCCESS;
 }
 
@@ -61,26 +61,26 @@ VirtualKbdQuery (
   OUT VIRTUAL_KBD_KEY *VirtualKey
   )
 {
-  UINT32 RawGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
-  UINT32 CurGpa0 = RawGpa0 & ALL_KEYS_MASK;
-  UINT32 Fall0   = (mLastGpa0 & ~CurGpa0);
+  UINT32 RawGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
+  UINT32 CurGpa1 = RawGpa1 & ALL_KEYS_MASK;
+  UINT32 Fall0   = (mLastGpa1 & ~CurGpa1);
 
-  if ((RawGpa0 != mLastPrintedGpa0) && (gST->ConOut != NULL)) {
+  if ((RawGpa1 != mLastPrintedGpa1) && (gST->ConOut != NULL)) {
     CHAR16 Buf[32];
-    UnicodeSPrint (Buf, sizeof (Buf), L"[GPA0=0x%02x]", RawGpa0 & 0xFF);
+    UnicodeSPrint (Buf, sizeof (Buf), L"[GPA1=0x%02x]", RawGpa1 & 0xFF);
     gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
     gST->ConOut->OutputString (gST->ConOut, Buf);
-    mLastPrintedGpa0 = RawGpa0;
+    mLastPrintedGpa1 = RawGpa1;
   }
 
   if (Fall0 != 0) {
     MicroSecondDelay (30000);
-    RawGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
-    CurGpa0 = RawGpa0 & ALL_KEYS_MASK;
-    Fall0   = (mLastGpa0 & ~CurGpa0);
+    RawGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
+    CurGpa1 = RawGpa1 & ALL_KEYS_MASK;
+    Fall0   = (mLastGpa1 & ~CurGpa1);
   }
 
-  mLastGpa0 = CurGpa0;
+  mLastGpa1 = CurGpa1;
 
   if (Fall0 & KEY_VOL_UP_BIT) {
     VirtualKey->Key.ScanCode    = SCAN_UP;
