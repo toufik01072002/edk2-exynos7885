@@ -1,0 +1,34 @@
+{
+  "format": "A205W-BOOTSHIM-FD-STATIC-MANIFEST",
+  "validation_scope": "static file layout and PrePi SEC TE entry only; no kexec physical placement, CPU-state, or runtime UEFI handoff validation",
+  "handoff_enabled": false,
+  "fd": {
+    "path": "workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd",
+    "base": "0x90020000",
+    "length_bytes": 2097152,
+    "sha256": "7982e47c0437a4439d1fce9c0c1f2c831a3978f6ca87f5f3c37a3bebd4de7b70"
+  },
+  "bootshim": {
+    "path": "BootShim/BootShim.bin",
+    "length_bytes": 65536,
+    "sha256": "ea6a36eac303b0609c409961028bbe8cb54e802f5f86bd01d57aea6a083e9542"
+  },
+  "combined_image": {
+    "path": "workspace/UEFI",
+    "length_bytes": 2162688,
+    "text_offset": "0x80000",
+    "image_size": 2162688,
+    "fd_offset": 65536,
+    "sha256": "99d01d8e8fc027b25d7146e4bda55fe0d4e24ee654ffac7d3593c1a74b06370c"
+  },
+  "prepi_sec": {
+    "te_file_offset": 4448,
+    "te_image_base": "0x90021000",
+    "entry_rva": "0x7278",
+    "entry_address": "0x90028278",
+    "entry_fd_offset": "0x8278",
+    "entry_instruction": "e8 01 00 94",
+    "entry_branch_target": "0x90028A18",
+    "executable_section": ".text"
+  }
+}

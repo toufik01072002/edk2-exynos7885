@@ -1,0 +1,642 @@
+/*
+ * Samsung SM-A205W (Galaxy A20e) Device Tree for Virtual Boot
+ * Exynos 7885 (2x Cortex-A73 @ 2.2 GHz + 6x Cortex-A53 @ 1.6 GHz)
+ *
+ * Memory map validated against DeviceMemoryMap.h:
+ * Bank 0: 0x80000000 - 0xBBC00000 (956 MiB)
+ * Bank 1: 0xC0000000 - 0x100000000 (1024 MiB)
+ * Bank 2: 0x880000000 - 0x8C0000000 (1024 MiB, above 4GB)
+ *
+ * Reserved regions: TIMA, CMA pools, Modem/CP, Framebuffer, WiFi/BT, ABOX, GNSS, seclog
+ * UEFI FD region: 0x90000000 - 0x90200000 (2 MiB)
+ */
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/clock/exynos7885.h>
+#include <dt-bindings/pinctrl/samsung.h>
+#include <dt-bindings/thermal/thermal.h>
+#include <dt-bindings/soc/samsung/exynos7885.h>
+
+/dts-v1/;
+
+/ {
+    model = "Samsung Galaxy A20e (SM-A205W)";
+    compatible = "samsung,exynos7885-a205w", "samsung,exynos7885";
+    #address-cells = <2>;
+    #size-cells = <2>;
+    interrupt-parent = <&gic>;
+
+    chosen {
+        stdout-path = "serial0:115200n8";
+        bootargs = "console=ttySAC2,115200 earlycon=exynos4210_serial,0x12C00000 rootwait ro";
+    };
+
+    aliases {
+        serial0 = &uart2;
+        serial1 = &uart3;
+    };
+
+    /* Memory nodes - split into separate regions to match DeviceMemoryMap.h */
+    memory@80000000 {
+        device_type = "memory";
+        /* RAM Bank 0 Low: 0x80000000 - 0x90000000 (256 MiB) */
+        reg = <0x0 0x80000000 0x0 0x10000000>;
+    };
+
+    memory@90200000 {
+        device_type = "memory";
+        /* RAM Bank 0 Mid: 0x90200000 - 0xB8000000 (638 MiB) */
+        reg = <0x0 0x90200000 0x0 0x27E00000>;
+    };
+
+    memory@b8200000 {
+        device_type = "memory";
+        /* RAM Bank 0 High: 0xB8200000 - 0xBBC00000 (58 MiB) */
+        reg = <0x0 0xB8200000 0x0 0x03A00000>;
+    };
+
+    memory@c0080000 {
+        device_type = "memory";
+        /* RAM Bank 1 Low: 0xC0080000 - 0xE9000000 (655.5 MiB) */
+        reg = <0x0 0xC0080000 0x0 0x28F80000>;
+    };
+
+    memory@e9800000 {
+        device_type = "memory";
+        /* RAM Bank 1 Mid: 0xE9800000 - 0xEC000000 (40 MiB) */
+        reg = <0x0 0xE9800000 0x0 0x02800000>;
+    };
+
+    memory@ed400000 {
+        device_type = "memory";
+        /* RAM Bank 1 High: 0xED400000 - 0xF0C00000 (56 MiB) */
+        reg = <0x0 0xED400000 0x0 0x03800000>;
+    };
+
+    memory@fec00000 {
+        device_type = "memory";
+        /* RAM Bank 1 VeryHigh: 0xFEC00000 - 0xFFC00000 (16 MiB) */
+        reg = <0x0 0xFEC00000 0x0 0x01000000>;
+    };
+
+    memory@880000000 {
+        device_type = "memory";
+        /* RAM Bank 2 Low: 0x880000000 - 0x8BA000000 (928 MiB) */
+        reg = <0x8 0x80000000 0x0 0x3A000000>;
+    };
+
+    memory@8bb400000 {
+        device_type = "memory";
+        /* RAM Bank 2 Gap1: 0x8BB400000 - 0x8BB800000 (4 MiB) */
+        reg = <0x8 0xBB400000 0x0 0x00400000>;
+    };
+
+    reserved-memory {
+        #address-cells = <2>;
+        #size-cells = <2>;
+        ranges;
+
+        /* UEFI FD region: 0x90000000 - 0x90200000 (2 MiB) */
+        uefi_fd_reserved: uefi-fd@90000000 {
+            compatible = "samsung,uefi-fd-reserved";
+            reg = <0x0 0x90000000 0x0 0x00200000>;
+            no-map;
+        };
+
+        /* TIMA Reserved: 0xB8000000 - 0xB8200000 (2 MiB) */
+        tima_reserved: tima@b8000000 {
+            compatible = "samsung,tima-reserved";
+            reg = <0x0 0xB8000000 0x0 0x00200000>;
+            no-map;
+        };
+
+        /* seclog Reserved: 0xC0000000 - 0xC0080000 (512 KiB) */
+        seclog_reserved: seclog@c0000000 {
+            compatible = "samsung,seclog-reserved";
+            reg = <0x0 0xC0000000 0x0 0x00080000>;
+            no-map;
+        };
+
+        /* WiFi/BT Reserved: 0xE9000000 - 0xE9400000 (4 MiB) */
+        wifi_bt_reserved: wifi-bt@e9000000 {
+            compatible = "samsung,wifi-bt-reserved";
+            reg = <0x0 0xE9000000 0x0 0x00400000>;
+            no-map;
+        };
+
+        /* ABOX Reserved: 0xE9400000 - 0xE9800000 (4 MiB) */
+        abox_reserved: abox@e9400000 {
+            compatible = "samsung,abox-reserved";
+            reg = <0x0 0xE9400000 0x0 0x00400000>;
+            no-map;
+        };
+
+        /* Framebuffer: 0xEC000000 - 0xED400000 (20 MiB) */
+        framebuffer_reserved: framebuffer@ec000000 {
+            compatible = "samsung,framebuffer-reserved";
+            reg = <0x0 0xEC000000 0x0 0x01400000>;
+            no-map;
+        };
+
+        /* CMA video_stream: 0xF0C00000 - 0xF5400000 (72 MiB) */
+        cma_video_stream: cma-video-stream@f0c00000 {
+            compatible = "shared-dma-pool";
+            reg = <0x0 0xF0C00000 0x0 0x04800000>;
+            reusable;
+            size = <0x0 0x04800000>;
+            alignment = <0x0 0x100000>;
+            linux,cma-default;
+        };
+
+        /* Modem/CP Reserved: 0xF5400000 - 0xFEC00000 (152 MiB) */
+        modem_cp_reserved: modem-cp@f5400000 {
+            compatible = "samsung,modem-cp-reserved";
+            reg = <0x0 0xF5400000 0x0 0x09800000>;
+            no-map;
+        };
+
+        /* GNSS Reserved: 0xFFC00000 - 0x100000000 (4 MiB) */
+        gnss_reserved: gnss@ffc00000 {
+            compatible = "samsung,gnss-reserved";
+            reg = <0x0 0xFFC00000 0x0 0x00400000>;
+            no-map;
+        };
+
+        /* CMA Pool cma-3: 0x8BA000000 - 0x8BB400000 (20 MiB) */
+        cma_pool_cma3: cma-cma3@8ba000000 {
+            compatible = "shared-dma-pool";
+            reg = <0x8 0xBA000000 0x0 0x01400000>;
+            reusable;
+            size = <0x0 0x01400000>;
+            alignment = <0x0 0x100000>;
+        };
+
+        /* CMA Pool crypto: 0x8BB800000 - 0x8BD800000 (32 MiB) */
+        cma_pool_crypto: cma-crypto@8bb800000 {
+            compatible = "shared-dma-pool";
+            reg = <0x8 0xBB800000 0x0 0x02000000>;
+            reusable;
+            size = <0x0 0x02000000>;
+            alignment = <0x0 0x100000>;
+        };
+
+        /* CMA Pool video_frame: 0x8BD800000 - 0x8C0000000 (40 MiB) */
+        cma_pool_video_fr: cma-video-fr@8bd800000 {
+            compatible = "shared-dma-pool";
+            reg = <0x8 0xBD800000 0x0 0x02800000>;
+            reusable;
+            size = <0x0 0x02800000>;
+            alignment = <0x0 0x100000>;
+        };
+    };
+
+    cpus {
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        cpu0: cpu@0 {
+            device_type = "cpu";
+            compatible = "arm,cortex-a73", "arm,armv8";
+            reg = <0x0>;
+            enable-method = "psci";
+            clocks = <&clock EXYNOS7885_CLK_CPU0>;
+            clock-names = "cpu";
+            operating-points-v2 = <&cpu0_opp_table>;
+            #cooling-cells = <2>;
+        };
+
+        cpu1: cpu@1 {
+            device_type = "cpu";
+            compatible = "arm,cortex-a73", "arm,armv8";
+            reg = <0x1>;
+            enable-method = "psci";
+            clocks = <&clock EXYNOS7885_CLK_CPU1>;
+            clock-names = "cpu";
+            operating-points-v2 = <&cpu0_opp_table>;
+        };
+
+        cpu2: cpu@2 {
+            device_type = "cpu";
+            compatible = "arm,cortex-a53", "arm,armv8";
+            reg = <0x2>;
+            enable-method = "psci";
+            clocks = <&clock EXYNOS7885_CLK_CPU2>;
+            clock-names = "cpu";
+            operating-points-v2 = <&cpu2_opp_table>;
+        };
+
+        cpu3: cpu@3 {
+            device_type = "cpu";
+            compatible = "arm,cortex-a53", "arm,armv8";
+            reg = <0x3>;
+            enable-method = "psci";
+            clocks = <&clock EXYNOS7885_CLK_CPU3>;
+            clock-names = "cpu";
+            operating-points-v2 = <&cpu2_opp_table>;
+        };
+
+        cpu4: cpu@4 {
+            device_type = "cpu";
+            compatible = "arm,cortex-a53", "arm,armv8";
+            reg = <0x4>;
+            enable-method = "psci";
+            clocks = <&clock EXYNOS7885_CLK_CPU4>;
+            clock-names = "cpu";
+            operating-points-v2 = <&cpu2_opp_table>;
+        };
+
+        cpu5: cpu@5 {
+            device_type = "cpu";
+            compatible = "arm,cortex-a53", "arm,armv8";
+            reg = <0x5>;
+            enable-method = "psci";
+            clocks = <&clock EXYNOS7885_CLK_CPU5>;
+            clock-names = "cpu";
+            operating-points-v2 = <&cpu2_opp_table>;
+        };
+
+        cpu6: cpu@6 {
+            device_type = "cpu";
+            compatible = "arm,cortex-a53", "arm,armv8";
+            reg = <0x6>;
+            enable-method = "psci";
+            clocks = <&clock EXYNOS7885_CLK_CPU6>;
+            clock-names = "cpu";
+            operating-points-v2 = <&cpu2_opp_table>;
+        };
+
+        cpu7: cpu@7 {
+            device_type = "cpu";
+            compatible = "arm,cortex-a53", "arm,armv8";
+            reg = <0x7>;
+            enable-method = "psci";
+            clocks = <&clock EXYNOS7885_CLK_CPU7>;
+            clock-names = "cpu";
+            operating-points-v2 = <&cpu2_opp_table>;
+        };
+
+        cpu0_opp_table: opp-table-0 {
+            compatible = "operating-points-v2";
+            opp-shared;
+            opp-100000000 {
+                opp-hz = /bits/ 64 <100000000>;
+                opp-microvolt = <900000 900000 900000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-200000000 {
+                opp-hz = /bits/ 64 <200000000>;
+                opp-microvolt = <900000 900000 900000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-400000000 {
+                opp-hz = /bits/ 64 <400000000>;
+                opp-microvolt = <900000 900000 900000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-600000000 {
+                opp-hz = /bits/ 64 <600000000>;
+                opp-microvolt = <900000 900000 900000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-800000000 {
+                opp-hz = /bits/ 64 <800000000>;
+                opp-microvolt = <900000 900000 900000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-1000000000 {
+                opp-hz = /bits/ 64 <1000000000>;
+                opp-microvolt = <925000 925000 925000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-1200000000 {
+                opp-hz = /bits/ 64 <1200000000>;
+                opp-microvolt = <950000 950000 950000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-1400000000 {
+                opp-hz = /bits/ 64 <1400000000>;
+                opp-microvolt = <1000000 1000000 1000000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-1600000000 {
+                opp-hz = /bits/ 64 <1600000000>;
+                opp-microvolt = <1050000 1050000 1050000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-1800000000 {
+                opp-hz = /bits/ 64 <1800000000>;
+                opp-microvolt = <1100000 1100000 1100000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-2000000000 {
+                opp-hz = /bits/ 64 <2000000000>;
+                opp-microvolt = <1150000 1150000 1150000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-2200000000 {
+                opp-hz = /bits/ 64 <2200000000>;
+                opp-microvolt = <1200000 1200000 1200000>;
+                clock-latency-ns = <244000>;
+            };
+        };
+
+        cpu2_opp_table: opp-table-2 {
+            compatible = "operating-points-v2";
+            opp-shared;
+            opp-100000000 {
+                opp-hz = /bits/ 64 <100000000>;
+                opp-microvolt = <850000 850000 850000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-200000000 {
+                opp-hz = /bits/ 64 <200000000>;
+                opp-microvolt = <850000 850000 850000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-400000000 {
+                opp-hz = /bits/ 64 <400000000>;
+                opp-microvolt = <850000 850000 850000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-600000000 {
+                opp-hz = /bits/ 64 <600000000>;
+                opp-microvolt = <850000 850000 850000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-800000000 {
+                opp-hz = /bits/ 64 <800000000>;
+                opp-microvolt = <850000 850000 850000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-1000000000 {
+                opp-hz = /bits/ 64 <1000000000>;
+                opp-microvolt = <875000 875000 875000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-1200000000 {
+                opp-hz = /bits/ 64 <1200000000>;
+                opp-microvolt = <900000 900000 900000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-1400000000 {
+                opp-hz = /bits/ 64 <1400000000>;
+                opp-microvolt = <950000 950000 950000>;
+                clock-latency-ns = <244000>;
+            };
+            opp-1600000000 {
+                opp-hz = /bits/ 64 <1600000000>;
+                opp-microvolt = <1000000 1000000 1000000>;
+                clock-latency-ns = <244000>;
+            };
+        };
+    };
+
+    gic: interrupt-controller@2F00000 {
+        compatible = "arm,gic-v3";
+        #interrupt-cells = <3>;
+        #address-cells = <2>;
+        #size-cells = <2>;
+        ranges;
+        interrupt-controller;
+        reg = <0x0 0x02F00000 0x0 0x10000>,  /* GICD */
+              <0x0 0x02F10000 0x0 0x20000>,  /* GICR */
+              <0x0 0x02F40000 0x0 0x10000>;  /* ITS */
+        interrupts = <GIC_PPI 9 IRQ_TYPE_LEVEL_HIGH>;
+        its: interrupt-controller@2F40000 {
+            compatible = "arm,gic-v3-its";
+            msi-controller;
+        };
+    };
+
+    timer {
+        compatible = "arm,armv8-timer";
+        interrupts = <GIC_PPI 13 IRQ_TYPE_LEVEL_LOW>,
+                     <GIC_PPI 14 IRQ_TYPE_LEVEL_LOW>,
+                     <GIC_PPI 11 IRQ_TYPE_LEVEL_LOW>,
+                     <GIC_PPI 10 IRQ_TYPE_LEVEL_LOW>;
+        arm,armv8-timer-evtstrm;
+    };
+
+    pmu {
+        compatible = "arm,armv8-pmuv3";
+        interrupts = <GIC_SPI 120 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 121 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 122 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 123 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 124 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 125 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 126 IRQ_TYPE_LEVEL_HIGH>,
+                     <GIC_SPI 127 IRQ_TYPE_LEVEL_HIGH>;
+    };
+
+    soc {
+        compatible = "simple-bus";
+        #address-cells = <2>;
+        #size-cells = <2>;
+        ranges;
+
+        clock: clock-controller@10030000 {
+            compatible = "samsung,exynos7885-clock";
+            reg = <0x0 0x10030000 0x0 0x10000>;
+            #clock-cells = <1>;
+            clocks = <&oscclk>, <&xtal>;
+            clock-names = "oscclk", "xtal";
+        };
+
+        oscclk: oscillator {
+            compatible = "fixed-clock";
+            #clock-cells = <0>;
+            clock-frequency = <0>;
+        };
+
+        xtal: xtal {
+            compatible = "fixed-clock";
+            #clock-cells = <0>;
+            clock-frequency = <24000000>;
+        };
+
+        /* UART2 (console) - 0x12C00000 */
+        uart2: serial@12C00000 {
+            compatible = "samsung,exynos4210-uart";
+            reg = <0x0 0x12C00000 0x0 0x100>;
+            interrupts = <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_UART2>, <&clock EXYNOS7885_CLK_UART2>;
+            clock-names = "uart", "clk_uart";
+            pinctrl-names = "default";
+            pinctrl-0 = <&uart2_pins>;
+            status = "okay";
+        };
+
+        /* UART3 - 0x12C10000 */
+        uart3: serial@12C10000 {
+            compatible = "samsung,exynos4210-uart";
+            reg = <0x0 0x12C10000 0x0 0x100>;
+            interrupts = <GIC_SPI 35 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_UART3>, <&clock EXYNOS7885_CLK_UART3>;
+            clock-names = "uart", "clk_uart";
+            status = "okay";
+        };
+
+        /* I2C controllers */
+        i2c0: i2c@12CA0000 {
+            compatible = "samsung,exynos5-i2c";
+            reg = <0x0 0x12CA0000 0x0 0x100>;
+            interrupts = <GIC_SPI 36 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_I2C0>;
+            clock-names = "i2c";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            pinctrl-names = "default";
+            pinctrl-0 = <&i2c0_pins>;
+            status = "okay";
+        };
+
+        i2c1: i2c@12CB0000 {
+            compatible = "samsung,exynos5-i2c";
+            reg = <0x0 0x12CB0000 0x0 0x100>;
+            interrupts = <GIC_SPI 37 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_I2C1>;
+            clock-names = "i2c";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            status = "okay";
+        };
+
+        /* MMC/SD controllers */
+        mmc0: mmc@12200000 {
+            compatible = "samsung,exynos7885-dwmmc";
+            reg = <0x0 0x12200000 0x0 0x1000>;
+            interrupts = <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_MMC0>, <&clock EXYNOS7885_CLK_MMC0>;
+            clock-names = "biu", "ciu";
+            bus-width = <4>;
+            cap-mmc-highspeed;
+            cap-sd-highspeed;
+            status = "okay";
+        };
+
+        mmc1: mmc@12210000 {
+            compatible = "samsung,exynos7885-dwmmc";
+            reg = <0x0 0x12210000 0x0 0x1000>;
+            interrupts = <GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_MMC1>, <&clock EXYNOS7885_CLK_MMC1>;
+            clock-names = "biu", "ciu";
+            bus-width = <8>;
+            cap-mmc-highspeed;
+            cap-sd-highspeed;
+            non-removable;
+            status = "okay";
+        };
+
+        mmc2: mmc@12220000 {
+            compatible = "samsung,exynos7885-dwmmc";
+            reg = <0x0 0x12220000 0x0 0x1000>;
+            interrupts = <GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_MMC2>, <&clock EXYNOS7885_CLK_MMC2>;
+            clock-names = "biu", "ciu";
+            bus-width = <4>;
+            cap-mmc-highspeed;
+            cap-sd-highspeed;
+            status = "okay";
+        };
+
+        /* USB */
+        usb2_0: usb@12000000 {
+            compatible = "samsung,exynos7885-usb2";
+            reg = <0x0 0x12000000 0x0 0x10000>;
+            interrupts = <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_USB20_0>;
+            clock-names = "usbhost";
+            phys = <&usb2_0_phy>;
+            phy-names = "usb2-phy";
+            status = "okay";
+        };
+
+        usb3_0: usb@12100000 {
+            compatible = "samsung,exynos7885-usb3";
+            reg = <0x0 0x12100000 0x0 0x10000>;
+            interrupts = <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_USB30_0>;
+            clock-names = "usbhost";
+            phys = <&usb3_0_phy>;
+            phy-names = "usb3-phy";
+            status = "okay";
+        };
+
+        /* Display/DECON */
+        decon: display@14500000 {
+            compatible = "samsung,exynos7885-decon";
+            reg = <0x0 0x14500000 0x0 0x10000>;
+            interrupts = <GIC_SPI 57 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_DECON>;
+            clock-names = "decon";
+            status = "okay";
+        };
+
+        /* Thermal */
+        thermal: thermal@10060000 {
+            compatible = "samsung,exynos7885-thermal";
+            reg = <0x0 0x10060000 0x0 0x1000>;
+            interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_THERMAL>;
+            clock-names = "thermal";
+            #thermal-sensor-cells = <1>;
+            status = "okay";
+        };
+
+        /* PWM */
+        pwm: pwm@13600000 {
+            compatible = "samsung,exynos4210-pwm";
+            reg = <0x0 0x13600000 0x0 0x100>;
+            clocks = <&clock EXYNOS7885_CLK_PWM>;
+            clock-names = "pwm";
+            #pwm-cells = <3>;
+            status = "okay";
+        };
+
+        /* RTC */
+        rtc: rtc@10050000 {
+            compatible = "samsung,s3c6410-rtc";
+            reg = <0x0 0x10050000 0x0 0x100>;
+            interrupts = <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>,
+                         <GIC_SPI 55 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_RTC>;
+            clock-names = "rtc";
+            status = "okay";
+        };
+
+        /* Watchdog */
+        watchdog: watchdog@10060000 {
+            compatible = "samsung,exynos7885-wdt";
+            reg = <0x0 0x10060000 0x0 0x100>;
+            interrupts = <GIC_SPI 110 IRQ_TYPE_LEVEL_HIGH>;
+            clocks = <&clock EXYNOS7885_CLK_WDT>;
+            clock-names = "wdt";
+            status = "okay";
+        };
+    };
+
+    /* Pin control */
+    pinctrl: pinctrl@13400000 {
+        compatible = "samsung,exynos7885-pinctrl";
+        reg = <0x0 0x13400000 0x0 0x10000>;
+        #address-cells = <2>;
+        #size-cells = <2>;
+        ranges;
+        samsung,pinctrl-of-node = <&pinctrl>;
+
+        uart2_pins: uart2-pins {
+            samsung,pins = "gpa0-0", "gpa0-1";
+            samsung,pin-function = <2>;
+            samsung,pin-pud = <0>;
+            samsung,pin-drv = <0>;
+        };
+
+        i2c0_pins: i2c0-pins {
+            samsung,pins = "gpa1-0", "gpa1-1";
+            samsung,pin-function = <2>;
+            samsung,pin-pud = <0>;
+            samsung,pin-drv = <0>;
+        };
+    };
+};

@@ -1,0 +1,7 @@
+diff --git a/drivers/gpu/Makefile b/drivers/gpu/Makefile
+--- a/drivers/gpu/Makefile
++++ b/drivers/gpu/Makefile
+@@ -3,1 +3,2 @@
+-obj-y			+= drm/ vga/ arm/
++obj-y			+= drm/ vga/
++obj-$(CONFIG_MALI_TMIX)	+= arm/

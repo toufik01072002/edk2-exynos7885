@@ -1,0 +1,19 @@
+Virtual Boot compatibility patch 0010
+=====================================
+
+This patch records the link-time compatibility changes applied by the
+GitHub Actions workflow to the Samsung kernel branch.
+
+- Remove references to the unavailable exynos_cpu power-state table from
+  optional snapshot and cpuidle diagnostic paths.
+- Provide deterministic defaults for optional Samsung accessory/display
+  state globals used by DWC3 and HID.
+- Keep MCT hard-lockup notifier integration conditional on the generic
+  hard-lockup detector.
+- Enable the kernel networking and MMC command-queue implementations
+  required by the existing GUD and MMC queue call sites.
+- Enable Samsung SEC_DEBUG so F2FS debug-hook globals are linked.
+
+The workflow applies guarded, idempotent source transformations and verifies
+each anchor before continuing. These changes do not alter boot/recovery
+partition handling or the phone.
