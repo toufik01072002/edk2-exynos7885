@@ -11,12 +11,24 @@
 #include "EXYNOS7885PkgDxe.h"
 
 #define EXYNOS_GPA0_DAT_ADDR  0x11CB0004
-#define KEY_VOL_UP_BIT        (1 << 5)
-#define KEY_VOL_DOWN_BIT      (1 << 6)
-#define KEY_POWER_BIT         (1 << 7)
+#define EXYNOS_GPA1_DAT_ADDR  0x11CB0024
+
+// Masques boutons SM-A205W (actifs a l'etat bas / pull-up)
+#define GPA0_VOL_UP_MASK      ((1 << 3) | (1 << 5))
+#define GPA0_VOL_DOWN_MASK    ((1 << 4) | (1 << 6))
+#define GPA0_POWER_MASK       (1 << 7)
+#define GPA1_POWER_MASK       (1 << 0)
+
+#define KEY_QUEUE_SIZE        16
 
 EFI_CPU_ARCH_PROTOCOL *gCpu;
-STATIC UINT32 mLastGpa0State = (KEY_VOL_UP_BIT | KEY_VOL_DOWN_BIT | KEY_POWER_BIT);
+
+STATIC UINT32        mLastGpa0 = 0xFF;
+STATIC UINT32        mLastGpa1 = 0xFF;
+STATIC EFI_EVENT     mPollTimerEvent = NULL;
+STATIC EFI_INPUT_KEY mKeyQueue[KEY_QUEUE_SIZE];
+STATIC UINTN         mQueueHead = 0;
+STATIC UINTN         mQueueTail = 0;
 
 typedef struct {
   VENDOR_DEVICE_PATH       VendorDevicePath;
@@ -32,6 +44,21 @@ STATIC KEYPAD_DEVICE_PATH mKeypadDevicePath = {
 };
 
 STATIC
+VOID
+EnqueueKey (
+  IN UINT16 ScanCode,
+  IN CHAR16 UnicodeChar
+  )
+{
+  UINTN NextTail = (mQueueTail + 1) % KEY_QUEUE_SIZE;
+  if (NextTail != mQueueHead) {
+    mKeyQueue[mQueueTail].ScanCode    = ScanCode;
+    mKeyQueue[mQueueTail].UnicodeChar = UnicodeChar;
+    mQueueTail = NextTail;
+  }
+}
+
+STATIC
 EFI_STATUS
 EFIAPI
 KeypadReset (
@@ -39,7 +66,10 @@ KeypadReset (
   IN BOOLEAN                         ExtendedVerification
   )
 {
-  mLastGpa0State = (KEY_VOL_UP_BIT | KEY_VOL_DOWN_BIT | KEY_POWER_BIT);
+  mQueueHead = 0;
+  mQueueTail = 0;
+  mLastGpa0  = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
+  mLastGpa1  = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
   return EFI_SUCCESS;
 }
 
@@ -51,27 +81,13 @@ KeypadReadKeyStroke (
   OUT EFI_INPUT_KEY                  *Key
   )
 {
-  UINT32 Current = MmioRead32 (EXYNOS_GPA0_DAT_ADDR) & (KEY_VOL_UP_BIT | KEY_VOL_DOWN_BIT | KEY_POWER_BIT);
-  UINT32 Pressed = (mLastGpa0State & ~Current);
-  mLastGpa0State = Current;
-
-  if (Pressed & KEY_VOL_UP_BIT) {
-    Key->ScanCode    = SCAN_UP;
-    Key->UnicodeChar = 0;
-    return EFI_SUCCESS;
-  }
-  if (Pressed & KEY_VOL_DOWN_BIT) {
-    Key->ScanCode    = SCAN_DOWN;
-    Key->UnicodeChar = 0;
-    return EFI_SUCCESS;
-  }
-  if (Pressed & KEY_POWER_BIT) {
-    Key->ScanCode    = SCAN_NULL;
-    Key->UnicodeChar = CHAR_CARRIAGE_RETURN;
-    return EFI_SUCCESS;
+  if (mQueueHead == mQueueTail) {
+    return EFI_NOT_READY;
   }
 
-  return EFI_NOT_READY;
+  *Key = mKeyQueue[mQueueHead];
+  mQueueHead = (mQueueHead + 1) % KEY_QUEUE_SIZE;
+  return EFI_SUCCESS;
 }
 
 STATIC
@@ -82,8 +98,7 @@ KeypadWaitForKey (
   IN VOID      *Context
   )
 {
-  UINT32 Current = MmioRead32 (EXYNOS_GPA0_DAT_ADDR) & (KEY_VOL_UP_BIT | KEY_VOL_DOWN_BIT | KEY_POWER_BIT);
-  if ((mLastGpa0State & ~Current) != 0) {
+  if (mQueueHead != mQueueTail) {
     gBS->SignalEvent (Event);
   }
 }
@@ -93,6 +108,38 @@ STATIC EFI_SIMPLE_TEXT_INPUT_PROTOCOL mKeypadTextIn = {
   KeypadReadKeyStroke,
   NULL
 };
+
+STATIC
+VOID
+EFIAPI
+KeypadPollTimerCallback (
+  IN EFI_EVENT Event,
+  IN VOID      *Context
+  )
+{
+  UINT32 CurGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
+  UINT32 CurGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
+
+  UINT32 Fall0 = (mLastGpa0 & ~CurGpa0);
+  UINT32 Fall1 = (mLastGpa1 & ~CurGpa1);
+
+  mLastGpa0 = CurGpa0;
+  mLastGpa1 = CurGpa1;
+
+  if (Fall0 & GPA0_VOL_UP_MASK) {
+    EnqueueKey (SCAN_UP, 0);
+  }
+  if (Fall0 & GPA0_VOL_DOWN_MASK) {
+    EnqueueKey (SCAN_DOWN, 0);
+  }
+  if ((Fall0 & GPA0_POWER_MASK) || (Fall1 & GPA1_POWER_MASK)) {
+    EnqueueKey (SCAN_NULL, CHAR_CARRIAGE_RETURN);
+  }
+
+  if ((mQueueHead != mQueueTail) && (mKeypadTextIn.WaitForKey != NULL)) {
+    gBS->SignalEvent (mKeypadTextIn.WaitForKey);
+  }
+}
 
 EFI_STATUS
 EFIAPI
@@ -107,6 +154,9 @@ EXYNOS7885PkgEntryPoint (
   Status = gBS->LocateProtocol (&gEfiCpuArchProtocolGuid, NULL, (VOID **)&gCpu);
   ASSERT_EFI_ERROR (Status);
 
+  mLastGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
+  mLastGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
+
   Status = gBS->CreateEvent (
                   EVT_NOTIFY_WAIT,
                   TPL_NOTIFY,
@@ -115,14 +165,28 @@ EXYNOS7885PkgEntryPoint (
                   &mKeypadTextIn.WaitForKey
                   );
   if (!EFI_ERROR (Status)) {
-    gBS->InstallMultipleProtocolInterfaces (
-           &KeypadHandle,
-           &gEfiDevicePathProtocolGuid,
-           &mKeypadDevicePath,
-           &gEfiSimpleTextInProtocolGuid,
-           &mKeypadTextIn,
-           NULL
-           );
+    Status = gBS->InstallMultipleProtocolInterfaces (
+                    &KeypadHandle,
+                    &gEfiDevicePathProtocolGuid,
+                    &mKeypadDevicePath,
+                    &gEfiSimpleTextInProtocolGuid,
+                    &mKeypadTextIn,
+                    NULL
+                    );
+    if (!EFI_ERROR (Status)) {
+      gBS->ConnectController (KeypadHandle, NULL, NULL, TRUE);
+
+      Status = gBS->CreateEvent (
+                      EVT_TIMER | EVT_NOTIFY_SIGNAL,
+                      TPL_CALLBACK,
+                      KeypadPollTimerCallback,
+                      NULL,
+                      &mPollTimerEvent
+                      );
+      if (!EFI_ERROR (Status)) {
+        gBS->SetTimer (mPollTimerEvent, TimerPeriodic, EFI_TIMER_PERIOD_MILLISECONDS (50));
+      }
+    }
   }
 
   return EFI_SUCCESS;
