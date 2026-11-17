@@ -54,7 +54,7 @@ PollHardwareKey (
   UINT32 Fall0   = (mLastGpa0 & ~CurGpa0);
 
   if ((RawGpa0 != mLastPrintedGpa0) && (gST->ConOut != NULL)) {
-    CHAR16 Buf;
+    CHAR16 Buf[32];
     UnicodeSPrint (Buf, sizeof (Buf), L"[GPA0=0x%02x]", RawGpa0 & 0xFF);
     gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
     gST->ConOut->OutputString (gST->ConOut, Buf);
@@ -138,7 +138,7 @@ KeypadWaitForKey (
   UINT32 CurGpa0 = RawGpa0 & ALL_KEYS_MASK;
 
   if ((RawGpa0 != mLastPrintedGpa0) && (gST->ConOut != NULL)) {
-    CHAR16 Buf;
+    CHAR16 Buf[32];
     UnicodeSPrint (Buf, sizeof (Buf), L"[GPA0=0x%02x]", RawGpa0 & 0xFF);
     gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
     gST->ConOut->OutputString (gST->ConOut, Buf);
