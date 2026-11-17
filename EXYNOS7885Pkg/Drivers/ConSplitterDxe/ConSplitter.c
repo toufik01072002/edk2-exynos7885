@@ -835,10 +835,10 @@ ConSplitterTextOutConstructor (
 
     Info                       = &ConOutPrivate->GraphicsOutputModeBuffer[0];
     Info->Version              = 0;
-    Info->HorizontalResolution = 800;
-    Info->VerticalResolution   = 600;
+    Info->HorizontalResolution = 720;
+    Info->VerticalResolution   = 1560;
     Info->PixelFormat          = PixelBltOnly;
-    Info->PixelsPerScanLine    = 800;
+    Info->PixelsPerScanLine    = 720;
     CopyMem (ConOutPrivate->GraphicsOutput.Mode->Info, Info, sizeof (EFI_GRAPHICS_OUTPUT_MODE_INFORMATION));
     ConOutPrivate->GraphicsOutput.Mode->SizeOfInfo = sizeof (EFI_GRAPHICS_OUTPUT_MODE_INFORMATION);
 
