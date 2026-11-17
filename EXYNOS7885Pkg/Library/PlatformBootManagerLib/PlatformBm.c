@@ -605,6 +605,22 @@ PlatformBootManagerAfterConsole (
   // Ouvrir directement le Menu Graphique UEFI au demarrage
   {
     EFI_BOOT_MANAGER_LOAD_OPTION BootManagerMenu;
+    // Forcer gST->ConIn et ConsoleInHandle sur notre clavier GPA1 juste avant UiApp
+    {
+      EFI_HANDLE *Handles = NULL;
+      UINTN HandleCount = 0;
+      UINTN Idx;
+      if (!EFI_ERROR (gBS->LocateHandleBuffer (ByProtocol, &gEFIDroidKeypadDeviceProtocolGuid, NULL, &HandleCount, &Handles)) && HandleCount > 0) {
+        EFI_SIMPLE_TEXT_INPUT_PROTOCOL *KeypadIn = NULL;
+        if (!EFI_ERROR (gBS->HandleProtocol (Handles[0], &gEfiSimpleTextInProtocolGuid, (VOID **)&KeypadIn))) {
+          gST->ConsoleInHandle = Handles[0];
+          gST->ConIn           = KeypadIn;
+          gBS->Hdr.CRC32       = 0;
+          gBS->CalculateCrc32 (gST, gST->Hdr.HeaderSize, &gST->Hdr.CRC32);
+        }
+        FreePool (Handles);
+      }
+    }
     if (!EFI_ERROR (EfiBootManagerGetBootManagerMenu (&BootManagerMenu))) {
       EfiBootManagerBoot (&BootManagerMenu);
       EfiBootManagerFreeLoadOption (&BootManagerMenu);
