@@ -33,3 +33,9 @@
   gEXYNOS7885PkgTokenSpaceGuid.PcdMipiFrameBufferHeight|1560
   gEXYNOS7885PkgTokenSpaceGuid.PcdMipiFrameBufferVisibleWidth|720
   gEXYNOS7885PkgTokenSpaceGuid.PcdMipiFrameBufferVisibleHeight|1560
+
+  # Console alignment for 720x1560 display (88x80 grid)
+  gEfiMdeModulePkgTokenSpaceGuid.PcdConOutColumn|88
+  gEfiMdeModulePkgTokenSpaceGuid.PcdConOutRow|80
+  gEfiMdeModulePkgTokenSpaceGuid.PcdVideoHorizontalResolution|720
+  gEfiMdeModulePkgTokenSpaceGuid.PcdVideoVerticalResolution|1560
