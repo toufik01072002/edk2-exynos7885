@@ -1,3 +1,4 @@
+#include <Configuration/BootDevices.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
@@ -26,19 +27,6 @@ EFI_CPU_ARCH_PROTOCOL *gCpu;
 STATIC UINT32 mLastGpa1 = ALL_KEYS_MASK;
 STATIC UINT32 mLastPrintedGpa1 = 0xFFFFFFFF;
 
-typedef struct {
-  VENDOR_DEVICE_PATH       VendorDevicePath;
-  EFI_DEVICE_PATH_PROTOCOL End;
-} KEYPAD_DEVICE_PATH;
-
-STATIC KEYPAD_DEVICE_PATH mKeypadDevicePath = {
-  {
-    { HARDWARE_DEVICE_PATH, HW_VENDOR_DP, { sizeof (VENDOR_DEVICE_PATH), 0 } },
-    { 0x8a91b012, 0x45c1, 0x49d2, { 0x91, 0x10, 0xab, 0xcd, 0x12, 0x34, 0x56, 0x78 } }
-  },
-  { END_DEVICE_PATH_TYPE, END_ENTIRE_DEVICE_PATH_SUBTYPE, { sizeof (EFI_DEVICE_PATH_PROTOCOL), 0 } }
-};
-
 STATIC
 BOOLEAN
 PollHardwareKey (
@@ -50,7 +38,7 @@ PollHardwareKey (
   UINT32 Fall1   = (mLastGpa1 & ~CurGpa1);
 
   if ((RawGpa1 != mLastPrintedGpa1) && (gST->ConOut != NULL)) {
-    CHAR16 Buf[24];
+    CHAR16 Buf;
     UnicodeSPrint (Buf, sizeof (Buf), L"[GPA1=0x%02x]", RawGpa1 & 0xFF);
     gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
     gST->ConOut->OutputString (gST->ConOut, Buf);
@@ -132,7 +120,7 @@ KeypadWaitForKey (
   UINT32 CurGpa1 = RawGpa1 & ALL_KEYS_MASK;
 
   if ((RawGpa1 != mLastPrintedGpa1) && (gST->ConOut != NULL)) {
-    CHAR16 Buf[24];
+    CHAR16 Buf;
     UnicodeSPrint (Buf, sizeof (Buf), L"[GPA1=0x%02x]", RawGpa1 & 0xFF);
     gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
     gST->ConOut->OutputString (gST->ConOut, Buf);
@@ -257,7 +245,7 @@ EXYNOS7885PkgEntryPoint (
   Status = gBS->InstallMultipleProtocolInterfaces (
                   &KeypadHandle,
                   &gEfiDevicePathProtocolGuid,
-                  &mKeypadDevicePath,
+                  &KeyPadDxeDevicePath,
                   &gEFIDroidKeypadDeviceProtocolGuid,
                   &mKeypadTextIn,
                   &gEfiSimpleTextInProtocolGuid,
