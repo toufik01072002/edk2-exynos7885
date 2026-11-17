@@ -481,6 +481,20 @@ PlatformRegisterSetupKey(
   > Authentication action: 1. connect Auth devices;
   >                        2. Identify auto logon user.
 **/
+
+typedef struct {
+  VENDOR_DEVICE_PATH       VendorDevicePath;
+  EFI_DEVICE_PATH_PROTOCOL End;
+} EXYNOS_KEYPAD_DEVICE_PATH;
+
+STATIC EXYNOS_KEYPAD_DEVICE_PATH mExynosKeypad = {
+  {
+    { HARDWARE_DEVICE_PATH, HW_VENDOR_DP, { sizeof (VENDOR_DEVICE_PATH), 0 } },
+    { 0x8a91b012, 0x45c1, 0x49d2, { 0x91, 0x10, 0xab, 0xcd, 0x12, 0x34, 0x56, 0x78 } }
+  },
+  { END_DEVICE_PATH_TYPE, END_ENTIRE_DEVICE_PATH_SUBTYPE, { sizeof (EFI_DEVICE_PATH_PROTOCOL), 0 } }
+};
+
 VOID
 EFIAPI
 PlatformBootManagerBeforeConsole (
@@ -529,11 +543,7 @@ PlatformBootManagerBeforeConsole (
   CopyGuid (&mSerialConsole.TermType.Guid, &gEfiTtyTermGuid);
 
   EfiBootManagerUpdateConsoleVariable (ConIn,
-    (EFI_DEVICE_PATH_PROTOCOL *)&mSerialConsole, NULL);
-  EfiBootManagerUpdateConsoleVariable (ConOut,
-    (EFI_DEVICE_PATH_PROTOCOL *)&mSerialConsole, NULL);
-  EfiBootManagerUpdateConsoleVariable (ErrOut,
-    (EFI_DEVICE_PATH_PROTOCOL *)&mSerialConsole, NULL);
+    (EFI_DEVICE_PATH_PROTOCOL *)&mExynosKeypad, NULL);
 
   //
   // Signal EndOfDxe PI Event
@@ -591,6 +601,15 @@ PlatformBootManagerAfterConsole (
   EfiBootManagerRefreshAllBootOption ();
 
   PlatformRegisterOptionsAndKeys ();
+
+  // Ouvrir directement le Menu Graphique UEFI au demarrage
+  {
+    EFI_BOOT_MANAGER_LOAD_OPTION BootManagerMenu;
+    if (!EFI_ERROR (EfiBootManagerGetBootManagerMenu (&BootManagerMenu))) {
+      EfiBootManagerBoot (&BootManagerMenu);
+      EfiBootManagerFreeLoadOption (&BootManagerMenu);
+    }
+  }
 }
 
 /**
