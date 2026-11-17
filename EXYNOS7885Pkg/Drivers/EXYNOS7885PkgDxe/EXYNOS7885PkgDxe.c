@@ -41,11 +41,10 @@ PollHardwareKey (
   UINT32 CurGpa1 = RawGpa1 & ALL_KEYS_MASK;
   UINT32 Fall1   = (mLastGpa1 & ~CurGpa1);
 
-  if ((RawGpa1 != mLastPrintedGpa1) && (gST->ConOut != NULL)) {
-    CHAR16 Buf[32];
-    UnicodeSPrint (Buf, sizeof (Buf), L"[GPA1=0x%02x]", RawGpa1 & 0xFF);
-    gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
-    gST->ConOut->OutputString (gST->ConOut, Buf);
+  if (RawGpa1 != mLastPrintedGpa1) {
+    CHAR8 HexMsg[32];
+    AsciiSPrint (HexMsg, sizeof (HexMsg), "GPA1=0x%02x", RawGpa1 & 0xFF);
+    FbLog (HexMsg);
     mLastPrintedGpa1 = RawGpa1;
   }
 
@@ -121,20 +120,8 @@ KeypadWaitForKey (
   IN VOID      *Context
   )
 {
-  UINT32 RawGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
-  UINT32 CurGpa1 = RawGpa1 & ALL_KEYS_MASK;
-
-  if ((RawGpa1 != mLastPrintedGpa1) && (gST->ConOut != NULL)) {
-    CHAR16 Buf[32];
-    UnicodeSPrint (Buf, sizeof (Buf), L"[GPA1=0x%02x]", RawGpa1 & 0xFF);
-    gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
-    gST->ConOut->OutputString (gST->ConOut, Buf);
-    mLastPrintedGpa1 = RawGpa1;
-  }
-
-  if ((mLastGpa1 & ~CurGpa1) != 0) {
-    gBS->SignalEvent (Event);
-  }
+  // Toujours reveiller UiApp pour qu'il appelle ReadKeyStrokeEx en polling continu
+  gBS->SignalEvent (Event);
 }
 
 STATIC
