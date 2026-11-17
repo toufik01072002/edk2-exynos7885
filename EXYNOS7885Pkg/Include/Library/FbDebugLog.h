@@ -2,7 +2,7 @@
 #define _FB_DEBUG_LOG_H_
 
 #include <Uefi.h>
-#include <Library/IoLib.h>
+
 
 #define FB_ADDR   0xEC000000ULL
 #define FB_STRIDE 720
@@ -88,7 +88,7 @@ STATIC VOID FbDrawChar(UINT32 X, UINT32 Y, CHAR8 C, UINT32 Color) {
       for (UINT32 Sy = 0; Sy < 2; Sy++) {
         for (UINT32 Sx = 0; Sx < 2; Sx++) {
           UINT32 Off = ((Y + Row * 2 + Sy) * FB_STRIDE + (X + Col * 2 + Sx)) * 4;
-          MmioWrite32 (FB_ADDR + Off, PxColor);
+          *(volatile UINT32 *)(UINTN)(FB_ADDR + Off) = PxColor;
         }
       }
     }
