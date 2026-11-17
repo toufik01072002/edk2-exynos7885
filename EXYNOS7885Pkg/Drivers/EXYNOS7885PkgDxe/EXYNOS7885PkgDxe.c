@@ -1,3 +1,4 @@
+#include <Library/FbDebugLog.h>
 #include <Configuration/BootDevices.h>
 #include <Guid/EventGroup.h>
 #include <Library/BaseLib.h>
@@ -91,6 +92,7 @@ KeypadReset (
   )
 {
   mLastGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & ALL_KEYS_MASK;
+  FbLog("[1] DXE: GPA1 INIT OK");
   return EFI_SUCCESS;
 }
 
@@ -225,6 +227,7 @@ ForceBindConInCallback (
   IN VOID      *Context
   )
 {
+  FbLog("[2] ENDOFDXE: BIND CONIN");
   if (mKeypadHandle != NULL) {
     gST->ConsoleInHandle = mKeypadHandle;
     gST->ConIn           = &mKeypadTextIn;
@@ -262,6 +265,7 @@ EXYNOS7885PkgEntryPoint (
   MmioWrite32 (EXYNOS_GPA1_PUD_ADDR, Gpa1Pud);
 
   mLastGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & ALL_KEYS_MASK;
+  FbLog("[1] DXE: GPA1 INIT OK");
 
   gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextIn.WaitForKey);
   gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextInEx.WaitForKeyEx);
