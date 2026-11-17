@@ -9,12 +9,12 @@
 #include <Library/UefiLib.h>
 #include <Protocol/Cpu.h>
 #include <Protocol/SimpleTextIn.h>
+#include <Protocol/SimpleTextInEx.h>
 #include "EXYNOS7885PkgDxe.h"
 
 #define EXYNOS_GPA0_CON_ADDR  0x11CB0000
 #define EXYNOS_GPA0_DAT_ADDR  0x11CB0004
 
-// Broches exactes SM-A205W (DTB gpio_keys)
 #define KEY_VOL_UP_BIT        (1 << 5)
 #define KEY_VOL_DOWN_BIT      (1 << 6)
 #define KEY_POWER_BIT         (1 << 7)
@@ -102,10 +102,88 @@ KeypadWaitForKey (
   }
 }
 
+STATIC
+EFI_STATUS
+EFIAPI
+KeypadResetEx (
+  IN EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *This,
+  IN BOOLEAN                            ExtendedVerification
+  )
+{
+  return KeypadReset (NULL, ExtendedVerification);
+}
+
+STATIC
+EFI_STATUS
+EFIAPI
+KeypadReadKeyStrokeEx (
+  IN  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *This,
+  OUT EFI_KEY_DATA                      *KeyData
+  )
+{
+  EFI_STATUS Status;
+
+  if (KeyData == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  ZeroMem (KeyData, sizeof (EFI_KEY_DATA));
+  Status = KeypadReadKeyStroke (NULL, &KeyData->Key);
+  if (!EFI_ERROR (Status)) {
+    KeyData->KeyState.KeyShiftState  = EFI_SHIFT_STATE_VALID;
+    KeyData->KeyState.KeyToggleState = EFI_TOGGLE_STATE_VALID;
+  }
+  return Status;
+}
+
+STATIC
+EFI_STATUS
+EFIAPI
+KeypadSetState (
+  IN EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *This,
+  IN EFI_KEY_TOGGLE_STATE              *KeyToggleState
+  )
+{
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+EFIAPI
+KeypadRegisterKeyNotify (
+  IN  EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *This,
+  IN  EFI_KEY_DATA                      *KeyData,
+  IN  EFI_KEY_NOTIFY_FUNCTION            KeyNotificationFunction,
+  OUT VOID                             **NotifyHandle
+  )
+{
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+EFIAPI
+KeypadUnregisterKeyNotify (
+  IN EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL *This,
+  IN VOID                              *NotificationHandle
+  )
+{
+  return EFI_SUCCESS;
+}
+
 STATIC EFI_SIMPLE_TEXT_INPUT_PROTOCOL mKeypadTextIn = {
   KeypadReset,
   KeypadReadKeyStroke,
   NULL
+};
+
+STATIC EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL mKeypadTextInEx = {
+  KeypadResetEx,
+  KeypadReadKeyStrokeEx,
+  NULL,
+  KeypadSetState,
+  KeypadRegisterKeyNotify,
+  KeypadUnregisterKeyNotify
 };
 
 STATIC
@@ -131,8 +209,13 @@ KeypadPollTimerCallback (
     EnqueueKey (SCAN_NULL, CHAR_CARRIAGE_RETURN);
   }
 
-  if ((mQueueHead != mQueueTail) && (mKeypadTextIn.WaitForKey != NULL)) {
-    gBS->SignalEvent (mKeypadTextIn.WaitForKey);
+  if (mQueueHead != mQueueTail) {
+    if (mKeypadTextIn.WaitForKey != NULL) {
+      gBS->SignalEvent (mKeypadTextIn.WaitForKey);
+    }
+    if (mKeypadTextInEx.WaitForKeyEx != NULL) {
+      gBS->SignalEvent (mKeypadTextInEx.WaitForKeyEx);
+    }
   }
 }
 
@@ -150,43 +233,38 @@ EXYNOS7885PkgEntryPoint (
   Status = gBS->LocateProtocol (&gEfiCpuArchProtocolGuid, NULL, (VOID **)&gCpu);
   ASSERT_EFI_ERROR (Status);
 
-  // Passer GPA0_5 (bits 23:20), GPA0_6 (bits 27:24), GPA0_7 (bits 31:28) en Input (0x0)
   Gpa0Con = MmioRead32 (EXYNOS_GPA0_CON_ADDR);
   Gpa0Con &= ~0xFFF00000;
   MmioWrite32 (EXYNOS_GPA0_CON_ADDR, Gpa0Con);
 
   mLastGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR) & ALL_KEYS_MASK;
 
-  Status = gBS->CreateEvent (
-                  EVT_NOTIFY_WAIT,
-                  TPL_NOTIFY,
-                  KeypadWaitForKey,
-                  NULL,
-                  &mKeypadTextIn.WaitForKey
+  gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextIn.WaitForKey);
+  gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextInEx.WaitForKeyEx);
+
+  Status = gBS->InstallMultipleProtocolInterfaces (
+                  &KeypadHandle,
+                  &gEfiDevicePathProtocolGuid,
+                  &mKeypadDevicePath,
+                  &gEfiSimpleTextInProtocolGuid,
+                  &mKeypadTextIn,
+                  &gEfiSimpleTextInputExProtocolGuid,
+                  &mKeypadTextInEx,
+                  NULL
                   );
   if (!EFI_ERROR (Status)) {
-    Status = gBS->InstallMultipleProtocolInterfaces (
-                    &KeypadHandle,
-                    &gEfiDevicePathProtocolGuid,
-                    &mKeypadDevicePath,
-                    &gEfiSimpleTextInProtocolGuid,
-                    &mKeypadTextIn,
-                    NULL
+    EfiBootManagerUpdateConsoleVariable (ConIn, (EFI_DEVICE_PATH_PROTOCOL *)&mKeypadDevicePath, NULL);
+    gBS->ConnectController (KeypadHandle, NULL, NULL, TRUE);
+
+    Status = gBS->CreateEvent (
+                    EVT_TIMER | EVT_NOTIFY_SIGNAL,
+                    TPL_CALLBACK,
+                    KeypadPollTimerCallback,
+                    NULL,
+                    &mPollTimerEvent
                     );
     if (!EFI_ERROR (Status)) {
-      EfiBootManagerUpdateConsoleVariable (ConIn, (EFI_DEVICE_PATH_PROTOCOL *)&mKeypadDevicePath, NULL);
-      gBS->ConnectController (KeypadHandle, NULL, NULL, TRUE);
-
-      Status = gBS->CreateEvent (
-                      EVT_TIMER | EVT_NOTIFY_SIGNAL,
-                      TPL_CALLBACK,
-                      KeypadPollTimerCallback,
-                      NULL,
-                      &mPollTimerEvent
-                      );
-      if (!EFI_ERROR (Status)) {
-        gBS->SetTimer (mPollTimerEvent, TimerPeriodic, EFI_TIMER_PERIOD_MILLISECONDS (50));
-      }
+      gBS->SetTimer (mPollTimerEvent, TimerPeriodic, EFI_TIMER_PERIOD_MILLISECONDS (50));
     }
   }
 
