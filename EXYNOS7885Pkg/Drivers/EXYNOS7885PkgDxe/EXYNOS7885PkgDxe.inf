@@ -38,3 +38,6 @@
 
 [Depex]
   gEfiCpuArchProtocolGuid
+
+[Guids]
+  gEfiEndOfDxeEventGroupGuid

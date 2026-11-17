@@ -1,4 +1,5 @@
 #include <Configuration/BootDevices.h>
+#include <Guid/EventGroup.h>
 #include <Library/BaseLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
@@ -24,8 +25,10 @@
 
 EFI_CPU_ARCH_PROTOCOL *gCpu;
 
-STATIC UINT32 mLastGpa1 = ALL_KEYS_MASK;
-STATIC UINT32 mLastPrintedGpa1 = 0xFFFFFFFF;
+STATIC EFI_HANDLE mKeypadHandle = NULL;
+STATIC EFI_EVENT  mConInFixEvent = NULL;
+STATIC UINT32     mLastGpa1 = ALL_KEYS_MASK;
+STATIC UINT32     mLastPrintedGpa1 = 0xFFFFFFFF;
 
 STATIC
 BOOLEAN
@@ -214,6 +217,28 @@ STATIC EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL mKeypadTextInEx = {
   KeypadUnregisterKeyNotify
 };
 
+STATIC
+VOID
+EFIAPI
+ForceBindConInCallback (
+  IN EFI_EVENT Event,
+  IN VOID      *Context
+  )
+{
+  if (mKeypadHandle != NULL) {
+    gST->ConsoleInHandle = mKeypadHandle;
+    gST->ConIn           = &mKeypadTextIn;
+    gBS->Hdr.CRC32       = 0;
+    gBS->CalculateCrc32 (gST, gST->Hdr.HeaderSize, &gST->Hdr.CRC32);
+  }
+  if (gST->ConOut != NULL) {
+    CHAR16 Msg[32];
+    UnicodeSPrint (Msg, sizeof (Msg), L"[ConIn=OK GPA1=0x%02x]", MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & 0xFF);
+    gST->ConOut->SetCursorPosition (gST->ConOut, 45, 0);
+    gST->ConOut->OutputString (gST->ConOut, Msg);
+  }
+}
+
 EFI_STATUS
 EFIAPI
 EXYNOS7885PkgEntryPoint (
@@ -222,7 +247,6 @@ EXYNOS7885PkgEntryPoint (
   )
 {
   EFI_STATUS Status;
-  EFI_HANDLE KeypadHandle = NULL;
   UINT32     Gpa1Con;
   UINT32     Gpa1Pud;
 
@@ -243,7 +267,7 @@ EXYNOS7885PkgEntryPoint (
   gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextInEx.WaitForKeyEx);
 
   Status = gBS->InstallMultipleProtocolInterfaces (
-                  &KeypadHandle,
+                  &mKeypadHandle,
                   &gEfiDevicePathProtocolGuid,
                   &KeyPadDxeDevicePath,
                   &gEFIDroidKeypadDeviceProtocolGuid,
@@ -255,6 +279,15 @@ EXYNOS7885PkgEntryPoint (
                   NULL
                   );
   ASSERT_EFI_ERROR (Status);
+
+  gBS->CreateEventEx (
+         EVT_NOTIFY_SIGNAL,
+         TPL_CALLBACK,
+         ForceBindConInCallback,
+         NULL,
+         &gEfiEndOfDxeEventGroupGuid,
+         &mConInFixEvent
+         );
 
   return EFI_SUCCESS;
 }
