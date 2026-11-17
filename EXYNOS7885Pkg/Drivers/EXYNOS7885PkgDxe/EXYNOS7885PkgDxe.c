@@ -26,9 +26,10 @@
 
 EFI_CPU_ARCH_PROTOCOL *gCpu;
 
+STATIC EFI_HANDLE    mKeypadHandle = NULL;
 STATIC UINT32        mLastGpa0 = ALL_KEYS_MASK;
-STATIC UINT32        mLastRawGpa0 = 0xFFFFFFFF;
 STATIC EFI_EVENT     mPollTimerEvent = NULL;
+STATIC EFI_EVENT     mEndOfDxeEvent = NULL;
 STATIC EFI_INPUT_KEY mKeyQueue[KEY_QUEUE_SIZE];
 STATIC UINTN         mQueueHead = 0;
 STATIC UINTN         mQueueTail = 0;
@@ -201,13 +202,11 @@ KeypadPollTimerCallback (
   UINT32 CurGpa0 = RawGpa0 & ALL_KEYS_MASK;
   UINT32 Fall0   = (mLastGpa0 & ~CurGpa0);
 
-  // Afficher la valeur brute GPA0DAT si elle change (diagnostic visuel direct)
-  if ((RawGpa0 != mLastRawGpa0) && (gST->ConOut != NULL)) {
-    CHAR16 Buf[48];
+  if (gST->ConOut != NULL) {
+    CHAR16 Buf[24];
     UnicodeSPrint (Buf, sizeof (Buf), L"[GPA0=0x%02x]", RawGpa0 & 0xFF);
     gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
     gST->ConOut->OutputString (gST->ConOut, Buf);
-    mLastRawGpa0 = RawGpa0;
   }
 
   mLastGpa0 = CurGpa0;
@@ -232,6 +231,20 @@ KeypadPollTimerCallback (
   }
 }
 
+STATIC
+VOID
+EFIAPI
+OnEndOfDxeConnectKeypad (
+  IN EFI_EVENT Event,
+  IN VOID      *Context
+  )
+{
+  if (mKeypadHandle != NULL) {
+    EfiBootManagerUpdateConsoleVariable (ConIn, (EFI_DEVICE_PATH_PROTOCOL *)&mKeypadDevicePath, NULL);
+    gBS->ConnectController (mKeypadHandle, NULL, NULL, TRUE);
+  }
+}
+
 EFI_STATUS
 EFIAPI
 EXYNOS7885PkgEntryPoint (
@@ -240,14 +253,12 @@ EXYNOS7885PkgEntryPoint (
   )
 {
   EFI_STATUS Status;
-  EFI_HANDLE KeypadHandle = NULL;
   UINT32     Gpa0Con;
   UINT32     Gpa0Pud;
 
   Status = gBS->LocateProtocol (&gEfiCpuArchProtocolGuid, NULL, (VOID **)&gCpu);
   ASSERT_EFI_ERROR (Status);
 
-  // Passer GPA0_5, GPA0_6, GPA0_7 en Input (0x0) et activer Pull-Up (0x3)
   Gpa0Con = MmioRead32 (EXYNOS_GPA0_CON_ADDR);
   Gpa0Con &= ~0xFFF00000;
   MmioWrite32 (EXYNOS_GPA0_CON_ADDR, Gpa0Con);
@@ -262,7 +273,7 @@ EXYNOS7885PkgEntryPoint (
   gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextInEx.WaitForKeyEx);
 
   Status = gBS->InstallMultipleProtocolInterfaces (
-                  &KeypadHandle,
+                  &mKeypadHandle,
                   &gEfiDevicePathProtocolGuid,
                   &mKeypadDevicePath,
                   &gEfiSimpleTextInProtocolGuid,
@@ -272,8 +283,14 @@ EXYNOS7885PkgEntryPoint (
                   NULL
                   );
   if (!EFI_ERROR (Status)) {
-    EfiBootManagerUpdateConsoleVariable (ConIn, (EFI_DEVICE_PATH_PROTOCOL *)&mKeypadDevicePath, NULL);
-    gBS->ConnectController (KeypadHandle, NULL, NULL, TRUE);
+    gBS->CreateEventEx (
+           EVT_NOTIFY_SIGNAL,
+           TPL_CALLBACK,
+           OnEndOfDxeConnectKeypad,
+           NULL,
+           &gEfiEndOfDxeEventGroupGuid,
+           &mEndOfDxeEvent
+           );
 
     Status = gBS->CreateEvent (
                     EVT_TIMER | EVT_NOTIFY_SIGNAL,
@@ -283,7 +300,7 @@ EXYNOS7885PkgEntryPoint (
                     &mPollTimerEvent
                     );
     if (!EFI_ERROR (Status)) {
-      gBS->SetTimer (mPollTimerEvent, TimerPeriodic, EFI_TIMER_PERIOD_MILLISECONDS (50));
+      gBS->SetTimer (mPollTimerEvent, TimerPeriodic, EFI_TIMER_PERIOD_MILLISECONDS (100));
     }
   }
 
