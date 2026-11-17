@@ -5,6 +5,7 @@
 #include <Library/DevicePathLib.h>
 #include <Library/IoLib.h>
 #include <Library/PrintLib.h>
+#include <Library/TimerLib.h>
 #include <Library/UefiBootManagerLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
@@ -22,17 +23,12 @@
 #define KEY_POWER_BIT         (1 << 7)
 #define ALL_KEYS_MASK         (KEY_VOL_UP_BIT | KEY_VOL_DOWN_BIT | KEY_POWER_BIT)
 
-#define KEY_QUEUE_SIZE        16
-
 EFI_CPU_ARCH_PROTOCOL *gCpu;
 
 STATIC EFI_HANDLE    mKeypadHandle = NULL;
 STATIC UINT32        mLastGpa0 = ALL_KEYS_MASK;
-STATIC EFI_EVENT     mPollTimerEvent = NULL;
+STATIC UINT32        mLastPrintedGpa0 = 0xFFFFFFFF;
 STATIC EFI_EVENT     mEndOfDxeEvent = NULL;
-STATIC EFI_INPUT_KEY mKeyQueue[KEY_QUEUE_SIZE];
-STATIC UINTN         mQueueHead = 0;
-STATIC UINTN         mQueueTail = 0;
 
 typedef struct {
   VENDOR_DEVICE_PATH       VendorDevicePath;
@@ -48,18 +44,56 @@ STATIC KEYPAD_DEVICE_PATH mKeypadDevicePath = {
 };
 
 STATIC
-VOID
-EnqueueKey (
-  IN UINT16 ScanCode,
-  IN CHAR16 UnicodeChar
+BOOLEAN
+PollHardwareKey (
+  OUT EFI_INPUT_KEY *Key OPTIONAL
   )
 {
-  UINTN NextTail = (mQueueTail + 1) % KEY_QUEUE_SIZE;
-  if (NextTail != mQueueHead) {
-    mKeyQueue[mQueueTail].ScanCode    = ScanCode;
-    mKeyQueue[mQueueTail].UnicodeChar = UnicodeChar;
-    mQueueTail = NextTail;
+  UINT32 RawGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
+  UINT32 CurGpa0 = RawGpa0 & ALL_KEYS_MASK;
+  UINT32 Fall0   = (mLastGpa0 & ~CurGpa0);
+
+  if ((RawGpa0 != mLastPrintedGpa0) && (gST->ConOut != NULL)) {
+    CHAR16 Buf;
+    UnicodeSPrint (Buf, sizeof (Buf), L"[GPA0=0x%02x]", RawGpa0 & 0xFF);
+    gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
+    gST->ConOut->OutputString (gST->ConOut, Buf);
+    mLastPrintedGpa0 = RawGpa0;
   }
+
+  if (Fall0 != 0) {
+    // Anti-rebond materiel de 30 ms sans interruption
+    MicroSecondDelay (30000);
+    RawGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
+    CurGpa0 = RawGpa0 & ALL_KEYS_MASK;
+    Fall0   = (mLastGpa0 & ~CurGpa0);
+  }
+
+  mLastGpa0 = CurGpa0;
+
+  if (Fall0 & KEY_VOL_UP_BIT) {
+    if (Key != NULL) {
+      Key->ScanCode    = SCAN_UP;
+      Key->UnicodeChar = 0;
+    }
+    return TRUE;
+  }
+  if (Fall0 & KEY_VOL_DOWN_BIT) {
+    if (Key != NULL) {
+      Key->ScanCode    = SCAN_DOWN;
+      Key->UnicodeChar = 0;
+    }
+    return TRUE;
+  }
+  if (Fall0 & KEY_POWER_BIT) {
+    if (Key != NULL) {
+      Key->ScanCode    = SCAN_NULL;
+      Key->UnicodeChar = CHAR_CARRIAGE_RETURN;
+    }
+    return TRUE;
+  }
+
+  return FALSE;
 }
 
 STATIC
@@ -70,9 +104,7 @@ KeypadReset (
   IN BOOLEAN                         ExtendedVerification
   )
 {
-  mQueueHead = 0;
-  mQueueTail = 0;
-  mLastGpa0  = MmioRead32 (EXYNOS_GPA0_DAT_ADDR) & ALL_KEYS_MASK;
+  mLastGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR) & ALL_KEYS_MASK;
   return EFI_SUCCESS;
 }
 
@@ -84,13 +116,13 @@ KeypadReadKeyStroke (
   OUT EFI_INPUT_KEY                  *Key
   )
 {
-  if (mQueueHead == mQueueTail) {
-    return EFI_NOT_READY;
+  if (Key == NULL) {
+    return EFI_INVALID_PARAMETER;
   }
-
-  *Key = mKeyQueue[mQueueHead];
-  mQueueHead = (mQueueHead + 1) % KEY_QUEUE_SIZE;
-  return EFI_SUCCESS;
+  if (PollHardwareKey (Key)) {
+    return EFI_SUCCESS;
+  }
+  return EFI_NOT_READY;
 }
 
 STATIC
@@ -101,7 +133,19 @@ KeypadWaitForKey (
   IN VOID      *Context
   )
 {
-  if (mQueueHead != mQueueTail) {
+  // Verification directe sans consommer le front descendant
+  UINT32 RawGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
+  UINT32 CurGpa0 = RawGpa0 & ALL_KEYS_MASK;
+
+  if ((RawGpa0 != mLastPrintedGpa0) && (gST->ConOut != NULL)) {
+    CHAR16 Buf;
+    UnicodeSPrint (Buf, sizeof (Buf), L"[GPA0=0x%02x]", RawGpa0 & 0xFF);
+    gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
+    gST->ConOut->OutputString (gST->ConOut, Buf);
+    mLastPrintedGpa0 = RawGpa0;
+  }
+
+  if ((mLastGpa0 & ~CurGpa0) != 0) {
     gBS->SignalEvent (Event);
   }
 }
@@ -193,47 +237,6 @@ STATIC EFI_SIMPLE_TEXT_INPUT_EX_PROTOCOL mKeypadTextInEx = {
 STATIC
 VOID
 EFIAPI
-KeypadPollTimerCallback (
-  IN EFI_EVENT Event,
-  IN VOID      *Context
-  )
-{
-  UINT32 RawGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
-  UINT32 CurGpa0 = RawGpa0 & ALL_KEYS_MASK;
-  UINT32 Fall0   = (mLastGpa0 & ~CurGpa0);
-
-  if (gST->ConOut != NULL) {
-    CHAR16 Buf[24];
-    UnicodeSPrint (Buf, sizeof (Buf), L"[GPA0=0x%02x]", RawGpa0 & 0xFF);
-    gST->ConOut->SetCursorPosition (gST->ConOut, 55, 0);
-    gST->ConOut->OutputString (gST->ConOut, Buf);
-  }
-
-  mLastGpa0 = CurGpa0;
-
-  if (Fall0 & KEY_VOL_UP_BIT) {
-    EnqueueKey (SCAN_UP, 0);
-  }
-  if (Fall0 & KEY_VOL_DOWN_BIT) {
-    EnqueueKey (SCAN_DOWN, 0);
-  }
-  if (Fall0 & KEY_POWER_BIT) {
-    EnqueueKey (SCAN_NULL, CHAR_CARRIAGE_RETURN);
-  }
-
-  if (mQueueHead != mQueueTail) {
-    if (mKeypadTextIn.WaitForKey != NULL) {
-      gBS->SignalEvent (mKeypadTextIn.WaitForKey);
-    }
-    if (mKeypadTextInEx.WaitForKeyEx != NULL) {
-      gBS->SignalEvent (mKeypadTextInEx.WaitForKeyEx);
-    }
-  }
-}
-
-STATIC
-VOID
-EFIAPI
 OnEndOfDxeConnectKeypad (
   IN EFI_EVENT Event,
   IN VOID      *Context
@@ -291,17 +294,6 @@ EXYNOS7885PkgEntryPoint (
            &gEfiEndOfDxeEventGroupGuid,
            &mEndOfDxeEvent
            );
-
-    Status = gBS->CreateEvent (
-                    EVT_TIMER | EVT_NOTIFY_SIGNAL,
-                    TPL_CALLBACK,
-                    KeypadPollTimerCallback,
-                    NULL,
-                    &mPollTimerEvent
-                    );
-    if (!EFI_ERROR (Status)) {
-      gBS->SetTimer (mPollTimerEvent, TimerPeriodic, EFI_TIMER_PERIOD_MILLISECONDS (100));
-    }
   }
 
   return EFI_SUCCESS;
