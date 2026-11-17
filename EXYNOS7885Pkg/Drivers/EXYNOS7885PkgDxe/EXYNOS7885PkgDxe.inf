@@ -11,24 +11,30 @@
 
 [Packages]
   EmbeddedPkg/EmbeddedPkg.dec
+  EXYNOS7885Pkg/EXYNOS7885Pkg.dec
   MdeModulePkg/MdeModulePkg.dec
   MdePkg/MdePkg.dec
 
 [LibraryClasses]
   BaseMemoryLib
   CacheMaintenanceLib
+  DevicePathLib
   DxeServicesTableLib
   IoLib
   PcdLib
   PrintLib
   TimerLib
+  UefiBootManagerLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   UefiLib
 
 [Protocols]
   gEfiCpuArchProtocolGuid
-  gPlatformVirtualKeyboardProtocolGuid
+  gEfiDevicePathProtocolGuid
+  gEfiSimpleTextInProtocolGuid
+  gEfiSimpleTextInputExProtocolGuid
+  gEFIDroidKeypadDeviceProtocolGuid
 
 [Depex]
   gEfiCpuArchProtocolGuid
