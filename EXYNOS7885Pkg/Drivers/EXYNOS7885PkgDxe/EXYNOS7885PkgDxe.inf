@@ -15,6 +15,7 @@
   MdePkg/MdePkg.dec
 
 [LibraryClasses]
+  UefiBootManagerLib
   BaseMemoryLib
   CacheMaintenanceLib
   DxeServicesTableLib

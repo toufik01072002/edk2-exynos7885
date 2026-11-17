@@ -4,27 +4,27 @@
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/IoLib.h>
+#include <Library/UefiBootManagerLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 #include <Protocol/Cpu.h>
 #include <Protocol/SimpleTextIn.h>
 #include "EXYNOS7885PkgDxe.h"
 
+#define EXYNOS_GPA0_CON_ADDR  0x11CB0000
 #define EXYNOS_GPA0_DAT_ADDR  0x11CB0004
-#define EXYNOS_GPA1_DAT_ADDR  0x11CB0024
 
-// Masques boutons SM-A205W (actifs a l'etat bas / pull-up)
-#define GPA0_VOL_UP_MASK      ((1 << 3) | (1 << 5))
-#define GPA0_VOL_DOWN_MASK    ((1 << 4) | (1 << 6))
-#define GPA0_POWER_MASK       (1 << 7)
-#define GPA1_POWER_MASK       (1 << 0)
+// Broches exactes SM-A205W (DTB gpio_keys)
+#define KEY_VOL_UP_BIT        (1 << 5)
+#define KEY_VOL_DOWN_BIT      (1 << 6)
+#define KEY_POWER_BIT         (1 << 7)
+#define ALL_KEYS_MASK         (KEY_VOL_UP_BIT | KEY_VOL_DOWN_BIT | KEY_POWER_BIT)
 
 #define KEY_QUEUE_SIZE        16
 
 EFI_CPU_ARCH_PROTOCOL *gCpu;
 
-STATIC UINT32        mLastGpa0 = 0xFF;
-STATIC UINT32        mLastGpa1 = 0xFF;
+STATIC UINT32        mLastGpa0 = ALL_KEYS_MASK;
 STATIC EFI_EVENT     mPollTimerEvent = NULL;
 STATIC EFI_INPUT_KEY mKeyQueue[KEY_QUEUE_SIZE];
 STATIC UINTN         mQueueHead = 0;
@@ -68,8 +68,7 @@ KeypadReset (
 {
   mQueueHead = 0;
   mQueueTail = 0;
-  mLastGpa0  = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
-  mLastGpa1  = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
+  mLastGpa0  = MmioRead32 (EXYNOS_GPA0_DAT_ADDR) & ALL_KEYS_MASK;
   return EFI_SUCCESS;
 }
 
@@ -117,22 +116,18 @@ KeypadPollTimerCallback (
   IN VOID      *Context
   )
 {
-  UINT32 CurGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
-  UINT32 CurGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
-
-  UINT32 Fall0 = (mLastGpa0 & ~CurGpa0);
-  UINT32 Fall1 = (mLastGpa1 & ~CurGpa1);
+  UINT32 CurGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR) & ALL_KEYS_MASK;
+  UINT32 Fall0   = (mLastGpa0 & ~CurGpa0);
 
   mLastGpa0 = CurGpa0;
-  mLastGpa1 = CurGpa1;
 
-  if (Fall0 & GPA0_VOL_UP_MASK) {
+  if (Fall0 & KEY_VOL_UP_BIT) {
     EnqueueKey (SCAN_UP, 0);
   }
-  if (Fall0 & GPA0_VOL_DOWN_MASK) {
+  if (Fall0 & KEY_VOL_DOWN_BIT) {
     EnqueueKey (SCAN_DOWN, 0);
   }
-  if ((Fall0 & GPA0_POWER_MASK) || (Fall1 & GPA1_POWER_MASK)) {
+  if (Fall0 & KEY_POWER_BIT) {
     EnqueueKey (SCAN_NULL, CHAR_CARRIAGE_RETURN);
   }
 
@@ -150,12 +145,17 @@ EXYNOS7885PkgEntryPoint (
 {
   EFI_STATUS Status;
   EFI_HANDLE KeypadHandle = NULL;
+  UINT32     Gpa0Con;
 
   Status = gBS->LocateProtocol (&gEfiCpuArchProtocolGuid, NULL, (VOID **)&gCpu);
   ASSERT_EFI_ERROR (Status);
 
-  mLastGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR);
-  mLastGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
+  // Passer GPA0_5 (bits 23:20), GPA0_6 (bits 27:24), GPA0_7 (bits 31:28) en Input (0x0)
+  Gpa0Con = MmioRead32 (EXYNOS_GPA0_CON_ADDR);
+  Gpa0Con &= ~0xFFF00000;
+  MmioWrite32 (EXYNOS_GPA0_CON_ADDR, Gpa0Con);
+
+  mLastGpa0 = MmioRead32 (EXYNOS_GPA0_DAT_ADDR) & ALL_KEYS_MASK;
 
   Status = gBS->CreateEvent (
                   EVT_NOTIFY_WAIT,
@@ -174,6 +174,7 @@ EXYNOS7885PkgEntryPoint (
                     NULL
                     );
     if (!EFI_ERROR (Status)) {
+      EfiBootManagerUpdateConsoleVariable (ConIn, (EFI_DEVICE_PATH_PROTOCOL *)&mKeypadDevicePath, NULL);
       gBS->ConnectController (KeypadHandle, NULL, NULL, TRUE);
 
       Status = gBS->CreateEvent (
