@@ -15,27 +15,20 @@
   MdePkg/MdePkg.dec
 
 [LibraryClasses]
-  UefiBootManagerLib
   BaseMemoryLib
   CacheMaintenanceLib
   DxeServicesTableLib
   IoLib
   PcdLib
+  PrintLib
   TimerLib
   UefiBootServicesTableLib
   UefiDriverEntryPoint
   UefiLib
 
 [Protocols]
-  gEfiDevicePathProtocolGuid
-  gEfiDevicePathFromTextProtocolGuid
-  gEfiLoadedImageProtocolGuid
   gEfiCpuArchProtocolGuid
-  gEfiSimpleTextInProtocolGuid
-  gEfiSimpleTextInputExProtocolGuid
-
-[Guids]
-  gEfiEndOfDxeEventGroupGuid
+  gPlatformVirtualKeyboardProtocolGuid
 
 [Depex]
   gEfiCpuArchProtocolGuid
