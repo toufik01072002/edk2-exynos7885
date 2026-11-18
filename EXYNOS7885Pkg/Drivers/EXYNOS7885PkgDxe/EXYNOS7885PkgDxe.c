@@ -13,26 +13,22 @@
 #include <Protocol/SimpleTextInEx.h>
 #include "EXYNOS7885PkgDxe.h"
 
-#define EXYNOS_GPA1_CON_ADDR   0x11CB0060
-#define EXYNOS_GPA1_DAT_ADDR   0x11CB0064
-#define EXYNOS_GPA1_PUD_ADDR   0x11CB0068
+#define EXYNOS_GPA1_CON_ADDR  0x11CB0060
+#define EXYNOS_GPA1_DAT_ADDR  0x11CB0064
+#define EXYNOS_GPA1_PUD_ADDR  0x11CB0068
 
-#define KEY_VOL_UP_BIT         (1 << 5)
-#define KEY_VOL_DOWN_BIT       (1 << 6)
-#define KEY_POWER_BIT          (1 << 7)
-
-// Nombre de lectures consecutives a 1 (relache) exigees pour rearmer une touche.
-// Filtre totalement les broches flottantes et les rebonds mecaniques.
-#define HIGH_STABLE_THRESHOLD  15000
+#define KEY_VOL_UP_BIT        (1 << 5)
+#define KEY_VOL_DOWN_BIT      (1 << 6)
+#define KEY_POWER_BIT         (1 << 7)
+#define ALL_KEYS_MASK         (KEY_VOL_UP_BIT | KEY_VOL_DOWN_BIT | KEY_POWER_BIT)
 
 EFI_CPU_ARCH_PROTOCOL *gCpu;
 
-STATIC EFI_HANDLE mKeypadHandle   = NULL;
-STATIC EFI_EVENT  mConInFixEvent  = NULL;
-
-STATIC UINT32     mVolUpHighCnt   = HIGH_STABLE_THRESHOLD;
-STATIC UINT32     mVolDownHighCnt = HIGH_STABLE_THRESHOLD;
-STATIC UINT32     mPowerHighCnt   = HIGH_STABLE_THRESHOLD;
+STATIC EFI_HANDLE    mKeypadHandle  = NULL;
+STATIC EFI_EVENT     mConInFixEvent = NULL;
+STATIC UINT32        mLastGpa1      = ALL_KEYS_MASK;
+STATIC EFI_INPUT_KEY mPendingKey    = { 0, 0 };
+STATIC BOOLEAN       mHasPendingKey = FALSE;
 
 STATIC
 BOOLEAN
@@ -40,56 +36,39 @@ PollHardwareKey (
   OUT EFI_INPUT_KEY *Key OPTIONAL
   )
 {
-  UINT32 Dat = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
+  UINT32 RawGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
+  UINT32 CurGpa1 = RawGpa1 & ALL_KEYS_MASK;
+  UINT32 Fall1   = (mLastGpa1 & ~CurGpa1);
 
-  // Mise a jour des compteurs d'etat haut (1 = relache)
-  if (Dat & KEY_VOL_UP_BIT) {
-    if (mVolUpHighCnt < HIGH_STABLE_THRESHOLD) {
-      mVolUpHighCnt++;
-    }
-  } else {
-    // Le bouton est appuye (0) : declenche UNIQUEMENT s'il a ete stablement relache avant
-    if (mVolUpHighCnt >= HIGH_STABLE_THRESHOLD) {
-      mVolUpHighCnt = 0;
-      if (Key != NULL) {
-        Key->ScanCode    = SCAN_UP;
-        Key->UnicodeChar = 0;
-      }
-      return TRUE;
-    }
-    mVolUpHighCnt = 0;
+  if (Fall1 != 0) {
+    MicroSecondDelay (30000);
+    RawGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
+    CurGpa1 = RawGpa1 & ALL_KEYS_MASK;
+    Fall1   = (mLastGpa1 & ~CurGpa1);
   }
 
-  if (Dat & KEY_VOL_DOWN_BIT) {
-    if (mVolDownHighCnt < HIGH_STABLE_THRESHOLD) {
-      mVolDownHighCnt++;
-    }
-  } else {
-    if (mVolDownHighCnt >= HIGH_STABLE_THRESHOLD) {
-      mVolDownHighCnt = 0;
-      if (Key != NULL) {
-        Key->ScanCode    = SCAN_DOWN;
-        Key->UnicodeChar = 0;
-      }
-      return TRUE;
-    }
-    mVolDownHighCnt = 0;
-  }
+  mLastGpa1 = CurGpa1;
 
-  if (Dat & KEY_POWER_BIT) {
-    if (mPowerHighCnt < HIGH_STABLE_THRESHOLD) {
-      mPowerHighCnt++;
+  if (Fall1 & KEY_VOL_UP_BIT) {
+    if (Key != NULL) {
+      Key->ScanCode    = SCAN_UP;
+      Key->UnicodeChar = 0;
     }
-  } else {
-    if (mPowerHighCnt >= HIGH_STABLE_THRESHOLD) {
-      mPowerHighCnt = 0;
-      if (Key != NULL) {
-        Key->ScanCode    = SCAN_NULL;
-        Key->UnicodeChar = CHAR_CARRIAGE_RETURN;
-      }
-      return TRUE;
+    return TRUE;
+  }
+  if (Fall1 & KEY_VOL_DOWN_BIT) {
+    if (Key != NULL) {
+      Key->ScanCode    = SCAN_DOWN;
+      Key->UnicodeChar = 0;
     }
-    mPowerHighCnt = 0;
+    return TRUE;
+  }
+  if (Fall1 & KEY_POWER_BIT) {
+    if (Key != NULL) {
+      Key->ScanCode    = SCAN_NULL;
+      Key->UnicodeChar = CHAR_CARRIAGE_RETURN;
+    }
+    return TRUE;
   }
 
   return FALSE;
@@ -103,16 +82,8 @@ KeypadReset (
   IN BOOLEAN                         ExtendedVerification
   )
 {
-  UINT32 Dat = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
-  if (!(Dat & KEY_VOL_UP_BIT)) {
-    mVolUpHighCnt = 0;
-  }
-  if (!(Dat & KEY_VOL_DOWN_BIT)) {
-    mVolDownHighCnt = 0;
-  }
-  if (!(Dat & KEY_POWER_BIT)) {
-    mPowerHighCnt = 0;
-  }
+  mLastGpa1      = MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & ALL_KEYS_MASK;
+  mHasPendingKey = FALSE;
   return EFI_SUCCESS;
 }
 
@@ -126,6 +97,11 @@ KeypadReadKeyStroke (
 {
   if (Key == NULL) {
     return EFI_INVALID_PARAMETER;
+  }
+  if (mHasPendingKey) {
+    *Key           = mPendingKey;
+    mHasPendingKey = FALSE;
+    return EFI_SUCCESS;
   }
   if (PollHardwareKey (Key)) {
     return EFI_SUCCESS;
@@ -141,7 +117,14 @@ KeypadWaitForKey (
   IN VOID      *Context
   )
 {
-  gBS->SignalEvent (Event);
+  if (mHasPendingKey) {
+    gBS->SignalEvent (Event);
+    return;
+  }
+  if (PollHardwareKey (&mPendingKey)) {
+    mHasPendingKey = TRUE;
+    gBS->SignalEvent (Event);
+  }
 }
 
 STATIC
@@ -250,11 +233,21 @@ EXYNOS7885PkgEntryPoint (
   )
 {
   EFI_STATUS Status;
+  UINT32     Gpa1Con;
+  UINT32     Gpa1Pud;
 
   Status = gBS->LocateProtocol (&gEfiCpuArchProtocolGuid, NULL, (VOID **)&gCpu);
   ASSERT_EFI_ERROR (Status);
 
-  KeypadReset (NULL, FALSE);
+  Gpa1Con = MmioRead32 (EXYNOS_GPA1_CON_ADDR);
+  Gpa1Con &= ~0xFFF00000;
+  MmioWrite32 (EXYNOS_GPA1_CON_ADDR, Gpa1Con);
+
+  Gpa1Pud = MmioRead32 (EXYNOS_GPA1_PUD_ADDR);
+  Gpa1Pud |= (0x3 << 10) | (0x3 << 12) | (0x3 << 14);
+  MmioWrite32 (EXYNOS_GPA1_PUD_ADDR, Gpa1Pud);
+
+  mLastGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & ALL_KEYS_MASK;
 
   gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextIn.WaitForKey);
   gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextInEx.WaitForKeyEx);
