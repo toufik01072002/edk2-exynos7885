@@ -31,12 +31,43 @@ STATIC EFI_EVENT  mConInFixEvent = NULL;
 STATIC UINT32     mLastGpa1 = ALL_KEYS_MASK;
 STATIC UINT32     mLastPrintedGpa1 = 0xFFFFFFFF;
 
+
+STATIC UINT32 mPinctrlSnap[256];
+STATIC BOOLEAN mSnapInit = FALSE;
+
+STATIC
+VOID
+ScanPinctrlChanges (
+  VOID
+  )
+{
+  UINT32 Idx;
+  if (!mSnapInit) {
+    for (Idx = 0; Idx < 256; Idx++) {
+      mPinctrlSnap[Idx] = MmioRead32 (0x11CB0000 + Idx * 4);
+    }
+    mSnapInit = TRUE;
+    return;
+  }
+  for (Idx = 0; Idx < 256; Idx++) {
+    UINT32 Addr = 0x11CB0000 + Idx * 4;
+    UINT32 Val  = MmioRead32 (Addr);
+    if (Val != mPinctrlSnap[Idx]) {
+      CHAR8 Msg[48];
+      AsciiSPrint (Msg, sizeof (Msg), "0x%08x: %02x->%02x", Addr, mPinctrlSnap[Idx] & 0xFF, Val & 0xFF);
+      FbLog (Msg);
+      mPinctrlSnap[Idx] = Val;
+    }
+  }
+}
+
 STATIC
 BOOLEAN
 PollHardwareKey (
   OUT EFI_INPUT_KEY *Key OPTIONAL
   )
 {
+  ScanPinctrlChanges ();
   UINT32 RawGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
   UINT32 CurGpa1 = RawGpa1 & ALL_KEYS_MASK;
   UINT32 Fall1   = (mLastGpa1 & ~CurGpa1);
