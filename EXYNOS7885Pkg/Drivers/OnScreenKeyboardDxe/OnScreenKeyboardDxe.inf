@@ -1,0 +1,32 @@
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = OnScreenKeyboardDxe
+  FILE_GUID                      = 4C9A1E72-5D3B-4A88-B102-9F6E2D4C8A11
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = OskEntryPoint
+
+[Sources]
+  OnScreenKeyboardDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  EXYNOS7885Pkg/EXYNOS7885Pkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DebugLib
+  DevicePathLib
+
+[Protocols]
+  gEfiAbsolutePointerProtocolGuid
+  gEfiGraphicsOutputProtocolGuid
+  gEfiSimpleTextInProtocolGuid
+  gEfiDevicePathProtocolGuid
+
+[Depex]
+  TRUE

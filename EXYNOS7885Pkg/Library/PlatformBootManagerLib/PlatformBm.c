@@ -495,6 +495,14 @@ STATIC EXYNOS_KEYPAD_DEVICE_PATH mExynosKeypad = {
   { END_DEVICE_PATH_TYPE, END_ENTIRE_DEVICE_PATH_SUBTYPE, { sizeof (EFI_DEVICE_PATH_PROTOCOL), 0 } }
 };
 
+STATIC EXYNOS_KEYPAD_DEVICE_PATH mOskKeypad = {
+  {
+    { HARDWARE_DEVICE_PATH, HW_VENDOR_DP, { sizeof (VENDOR_DEVICE_PATH), 0 } },
+    { 0x4C9A1E72, 0x5D3B, 0x4A88, { 0xB1, 0x02, 0x9F, 0x6E, 0x2D, 0x4C, 0x8A, 0x11 } }
+  },
+  { END_DEVICE_PATH_TYPE, END_ENTIRE_DEVICE_PATH_SUBTYPE, { sizeof (EFI_DEVICE_PATH_PROTOCOL), 0 } }
+};
+
 VOID
 EFIAPI
 PlatformBootManagerBeforeConsole (
@@ -544,6 +552,9 @@ PlatformBootManagerBeforeConsole (
 
   EfiBootManagerUpdateConsoleVariable (ConIn,
     (EFI_DEVICE_PATH_PROTOCOL *)&mExynosKeypad, NULL);
+
+  EfiBootManagerUpdateConsoleVariable (ConIn,
+    (EFI_DEVICE_PATH_PROTOCOL *)&mOskKeypad, NULL);
 
   //
   // Signal EndOfDxe PI Event
@@ -602,21 +613,7 @@ PlatformBootManagerAfterConsole (
   // Ouvrir directement le Menu Graphique UEFI au demarrage
   {
     EFI_BOOT_MANAGER_LOAD_OPTION BootManagerMenu;
-    // Forcer gST->ConIn et ConsoleInHandle sur notre clavier GPA1 juste avant UiApp
-    {
-      EFI_HANDLE *Handles = NULL;
-      UINTN HandleCount = 0;
-      UINTN Idx;
-      if (!EFI_ERROR (gBS->LocateHandleBuffer (ByProtocol, &gEFIDroidKeypadDeviceProtocolGuid, NULL, &HandleCount, &Handles)) && HandleCount > 0) {
-        EFI_SIMPLE_TEXT_INPUT_PROTOCOL *KeypadIn = NULL;
-        if (!EFI_ERROR (gBS->HandleProtocol (Handles[0], &gEfiSimpleTextInProtocolGuid, (VOID **)&KeypadIn))) {
-          gST->ConsoleInHandle = Handles[0];
-          gST->ConIn           = KeypadIn;
-          gBS->Hdr.CRC32       = 0;
-          gBS->CalculateCrc32 (gST, gST->Hdr.HeaderSize, &gST->Hdr.CRC32);
-        }
-        FreePool (Handles);
-      }
+    EfiBootManagerConnectAllDefaultConsoles ();
     }
     {
       EFI_HANDLE *Handles = NULL;

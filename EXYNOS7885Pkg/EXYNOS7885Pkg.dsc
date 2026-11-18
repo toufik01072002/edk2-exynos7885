@@ -206,6 +206,8 @@
   # Platform Dxes
   #
   EXYNOS7885Pkg/Drivers/EXYNOS7885PkgDxe/EXYNOS7885PkgDxe.inf
+  EXYNOS7885Pkg/Drivers/ZinitixTouchDxe/ZinitixTouchDxe.inf
+  EXYNOS7885Pkg/Drivers/OnScreenKeyboardDxe/OnScreenKeyboardDxe.inf
   EXYNOS7885Pkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
   EXYNOS7885Pkg/Drivers/LogoDxe/LogoDxe.inf
 

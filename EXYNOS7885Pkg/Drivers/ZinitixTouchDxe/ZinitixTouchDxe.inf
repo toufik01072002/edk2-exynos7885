@@ -1,0 +1,33 @@
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = ZinitixTouchDxe
+  FILE_GUID                      = 8B4E3A21-7C9D-4F12-9E5A-3B8D1C6F4A02
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = ZinitixTouchEntryPoint
+
+[Sources]
+  ZinitixTouchDxe.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  ArmPkg/ArmPkg.dec
+  EXYNOS7885Pkg/EXYNOS7885Pkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DebugLib
+  IoLib
+  TimerLib
+  DevicePathLib
+
+[Protocols]
+  gEfiAbsolutePointerProtocolGuid
+  gEfiDevicePathProtocolGuid
+
+[Depex]
+  TRUE
