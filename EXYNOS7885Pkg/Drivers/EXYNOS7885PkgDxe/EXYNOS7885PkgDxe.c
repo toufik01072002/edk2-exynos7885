@@ -24,11 +24,10 @@
 
 EFI_CPU_ARCH_PROTOCOL *gCpu;
 
-STATIC EFI_HANDLE    mKeypadHandle  = NULL;
-STATIC EFI_EVENT     mConInFixEvent = NULL;
-STATIC UINT32        mLastGpa1      = ALL_KEYS_MASK;
-STATIC EFI_INPUT_KEY mPendingKey    = { 0, 0 };
-STATIC BOOLEAN       mHasPendingKey = FALSE;
+STATIC EFI_HANDLE mKeypadHandle  = NULL;
+STATIC EFI_EVENT  mConInFixEvent = NULL;
+STATIC UINT32     mLastGpa1      = ALL_KEYS_MASK;
+STATIC BOOLEAN    mSendNullClear = FALSE;
 
 STATIC
 BOOLEAN
@@ -50,6 +49,7 @@ PollHardwareKey (
   mLastGpa1 = CurGpa1;
 
   if (Fall1 & KEY_VOL_UP_BIT) {
+    mSendNullClear = TRUE;
     if (Key != NULL) {
       Key->ScanCode    = SCAN_UP;
       Key->UnicodeChar = 0;
@@ -57,6 +57,7 @@ PollHardwareKey (
     return TRUE;
   }
   if (Fall1 & KEY_VOL_DOWN_BIT) {
+    mSendNullClear = TRUE;
     if (Key != NULL) {
       Key->ScanCode    = SCAN_DOWN;
       Key->UnicodeChar = 0;
@@ -64,9 +65,20 @@ PollHardwareKey (
     return TRUE;
   }
   if (Fall1 & KEY_POWER_BIT) {
+    mSendNullClear = TRUE;
     if (Key != NULL) {
       Key->ScanCode    = SCAN_NULL;
       Key->UnicodeChar = CHAR_CARRIAGE_RETURN;
+    }
+    return TRUE;
+  }
+
+  // Envoie une frappe neutre juste apres une touche de direction pour stopper l'auto-repeat de UiApp
+  if (mSendNullClear) {
+    mSendNullClear = FALSE;
+    if (Key != NULL) {
+      Key->ScanCode    = SCAN_NULL;
+      Key->UnicodeChar = CHAR_NULL;
     }
     return TRUE;
   }
@@ -83,7 +95,7 @@ KeypadReset (
   )
 {
   mLastGpa1      = MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & ALL_KEYS_MASK;
-  mHasPendingKey = FALSE;
+  mSendNullClear = FALSE;
   return EFI_SUCCESS;
 }
 
@@ -97,11 +109,6 @@ KeypadReadKeyStroke (
 {
   if (Key == NULL) {
     return EFI_INVALID_PARAMETER;
-  }
-  if (mHasPendingKey) {
-    *Key           = mPendingKey;
-    mHasPendingKey = FALSE;
-    return EFI_SUCCESS;
   }
   if (PollHardwareKey (Key)) {
     return EFI_SUCCESS;
@@ -117,14 +124,7 @@ KeypadWaitForKey (
   IN VOID      *Context
   )
 {
-  if (mHasPendingKey) {
-    gBS->SignalEvent (Event);
-    return;
-  }
-  if (PollHardwareKey (&mPendingKey)) {
-    mHasPendingKey = TRUE;
-    gBS->SignalEvent (Event);
-  }
+  gBS->SignalEvent (Event);
 }
 
 STATIC
