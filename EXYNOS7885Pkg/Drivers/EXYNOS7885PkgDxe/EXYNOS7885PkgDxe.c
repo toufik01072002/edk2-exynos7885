@@ -1,4 +1,3 @@
-#include <Library/FbDebugLog.h>
 #include <Configuration/BootDevices.h>
 #include <Guid/EventGroup.h>
 #include <Library/BaseLib.h>
@@ -6,7 +5,6 @@
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
 #include <Library/IoLib.h>
-#include <Library/PrintLib.h>
 #include <Library/TimerLib.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
@@ -15,9 +13,9 @@
 #include <Protocol/SimpleTextInEx.h>
 #include "EXYNOS7885PkgDxe.h"
 
-#define EXYNOS_GPA1_CON_ADDR  0x11CB0020
-#define EXYNOS_GPA1_DAT_ADDR  0x11CB0024
-#define EXYNOS_GPA1_PUD_ADDR  0x11CB0028
+#define EXYNOS_GPA1_CON_ADDR  0x11CB0060
+#define EXYNOS_GPA1_DAT_ADDR  0x11CB0064
+#define EXYNOS_GPA1_PUD_ADDR  0x11CB0068
 
 #define KEY_VOL_UP_BIT        (1 << 5)
 #define KEY_VOL_DOWN_BIT      (1 << 6)
@@ -29,37 +27,6 @@ EFI_CPU_ARCH_PROTOCOL *gCpu;
 STATIC EFI_HANDLE mKeypadHandle = NULL;
 STATIC EFI_EVENT  mConInFixEvent = NULL;
 STATIC UINT32     mLastGpa1 = ALL_KEYS_MASK;
-STATIC UINT32     mLastPrintedGpa1 = 0xFFFFFFFF;
-
-
-STATIC UINT32 mPinctrlSnap[256];
-STATIC BOOLEAN mSnapInit = FALSE;
-
-STATIC
-VOID
-ScanPinctrlChanges (
-  VOID
-  )
-{
-  UINT32 Idx;
-  if (!mSnapInit) {
-    for (Idx = 0; Idx < 256; Idx++) {
-      mPinctrlSnap[Idx] = MmioRead32 (0x11CB0000 + Idx * 4);
-    }
-    mSnapInit = TRUE;
-    return;
-  }
-  for (Idx = 0; Idx < 256; Idx++) {
-    UINT32 Addr = 0x11CB0000 + Idx * 4;
-    UINT32 Val  = MmioRead32 (Addr);
-    if (Val != mPinctrlSnap[Idx]) {
-      CHAR8 Msg[48];
-      AsciiSPrint (Msg, sizeof (Msg), "0x%08x: %02x->%02x", Addr, mPinctrlSnap[Idx] & 0xFF, Val & 0xFF);
-      FbLog (Msg);
-      mPinctrlSnap[Idx] = Val;
-    }
-  }
-}
 
 STATIC
 BOOLEAN
@@ -67,17 +34,9 @@ PollHardwareKey (
   OUT EFI_INPUT_KEY *Key OPTIONAL
   )
 {
-  ScanPinctrlChanges ();
   UINT32 RawGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
   UINT32 CurGpa1 = RawGpa1 & ALL_KEYS_MASK;
   UINT32 Fall1   = (mLastGpa1 & ~CurGpa1);
-
-  if (RawGpa1 != mLastPrintedGpa1) {
-    CHAR8 HexMsg[32];
-    AsciiSPrint (HexMsg, sizeof (HexMsg), "GPA1=0x%02x", RawGpa1 & 0xFF);
-    FbLog (HexMsg);
-    mLastPrintedGpa1 = RawGpa1;
-  }
 
   if (Fall1 != 0) {
     MicroSecondDelay (30000);
@@ -122,7 +81,6 @@ KeypadReset (
   )
 {
   mLastGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & ALL_KEYS_MASK;
-  FbLog("[1] DXE: GPA1 INIT OK");
   return EFI_SUCCESS;
 }
 
@@ -151,7 +109,6 @@ KeypadWaitForKey (
   IN VOID      *Context
   )
 {
-  // Toujours reveiller UiApp pour qu'il appelle ReadKeyStrokeEx en polling continu
   gBS->SignalEvent (Event);
 }
 
@@ -245,18 +202,11 @@ ForceBindConInCallback (
   IN VOID      *Context
   )
 {
-  FbLog("[2] ENDOFDXE: BIND CONIN");
   if (mKeypadHandle != NULL) {
     gST->ConsoleInHandle = mKeypadHandle;
     gST->ConIn           = &mKeypadTextIn;
     gBS->Hdr.CRC32       = 0;
     gBS->CalculateCrc32 (gST, gST->Hdr.HeaderSize, &gST->Hdr.CRC32);
-  }
-  if (gST->ConOut != NULL) {
-    CHAR16 Msg[32];
-    UnicodeSPrint (Msg, sizeof (Msg), L"[ConIn=OK GPA1=0x%02x]", MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & 0xFF);
-    gST->ConOut->SetCursorPosition (gST->ConOut, 45, 0);
-    gST->ConOut->OutputString (gST->ConOut, Msg);
   }
 }
 
@@ -283,7 +233,6 @@ EXYNOS7885PkgEntryPoint (
   MmioWrite32 (EXYNOS_GPA1_PUD_ADDR, Gpa1Pud);
 
   mLastGpa1 = MmioRead32 (EXYNOS_GPA1_DAT_ADDR) & ALL_KEYS_MASK;
-  FbLog("[1] DXE: GPA1 INIT OK");
 
   gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextIn.WaitForKey);
   gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextInEx.WaitForKeyEx);

@@ -1,4 +1,3 @@
-#include <Library/FbDebugLog.h>
 /** @file
   Implementation for PlatformBootManagerLib library class interfaces.
 
@@ -577,9 +576,7 @@ PlatformBootManagerAfterConsole (
   ESRT_MANAGEMENT_PROTOCOL      *EsrtManagement;
   EFI_STATUS                    Status;
 
-  FbLog("[3] BDS: BEFORE LOGO");
   Status = BootLogoEnableLogo ();
-  FbLog("[4] BDS: CONNECT ALL...");
 
   //
   // Connect the rest of the devices.
@@ -598,7 +595,6 @@ PlatformBootManagerAfterConsole (
     DEBUG((DEBUG_INFO, "ProcessCapsules returned %r\n", Status));
   }
 
-  FbLog("[5] BDS: CONNECT ALL DONE");
   EfiBootManagerRefreshAllBootOption ();
 
   PlatformRegisterOptionsAndKeys ();
@@ -622,7 +618,6 @@ PlatformBootManagerAfterConsole (
         FreePool (Handles);
       }
     }
-    FbLog("[6] BDS: LAUNCHING UIAPP");
     {
       EFI_HANDLE *Handles = NULL;
       UINTN HandleCount = 0;
@@ -633,7 +628,6 @@ PlatformBootManagerAfterConsole (
           gST->ConIn           = KeypadIn;
           gBS->Hdr.CRC32       = 0;
           gBS->CalculateCrc32 (gST, gST->Hdr.HeaderSize, &gST->Hdr.CRC32);
-          FbLog("[7] CONIN BOUND TO GPA1!");
         }
         FreePool (Handles);
       }
