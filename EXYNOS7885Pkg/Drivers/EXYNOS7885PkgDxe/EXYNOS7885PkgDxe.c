@@ -13,20 +13,26 @@
 #include <Protocol/SimpleTextInEx.h>
 #include "EXYNOS7885PkgDxe.h"
 
+#define EXYNOS_GPA1_CON_ADDR   0x11CB0060
 #define EXYNOS_GPA1_DAT_ADDR   0x11CB0064
+#define EXYNOS_GPA1_PUD_ADDR   0x11CB0068
 
 #define KEY_VOL_UP_BIT         (1 << 5)
 #define KEY_VOL_DOWN_BIT       (1 << 6)
 #define KEY_POWER_BIT          (1 << 7)
+
+// Nombre de lectures consecutives a 1 (relache) exigees pour rearmer une touche.
+// Filtre totalement les broches flottantes et les rebonds mecaniques.
+#define HIGH_STABLE_THRESHOLD  15000
 
 EFI_CPU_ARCH_PROTOCOL *gCpu;
 
 STATIC EFI_HANDLE mKeypadHandle   = NULL;
 STATIC EFI_EVENT  mConInFixEvent  = NULL;
 
-STATIC BOOLEAN    mVolUpLocked    = FALSE;
-STATIC BOOLEAN    mVolDownLocked  = FALSE;
-STATIC BOOLEAN    mPowerLocked    = FALSE;
+STATIC UINT32     mVolUpHighCnt   = HIGH_STABLE_THRESHOLD;
+STATIC UINT32     mVolDownHighCnt = HIGH_STABLE_THRESHOLD;
+STATIC UINT32     mPowerHighCnt   = HIGH_STABLE_THRESHOLD;
 
 STATIC
 BOOLEAN
@@ -36,43 +42,54 @@ PollHardwareKey (
 {
   UINT32 Dat = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
 
-  // Déverrouillage individuel dès que le bit remonte à 1 (relâché)
+  // Mise a jour des compteurs d'etat haut (1 = relache)
   if (Dat & KEY_VOL_UP_BIT) {
-    mVolUpLocked = FALSE;
+    if (mVolUpHighCnt < HIGH_STABLE_THRESHOLD) {
+      mVolUpHighCnt++;
+    }
+  } else {
+    // Le bouton est appuye (0) : declenche UNIQUEMENT s'il a ete stablement relache avant
+    if (mVolUpHighCnt >= HIGH_STABLE_THRESHOLD) {
+      mVolUpHighCnt = 0;
+      if (Key != NULL) {
+        Key->ScanCode    = SCAN_UP;
+        Key->UnicodeChar = 0;
+      }
+      return TRUE;
+    }
+    mVolUpHighCnt = 0;
   }
+
   if (Dat & KEY_VOL_DOWN_BIT) {
-    mVolDownLocked = FALSE;
+    if (mVolDownHighCnt < HIGH_STABLE_THRESHOLD) {
+      mVolDownHighCnt++;
+    }
+  } else {
+    if (mVolDownHighCnt >= HIGH_STABLE_THRESHOLD) {
+      mVolDownHighCnt = 0;
+      if (Key != NULL) {
+        Key->ScanCode    = SCAN_DOWN;
+        Key->UnicodeChar = 0;
+      }
+      return TRUE;
+    }
+    mVolDownHighCnt = 0;
   }
+
   if (Dat & KEY_POWER_BIT) {
-    mPowerLocked = FALSE;
-  }
-
-  // Détection d'appui uniquement si la touche n'est pas verrouillée
-  if (!(Dat & KEY_VOL_UP_BIT) && !mVolUpLocked) {
-    mVolUpLocked = TRUE;
-    if (Key != NULL) {
-      Key->ScanCode    = SCAN_UP;
-      Key->UnicodeChar = 0;
+    if (mPowerHighCnt < HIGH_STABLE_THRESHOLD) {
+      mPowerHighCnt++;
     }
-    return TRUE;
-  }
-
-  if (!(Dat & KEY_VOL_DOWN_BIT) && !mVolDownLocked) {
-    mVolDownLocked = TRUE;
-    if (Key != NULL) {
-      Key->ScanCode    = SCAN_DOWN;
-      Key->UnicodeChar = 0;
+  } else {
+    if (mPowerHighCnt >= HIGH_STABLE_THRESHOLD) {
+      mPowerHighCnt = 0;
+      if (Key != NULL) {
+        Key->ScanCode    = SCAN_NULL;
+        Key->UnicodeChar = CHAR_CARRIAGE_RETURN;
+      }
+      return TRUE;
     }
-    return TRUE;
-  }
-
-  if (!(Dat & KEY_POWER_BIT) && !mPowerLocked) {
-    mPowerLocked = TRUE;
-    if (Key != NULL) {
-      Key->ScanCode    = SCAN_NULL;
-      Key->UnicodeChar = CHAR_CARRIAGE_RETURN;
-    }
-    return TRUE;
+    mPowerHighCnt = 0;
   }
 
   return FALSE;
@@ -87,9 +104,15 @@ KeypadReset (
   )
 {
   UINT32 Dat = MmioRead32 (EXYNOS_GPA1_DAT_ADDR);
-  mVolUpLocked   = !(Dat & KEY_VOL_UP_BIT);
-  mVolDownLocked = !(Dat & KEY_VOL_DOWN_BIT);
-  mPowerLocked   = !(Dat & KEY_POWER_BIT);
+  if (!(Dat & KEY_VOL_UP_BIT)) {
+    mVolUpHighCnt = 0;
+  }
+  if (!(Dat & KEY_VOL_DOWN_BIT)) {
+    mVolDownHighCnt = 0;
+  }
+  if (!(Dat & KEY_POWER_BIT)) {
+    mPowerHighCnt = 0;
+  }
   return EFI_SUCCESS;
 }
 
@@ -231,7 +254,6 @@ EXYNOS7885PkgEntryPoint (
   Status = gBS->LocateProtocol (&gEfiCpuArchProtocolGuid, NULL, (VOID **)&gCpu);
   ASSERT_EFI_ERROR (Status);
 
-  // Ne pas écraser CON/PUD : conserver l'état matériel initialisé par S-Boot
   KeypadReset (NULL, FALSE);
 
   gBS->CreateEvent (EVT_NOTIFY_WAIT, TPL_NOTIFY, KeypadWaitForKey, NULL, &mKeypadTextIn.WaitForKey);
