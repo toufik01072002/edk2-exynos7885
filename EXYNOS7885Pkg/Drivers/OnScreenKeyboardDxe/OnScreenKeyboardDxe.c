@@ -208,7 +208,7 @@ STATIC VOID EFIAPI OskTimerCallback (IN EFI_EVENT Event, IN VOID *Context) {
   EFI_SIMPLE_TEXT_INPUT_PROTOCOL *This = (EFI_SIMPLE_TEXT_INPUT_PROTOCOL *)Context;
   STATIC UINTN RedrawCounter = 0;
 
-  if ((RedrawCounter++ % 40) == 0) {
+  if ((RedrawCounter++ % 10) == 0) {
     RenderOsk ();
   }
 
@@ -270,6 +270,7 @@ EFI_STATUS EFIAPI OskEntryPoint (
   )
 {
   EFI_STATUS Status;
+  EFI_HANDLE OskHandle = NULL;
 
   Status = gBS->CreateEvent (
                   EVT_NOTIFY_WAIT,
@@ -283,7 +284,7 @@ EFI_STATUS EFIAPI OskEntryPoint (
   }
 
   Status = gBS->InstallMultipleProtocolInterfaces (
-                  &ImageHandle,
+                  &OskHandle,
                   &gEfiSimpleTextInProtocolGuid, &mOskTextIn,
                   &gEfiDevicePathProtocolGuid, &mOskDevicePath,
                   NULL

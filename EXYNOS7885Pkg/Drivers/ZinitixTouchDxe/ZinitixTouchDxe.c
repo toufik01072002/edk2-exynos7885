@@ -193,6 +193,7 @@ STATIC EFI_STATUS I2cWriteBytes (UINT8 SlaveAddr, CONST UINT8 *Data, UINTN Len) 
 
 STATIC EFI_STATUS I2cReadReg (UINT16 Reg, UINT8 *Buf, UINTN Len) {
   EFI_STATUS Status;
+EFI_HANDLE TouchHandle = NULL;
   UINT8 RegBytes[2];
   UINTN i;
 
@@ -392,7 +393,7 @@ if (EFI_ERROR (Status)) {
 return Status;
 }
 Status = gBS->InstallMultipleProtocolInterfaces (
-&ImageHandle,
+&TouchHandle,
 &gEfiAbsolutePointerProtocolGuid, &mAbsolutePointer,
 &gEfiDevicePathProtocolGuid, &mTouchDevicePath,
 NULL
