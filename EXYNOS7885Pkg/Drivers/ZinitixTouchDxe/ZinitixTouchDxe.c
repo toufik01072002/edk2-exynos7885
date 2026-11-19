@@ -395,6 +395,7 @@ TouchReset,
 TouchGetState,
 NULL,
 &mTouchMode
+};
 EFI_STATUS EFIAPI ZinitixTouchEntryPoint (
 IN EFI_HANDLE       ImageHandle,
 IN EFI_SYSTEM_TABLE *SystemTable
