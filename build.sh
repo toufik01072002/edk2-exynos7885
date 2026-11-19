@@ -24,7 +24,7 @@ if not bootshim.is_file() or not firmware.is_file():
 bs = bootshim.read_bytes()
 fd = firmware.read_bytes()
 
-if not 256 <= len(bs) <= 65536:
+if not 256 <= len(bs) <= 524288:
     raise SystemExit("ERROR: BootShim size outside expected limits")
 
 if not 0 < len(fd) <= COPY_SIZE:
