@@ -202,6 +202,8 @@ InitializeDwMmcHcDxe (
 
   if (EFI_ERROR (Status)) {
     FreePool (Private);
+  } else {
+    gBS->ConnectController (Private->Handle, NULL, NULL, TRUE);
   }
 
   return Status;

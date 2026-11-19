@@ -205,27 +205,10 @@ STATIC CONST UINT8 mFont8x8[95][8] = {
   {0x76,0xDC,0x00,0x00,0x00,0x00,0x00,0x00}
 };
 
-STATIC VOID DrawKeycapPattern (UINTN X, UINTN Y, CHAR16 Ch) {
-  UINT8 R = 245, G = 248, B = 252;
-  CONST CHAR16 *Label = NULL;
-  CHAR16 Single[2];
+STATIC VOID DrawScaledString (UINTN X, UINTN Y, CONST CHAR16 *Str, UINTN Scale, UINTN Advance, UINT8 R, UINT8 G, UINT8 B) {
   UINTN i = 0;
-
-  if (Ch == L'\r') { R = 255; G = 255; B = 255; Label = L"ENT"; }
-  else if (Ch == L'\b') { R = 255; G = 255; B = 255; Label = L"DEL"; }
-  else if (Ch == L'^') { R = 255; G = 255; B = 255; Label = L"SHF"; }
-  else {
-    Single[0] = Ch;
-    Single[1] = L'\0';
-    Label = Single;
-  }
-
-  UINTN Len = (Label[1] == L'\0') ? 1 : 3;
-  UINTN StartX = X + (KEY_W - (Len * 18 - 2)) / 2;
-  UINTN StartY = Y + (KEY_H - 16) / 2;
-
-  while (Label[i] != L'\0') {
-    CHAR16 C = Label[i];
+  while (Str[i] != L'\0') {
+    CHAR16 C = Str[i];
     if (C >= 32 && C <= 126) {
       UINTN Idx = (UINTN)(C - 32);
       UINTN Row, Col;
@@ -233,12 +216,39 @@ STATIC VOID DrawKeycapPattern (UINTN X, UINTN Y, CHAR16 Ch) {
         UINT8 Bits = mFont8x8[Idx][Row];
         for (Col = 0; Col < 8; Col++) {
           if ((Bits & (0x80U >> Col)) != 0) {
-            FillRect (StartX + i * 18 + Col * 2, StartY + Row * 2, 2, 2, R, G, B);
+            FillRect (X + i * Advance + Col * Scale, Y + Row * Scale, Scale, Scale, R, G, B);
           }
         }
       }
     }
     i++;
+  }
+}
+
+STATIC VOID DrawKeycapPattern (UINTN X, UINTN Y, CHAR16 Ch) {
+  UINT8 R = 248, G = 250, B = 255;
+  CONST CHAR16 *Label = NULL;
+  CHAR16 Single;
+
+  if (Ch == L'\r') { Label = L"ENT"; }
+  else if (Ch == L'\b') { Label = L"DEL"; }
+  else if (Ch == L'^') { Label = L"SHF"; }
+  else {
+    Single = Ch;
+    Single = L'\0';
+    Label = Single;
+  }
+
+  if (Label == L'\0') {
+    // Caractère unique : échelle x4 (32x32 px) centré dans la touche 70x68
+    UINTN StartX = X + (KEY_W - 32) / 2;
+    UINTN StartY = Y + (KEY_H - 32) / 2;
+    DrawScaledString (StartX, StartY, Label, 4, 32, R, G, B);
+  } else {
+    // Libellé 3 lettres (ENT/DEL/SHF) : échelle x3 (24x24 px, pas 22 px = 64 px)
+    UINTN StartX = X + (KEY_W - 64) / 2;
+    UINTN StartY = Y + (KEY_H - 24) / 2;
+    DrawScaledString (StartX, StartY, Label, 3, 22, R, G, B);
   }
 }
 
@@ -250,7 +260,7 @@ STATIC VOID RenderOsk (VOID) {
   } else {
     FillRect (TOGGLE_X, TOGGLE_Y, TOGGLE_W, TOGGLE_H, 30, 120, 210);
   }
-  FillRect (TOGGLE_X + 20, TOGGLE_Y + 26, 85, 10, 255, 255, 255);
+  DrawScaledString (TOGGLE_X + (TOGGLE_W - 76) / 2, TOGGLE_Y + (TOGGLE_H - 24) / 2, L"KBD", 3, 26, 255, 255, 255);
 
   if (!mKbdVisible) {
     return;
