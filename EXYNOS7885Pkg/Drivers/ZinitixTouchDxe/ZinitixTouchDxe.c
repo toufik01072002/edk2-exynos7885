@@ -120,7 +120,7 @@ STATIC VOID GpioAndBusInit (VOID) {
   Val = (Val & ~0xFU) | 0xFU;
   MmioWrite32 (GPP4_PUD, Val);
 
-  MicroSecondDelay (50000);
+  MicroSecondDelay (120000);
 
   MmioWrite32 (I2CSTAT, 0x00);
   MmioWrite32 (I2CLC, 0x07);
@@ -266,7 +266,7 @@ STATIC EFI_STATUS ZinitixHwInit (VOID) {
 
   MicroSecondDelay (10000);
   ZinitixWriteCmd (BT532_SWRESET_CMD);
-  MicroSecondDelay (20000);
+  MicroSecondDelay (100000);
 
   ZinitixWriteReg (BT532_TOUCH_MODE, 0x0000);
   ZinitixWriteReg (BT532_X_RESOLUTION, 720);
@@ -341,6 +341,7 @@ STATIC EFI_STATUS EFIAPI TouchGetState (
   if (State == NULL) {
     return EFI_INVALID_PARAMETER;
   }
+  TouchPollCallback (NULL, This);
   if (!mStateChanged) {
     return EFI_NOT_READY;
   }
@@ -379,8 +380,15 @@ mTouchMode.AbsoluteMaxZ = 1;
 mTouchMode.Attributes   = 0;
 GpioAndBusInit ();
 Status = ZinitixHwInit ();
-if (EFI_ERROR (Status)) {
-DEBUG ((DEBUG_WARN, "ZinitixTouchDxe: init returned %r\n", Status));
+{
+  volatile UINT32 *Fb = (volatile UINT32 *)(UINTN)0xEC000000ULL;
+  UINT32 Col = EFI_ERROR (Status) ? 0xFFFF2020U : 0xFF20E040U;
+  UINTN r, c;
+  for (r = 1508; r < 1520; r++) {
+    for (c = 568; c < 580; c++) {
+      Fb[r * 720 + c] = Col;
+    }
+  }
 }
 Status = gBS->CreateEvent (
 EVT_NOTIFY_WAIT,
