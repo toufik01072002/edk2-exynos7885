@@ -67,22 +67,38 @@ STATIC CONST CHAR16 mLayoutShift[KBD_ROWS][KBD_COLS] = {
   { L'?', L'=', L'|', L' ', L' ', L' ', L' ', L'[', L']', L'\r' }
 };
 
+#define FB_BASE_ADDR 0xEC000000ULL
+
 STATIC VOID FillRect (
-  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop,
+  VOID *UnusedGop,
   UINTN X, UINTN Y, UINTN W, UINTN H,
   UINT8 R, UINT8 G, UINT8 B
   )
 {
-  EFI_GRAPHICS_OUTPUT_BLT_PIXEL Color;
-  Color.Red      = R;
-  Color.Green    = G;
-  Color.Blue     = B;
-  Color.Reserved = 0;
-  Gop->Blt (Gop, &Color, EfiBltVideoFill, 0, 0, X, Y, W, H, 0);
+  volatile UINT32 *Fb = (volatile UINT32 *)(UINTN)FB_BASE_ADDR;
+  UINT32 Pixel = 0xFF000000U | ((UINT32)R << 16) | ((UINT32)G << 8) | (UINT32)B;
+  UINTN Row, Col;
+
+  if (X >= SCREEN_W || Y >= SCREEN_H) {
+    return;
+  }
+  if (X + W > SCREEN_W) {
+    W = SCREEN_W - X;
+  }
+  if (Y + H > SCREEN_H) {
+    H = SCREEN_H - Y;
+  }
+
+  for (Row = Y; Row < Y + H; Row++) {
+    volatile UINT32 *Line = Fb + (Row * SCREEN_W) + X;
+    for (Col = 0; Col < W; Col++) {
+      Line[Col] = Pixel;
+    }
+  }
 }
 
 STATIC VOID DrawKeycapPattern (
-  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop,
+  VOID *Gop,
   UINTN X, UINTN Y, CHAR16 Ch
   )
 {
@@ -104,12 +120,8 @@ STATIC VOID DrawKeycapPattern (
 }
 
 STATIC VOID RenderOsk (VOID) {
-  EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop = NULL;
+  VOID *Gop = NULL;
   UINTN Row, Col;
-
-  if (EFI_ERROR (gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop)) || Gop == NULL) {
-    return;
-  }
 
   if (mKbdVisible) {
     FillRect (Gop, TOGGLE_X, TOGGLE_Y, TOGGLE_W, TOGGLE_H, 200, 60, 60);
@@ -162,10 +174,7 @@ STATIC VOID HandleTouchAt (UINT64 X, UINT64 Y, EFI_SIMPLE_TEXT_INPUT_PROTOCOL *T
       Y >= TOGGLE_Y && Y <= (TOGGLE_Y + TOGGLE_H)) {
     mKbdVisible = !mKbdVisible;
     if (!mKbdVisible) {
-      EFI_GRAPHICS_OUTPUT_PROTOCOL *Gop = NULL;
-      if (!EFI_ERROR (gBS->LocateProtocol (&gEfiGraphicsOutputProtocolGuid, NULL, (VOID **)&Gop)) && Gop != NULL) {
-        FillRect (Gop, 0, KBD_TOP - 4, SCREEN_W, (KBD_ROWS * (KEY_H + KEY_GAP_Y)) + 8, 0, 0, 0);
-      }
+      FillRect (NULL, 0, KBD_TOP - 4, SCREEN_W, (KBD_ROWS * (KEY_H + KEY_GAP_Y)) + 8, 0, 0, 0);
     }
     RenderOsk ();
     return;
