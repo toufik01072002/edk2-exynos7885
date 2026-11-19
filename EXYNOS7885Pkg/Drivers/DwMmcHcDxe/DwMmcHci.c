@@ -120,7 +120,7 @@ DwMmcExecCommand (
   IN OUT EFI_SD_MMC_PASS_THRU_COMMAND_PACKET *Packet
   )
 {
-  UINT32 CmdReg = DW_MMC_CMD_START | DW_MMC_CMD_WAIT_PRVDATA;
+  UINT32 CmdReg = DW_MMC_CMD_START;
   UINT32 RintSts;
   UINT32 Timeout;
   BOOLEAN IsRead = FALSE;
@@ -154,6 +154,9 @@ DwMmcExecCommand (
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
 
   CmdReg |= (CmdIdx & 0x3F);
+  if (CmdIdx != 13 && CmdIdx != 12 && CmdIdx != 0) {
+    CmdReg |= DW_MMC_CMD_WAIT_PRVDATA;
+  }
 
   if (CmdIdx == 0) {
     CmdReg |= DW_MMC_CMD_SEND_INIT;
@@ -209,6 +212,10 @@ DwMmcExecCommand (
   }
 
   MmioWrite32 (BaseAddr + DW_MMC_CMDARG, Packet->SdMmcCmdBlk->CommandArgument);
+  Timeout = 100000;
+  while ((MmioRead32 (BaseAddr + DW_MMC_CMD) & DW_MMC_CMD_START) && Timeout--) {
+    MicroSecondDelay (1);
+  }
   MmioWrite32 (BaseAddr + DW_MMC_CMD, CmdReg);
 
   Timeout = 500000;
