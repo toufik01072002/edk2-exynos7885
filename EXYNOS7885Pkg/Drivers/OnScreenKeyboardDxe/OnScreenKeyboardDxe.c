@@ -215,11 +215,7 @@ STATIC VOID EFIAPI OskTimerCallback (IN EFI_EVENT Event, IN VOID *Context) {
   EFI_ABSOLUTE_POINTER_PROTOCOL *AbsPtr = NULL;
   EFI_ABSOLUTE_POINTER_STATE State;
   EFI_SIMPLE_TEXT_INPUT_PROTOCOL *This = (EFI_SIMPLE_TEXT_INPUT_PROTOCOL *)Context;
-  STATIC UINTN RedrawCounter = 0;
-
-  if ((RedrawCounter++ % 10) == 0) {
-    RenderOsk ();
-  }
+  RenderOsk ();
 
   if (EFI_ERROR (gBS->LocateProtocol (&gEfiAbsolutePointerProtocolGuid, NULL, (VOID **)&AbsPtr)) || AbsPtr == NULL) {
     return;
