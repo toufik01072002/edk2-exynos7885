@@ -52,17 +52,6 @@ _DrawLogoPixel:
     subs    x3, x3, #1
     b.gt    _DrawLogoRow
 
-    /* 4. Nettoyer le cache données sur le framebuffer pour DECON */
-    movz    x0, #0x0000
-    movk    x0, #0xEC00, lsl #16
-    ldr     x1, _FbTotalSize
-    add     x1, x0, x1
-_FlushFbCache:
-    dc      cvac, x0
-    add     x0, x0, #64
-    cmp     x0, x1
-    b.lt    _FlushFbCache
-
     /* 5. Barrières mémoire/instruction et saut vers UEFI (0x90000000) */
     dsb     sy
     ic      iallu
