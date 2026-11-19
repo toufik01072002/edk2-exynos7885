@@ -14,7 +14,13 @@ DwMmcUpdateClock (
   )
 {
   UINT32 Timeout = 100000;
+  while ((MmioRead32 (BaseAddr + DW_MMC_CMD) & DW_MMC_CMD_START) && Timeout--) {
+    MicroSecondDelay (1);
+  }
+  MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_CMD, DW_MMC_CMD_START | DW_MMC_CMD_UPD_CLK | DW_MMC_CMD_WAIT_PRVDATA);
+
+  Timeout = 100000;
   while (Timeout--) {
     if ((MmioRead32 (BaseAddr + DW_MMC_CMD) & DW_MMC_CMD_START) == 0) {
       MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
@@ -58,8 +64,6 @@ DwMmcInitController (
   MmioWrite32 (BaseAddr + DW_MMC_INTMASK, 0x0);
   MmioWrite32 (BaseAddr + DW_MMC_TMOUT, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_CTYPE, DW_MMC_CTYPE_1BIT);
-
-  // Seuil FIFO Exynos (profondeur 32 ou 64 mots)
   MmioWrite32 (BaseAddr + DW_MMC_FIFOTH, (0x2 << 28) | (15 << 16) | 16);
 
   return DwMmcSetClock (BaseAddr, 400);
@@ -81,11 +85,11 @@ DwMmcSetClock (
   }
 
   if (ClockFreqKhz <= 400) {
-    Div = 64;  // Horloge d'identification ~400 kHz
+    Div = 64;
   } else if (ClockFreqKhz <= 25000) {
-    Div = 1;   // ~25 MHz
+    Div = 2;
   } else {
-    Div = 0;   // Bypass diviseur interne (utilise directement CLKSEL de S-Boot)
+    Div = 1;
   }
 
   MmioWrite32 (BaseAddr + DW_MMC_CLKSRC, 0);
@@ -120,7 +124,7 @@ DwMmcExecCommand (
   IN OUT EFI_SD_MMC_PASS_THRU_COMMAND_PACKET *Packet
   )
 {
-  UINT32 CmdReg = DW_MMC_CMD_START;
+  UINT32 CmdReg = DW_MMC_CMD_START | DW_MMC_CMD_WAIT_PRVDATA;
   UINT32 RintSts;
   UINT32 Timeout;
   BOOLEAN IsRead = FALSE;
@@ -136,15 +140,32 @@ DwMmcExecCommand (
 
   CmdIdx = Packet->SdMmcCmdBlk->CommandIndex;
 
-  // Passer en haute vitesse dès que l'identification (CMD0..CMD3) est terminée
-  if (CmdIdx == 7 || CmdIdx == 8 || CmdIdx == 17 || CmdIdx == 18) {
-    if (MmioRead32 (BaseAddr + DW_MMC_CLKDIV) == 64) {
-      DwMmcSetClock (BaseAddr, 50000);
+  // Ignorer la bascule 8-bit/HS200 via CMD6 sur BUS_WIDTH (Index 183) pour rester en 1-bit stable
+  if (CmdIdx == 6 && BaseAddr == EXYNOS_DWMMC0_BASE) {
+    UINT32 Arg   = Packet->SdMmcCmdBlk->CommandArgument;
+    UINT8  Index = (Arg >> 16) & 0xFF;
+    UINT8  Value = (Arg >> 8) & 0xFF;
+    if (Index == 183 && Value != 0) {
+      // Simuler succès sans basculer la puce en 8-bit afin de rester synchronisé avec CTYPE=1BIT
+      if (Packet->SdMmcStatusBlk != NULL) {
+        Packet->SdMmcStatusBlk->Resp0 = 0x00000900; // Ready for data, TRAN state
+      }
+      Packet->TransactionStatus = EFI_SUCCESS;
+      return EFI_SUCCESS;
     }
   }
 
+  // Passer à 25 MHz dès la sélection de carte (CMD7)
+  if (CmdIdx == 7 || CmdIdx == 8 || CmdIdx == 17 || CmdIdx == 18) {
+    if (MmioRead32 (BaseAddr + DW_MMC_CLKDIV) == 64) {
+      DwMmcSetClock (BaseAddr, 25000);
+    }
+  }
+
+  // Attendre fin de commande précédente et fin de DATA_BUSY
   Timeout = 500000;
-  while ((MmioRead32 (BaseAddr + DW_MMC_STATUS) & DW_MMC_STATUS_DATA_BUSY) && Timeout--) {
+  while (((MmioRead32 (BaseAddr + DW_MMC_CMD) & DW_MMC_CMD_START) ||
+          (MmioRead32 (BaseAddr + DW_MMC_STATUS) & DW_MMC_STATUS_DATA_BUSY)) && Timeout--) {
     MicroSecondDelay (1);
   }
   if (Timeout == 0) {
@@ -154,9 +175,6 @@ DwMmcExecCommand (
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
 
   CmdReg |= (CmdIdx & 0x3F);
-  if (CmdIdx != 13 && CmdIdx != 12 && CmdIdx != 0) {
-    CmdReg |= DW_MMC_CMD_WAIT_PRVDATA;
-  }
 
   if (CmdIdx == 0) {
     CmdReg |= DW_MMC_CMD_SEND_INIT;
@@ -212,20 +230,18 @@ DwMmcExecCommand (
   }
 
   MmioWrite32 (BaseAddr + DW_MMC_CMDARG, Packet->SdMmcCmdBlk->CommandArgument);
-  Timeout = 100000;
-  while ((MmioRead32 (BaseAddr + DW_MMC_CMD) & DW_MMC_CMD_START) && Timeout--) {
-    MicroSecondDelay (1);
-  }
   MmioWrite32 (BaseAddr + DW_MMC_CMD, CmdReg);
 
   Timeout = 500000;
   while (Timeout--) {
     RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
     if (RintSts & DW_MMC_INT_ERROR) {
-      if (mLastLoggedErr < 5) {
-        Print (L"[DWMMC 0x%x] CMD%d err RINTSTS=0x%x\n", (UINT32)BaseAddr, CmdIdx, RintSts);
+      if (mLastLoggedErr < 8) {
+        Print (L"[DWMMC 0x%x] CMD%d(0x%x) err RINTSTS=0x%x\n",
+               (UINT32)BaseAddr, CmdIdx, Packet->SdMmcCmdBlk->CommandArgument, RintSts);
         mLastLoggedErr++;
       }
+      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
       Packet->TransactionStatus = EFI_DEVICE_ERROR;
       return EFI_DEVICE_ERROR;
     }
@@ -235,10 +251,6 @@ DwMmcExecCommand (
     MicroSecondDelay (1);
   }
   if (Timeout == 0) {
-    if (mLastLoggedErr < 5) {
-      Print (L"[DWMMC 0x%x] CMD%d timeout\n", (UINT32)BaseAddr, CmdIdx);
-      mLastLoggedErr++;
-    }
     Packet->TransactionStatus = EFI_TIMEOUT;
     return EFI_TIMEOUT;
   }
@@ -260,10 +272,11 @@ DwMmcExecCommand (
     while (WordsDone < TotalWords && Timeout--) {
       RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
       if (RintSts & DW_MMC_INT_ERROR) {
-        if (mLastLoggedErr < 5) {
+        if (mLastLoggedErr < 8) {
           Print (L"[DWMMC 0x%x] CMD%d data err RINTSTS=0x%x\n", (UINT32)BaseAddr, CmdIdx, RintSts);
           mLastLoggedErr++;
         }
+        MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
         Packet->TransactionStatus = EFI_DEVICE_ERROR;
         return EFI_DEVICE_ERROR;
       }
@@ -304,22 +317,6 @@ DwMmcExecCommand (
     Timeout = 1000000;
     while ((MmioRead32 (BaseAddr + DW_MMC_STATUS) & DW_MMC_STATUS_DATA_BUSY) && Timeout--) {
       MicroSecondDelay (1);
-    }
-  }
-
-  // Synchroniser CTYPE si EmmcDxe vient d'envoyer CMD6 SWITCH sur BUS_WIDTH (EXT_CSD[183])
-  if (CmdIdx == 6 && BaseAddr == EXYNOS_DWMMC0_BASE) {
-    UINT32 Arg   = Packet->SdMmcCmdBlk->CommandArgument;
-    UINT8  Index = (Arg >> 16) & 0xFF;
-    UINT8  Value = (Arg >> 8) & 0xFF;
-    if (Index == 183) {
-      if (Value == 0) {
-        DwMmcSetBusWidth (BaseAddr, 1);
-      } else if (Value == 1 || Value == 5) {
-        DwMmcSetBusWidth (BaseAddr, 4);
-      } else if (Value == 2 || Value == 6) {
-        DwMmcSetBusWidth (BaseAddr, 8);
-      }
     }
   }
 
