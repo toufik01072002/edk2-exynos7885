@@ -207,6 +207,13 @@
   #
   EXYNOS7885Pkg/Drivers/EXYNOS7885PkgDxe/EXYNOS7885PkgDxe.inf
   EXYNOS7885Pkg/Drivers/ZinitixTouchDxe/ZinitixTouchDxe.inf
+
+  #
+  # Storage (eMMC / SD)
+  #
+  EXYNOS7885Pkg/Drivers/DwMmcHcDxe/DwMmcHcDxe.inf
+  MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
+  MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
   EXYNOS7885Pkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
   EXYNOS7885Pkg/Drivers/LogoDxe/LogoDxe.inf
 

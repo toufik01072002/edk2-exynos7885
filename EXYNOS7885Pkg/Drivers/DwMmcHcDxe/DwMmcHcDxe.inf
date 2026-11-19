@@ -1,0 +1,35 @@
+[Defines]
+  INF_VERSION                    = 0x0001001A
+  BASE_NAME                      = DwMmcHcDxe
+  FILE_GUID                      = 8B4E3C12-9F2A-4D7E-B105-7A8C9E2D4F11
+  MODULE_TYPE                    = UEFI_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = InitializeDwMmcHcDxe
+
+[Sources]
+  DwMmcHcDxe.c
+  DwMmcHcDxe.h
+  DwMmcHci.c
+  DwMmcHci.h
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  EXYNOS7885Pkg/EXYNOS7885Pkg.dec
+
+[LibraryClasses]
+  BaseLib
+  BaseMemoryLib
+  DebugLib
+  DevicePathLib
+  IoLib
+  MemoryAllocationLib
+  TimerLib
+  UefiBootServicesTableLib
+  UefiDriverEntryPoint
+  UefiLib
+
+[Protocols]
+  gEfiSdMmcPassThruProtocolGuid                 ## PRODUCES
+  gEfiDevicePathProtocolGuid                    ## PRODUCES
