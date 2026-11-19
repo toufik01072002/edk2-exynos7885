@@ -24,23 +24,6 @@
 #define GPG2_DAT                (PINCTRL_TOP_BASE + 0x164)
 #define GPG2_PUD                (PINCTRL_TOP_BASE + 0x168)
 
-#define I2C4_BASE               0x13870000ULL
-#define I2CCON                  (I2C4_BASE + 0x00)
-#define I2CSTAT                 (I2C4_BASE + 0x04)
-#define I2CADD                  (I2C4_BASE + 0x08)
-#define I2CDS                   (I2C4_BASE + 0x0C)
-#define I2CLC                   (I2C4_BASE + 0x10)
-
-#define I2CCON_ACKEN            (1U << 7)
-#define I2CCON_IRQEN            (1U << 5)
-#define I2CCON_IRQPEND          (1U << 4)
-
-#define I2CSTAT_MASTER_RX       (2U << 6)
-#define I2CSTAT_MASTER_TX       (3U << 6)
-#define I2CSTAT_START_BUSY      (1U << 5)
-#define I2CSTAT_TXRX_EN         (1U << 4)
-#define I2CSTAT_LAST_BIT        (1U << 0)
-
 #define ZINITIX_I2C_ADDR        0x20
 #define BT532_SWRESET_CMD       0x0000
 #define BT532_WAKEUP_CMD        0x0001
@@ -87,149 +70,164 @@ STATIC TOUCH_DEVICE_PATH mTouchDevicePath = {
 STATIC EFI_ABSOLUTE_POINTER_MODE  mTouchMode;
 STATIC EFI_ABSOLUTE_POINTER_STATE mLastState;
 STATIC BOOLEAN                    mStateChanged   = FALSE;
-STATIC EFI_EVENT                  mPollTimerEvent = NULL;
+STATIC BOOLEAN                    mHwReady        = FALSE;
 
-STATIC VOID GpioAndBusInit (VOID) {
-  UINT32 Val;
+/* --- Bit-Bang I2C sur GPP4[0] (SDA) et GPP4[1] (SCL) --- */
 
-  Val = MmioRead32 (GPG2_CON);
-  Val = (Val & ~(0xFU << 4)) | (0x1U << 4);
-  MmioWrite32 (GPG2_CON, Val);
-
-  Val = MmioRead32 (GPG2_PUD);
-  Val &= ~(0x3U << 2);
-  MmioWrite32 (GPG2_PUD, Val);
-
-  Val = MmioRead32 (GPG2_DAT);
-  Val |= (1U << 1);
-  MmioWrite32 (GPG2_DAT, Val);
-
-  Val = MmioRead32 (GPA0_CON);
-  Val &= ~0xFU;
-  MmioWrite32 (GPA0_CON, Val);
-
-  Val = MmioRead32 (GPA0_PUD);
-  Val = (Val & ~0x3U) | 0x3U;
-  MmioWrite32 (GPA0_PUD, Val);
-
-  Val = MmioRead32 (GPP4_CON);
-  Val = (Val & ~0xFFU) | 0x22U;
-  MmioWrite32 (GPP4_CON, Val);
-
-  Val = MmioRead32 (GPP4_PUD);
-  Val = (Val & ~0xFU) | 0xFU;
-  MmioWrite32 (GPP4_PUD, Val);
-
-  MicroSecondDelay (120000);
-
-  MmioWrite32 (I2CSTAT, 0x00);
-  MmioWrite32 (I2CLC, 0x07);
-  MmioWrite32 (I2CCON, I2CCON_ACKEN | I2CCON_IRQEN | 0x0F);
-  MmioWrite32 (I2CSTAT, I2CSTAT_TXRX_EN);
+STATIC VOID BbSdaLow (VOID) {
+  UINT32 Dat = MmioRead32 (GPP4_DAT) & ~(1U << 0);
+  UINT32 Con = (MmioRead32 (GPP4_CON) & ~0x0FU) | 0x01U;
+  MmioWrite32 (GPP4_DAT, Dat);
+  MmioWrite32 (GPP4_CON, Con);
 }
 
-STATIC EFI_STATUS I2cWaitIrq (VOID) {
-  UINTN Timeout = 5000;
-  while (Timeout--) {
-    if (MmioRead32 (I2CCON) & I2CCON_IRQPEND) {
-      return EFI_SUCCESS;
+STATIC VOID BbSdaHigh (VOID) {
+  UINT32 Con = MmioRead32 (GPP4_CON) & ~0x0FU;
+  MmioWrite32 (GPP4_CON, Con);
+}
+
+STATIC UINT8 BbSdaRead (VOID) {
+  return (UINT8)(MmioRead32 (GPP4_DAT) & 0x1U);
+}
+
+STATIC VOID BbSclLow (VOID) {
+  UINT32 Dat = MmioRead32 (GPP4_DAT) & ~(1U << 1);
+  UINT32 Con = (MmioRead32 (GPP4_CON) & ~0xF0U) | 0x10U;
+  MmioWrite32 (GPP4_DAT, Dat);
+  MmioWrite32 (GPP4_CON, Con);
+}
+
+STATIC VOID BbSclHigh (VOID) {
+  UINTN Timeout = 500;
+  UINT32 Con = MmioRead32 (GPP4_CON) & ~0xF0U;
+  MmioWrite32 (GPP4_CON, Con);
+  while (((MmioRead32 (GPP4_DAT) & (1U << 1)) == 0) && Timeout--) {
+    MicroSecondDelay (2);
+  }
+}
+
+STATIC VOID BbStart (VOID) {
+  BbSdaHigh ();
+  BbSclHigh ();
+  MicroSecondDelay (5);
+  BbSdaLow ();
+  MicroSecondDelay (5);
+  BbSclLow ();
+  MicroSecondDelay (5);
+}
+
+STATIC VOID BbStop (VOID) {
+  BbSdaLow ();
+  MicroSecondDelay (5);
+  BbSclHigh ();
+  MicroSecondDelay (5);
+  BbSdaHigh ();
+  MicroSecondDelay (5);
+}
+
+STATIC BOOLEAN BbWriteByte (UINT8 Byte) {
+  UINTN Bit;
+  BOOLEAN Ack;
+
+  for (Bit = 0; Bit < 8; Bit++) {
+    if ((Byte & 0x80U) != 0) {
+      BbSdaHigh ();
+    } else {
+      BbSdaLow ();
     }
+    MicroSecondDelay (3);
+    BbSclHigh ();
     MicroSecondDelay (5);
+    BbSclLow ();
+    MicroSecondDelay (3);
+    Byte <<= 1;
   }
-  return EFI_TIMEOUT;
+
+  BbSdaHigh ();
+  MicroSecondDelay (3);
+  BbSclHigh ();
+  MicroSecondDelay (5);
+  Ack = (BbSdaRead () == 0);
+  BbSclLow ();
+  MicroSecondDelay (3);
+  return Ack;
 }
 
-STATIC VOID I2cClearIrq (BOOLEAN Ack) {
-  UINT32 Con = MmioRead32 (I2CCON);
-  if (Ack) {
-    Con |= I2CCON_ACKEN;
+STATIC UINT8 BbReadByte (BOOLEAN SendAck) {
+  UINTN Bit;
+  UINT8 Byte = 0;
+
+  BbSdaHigh ();
+  for (Bit = 0; Bit < 8; Bit++) {
+    Byte <<= 1;
+    MicroSecondDelay (3);
+    BbSclHigh ();
+    MicroSecondDelay (5);
+    if (BbSdaRead () != 0) {
+      Byte |= 1U;
+    }
+    BbSclLow ();
+    MicroSecondDelay (3);
+  }
+
+  if (SendAck) {
+    BbSdaLow ();
   } else {
-    Con &= ~I2CCON_ACKEN;
+    BbSdaHigh ();
   }
-  Con &= ~I2CCON_IRQPEND;
-  MmioWrite32 (I2CCON, Con);
-}
-
-STATIC VOID I2cStop (UINT32 Mode) {
-  UINTN Timeout = 1000;
-  MmioWrite32 (I2CSTAT, Mode | I2CSTAT_TXRX_EN);
-  I2cClearIrq (TRUE);
-  while ((MmioRead32 (I2CSTAT) & I2CSTAT_START_BUSY) && Timeout--) {
-    MicroSecondDelay (5);
-  }
+  MicroSecondDelay (3);
+  BbSclHigh ();
+  MicroSecondDelay (5);
+  BbSclLow ();
+  BbSdaHigh ();
+  MicroSecondDelay (3);
+  return Byte;
 }
 
 STATIC EFI_STATUS I2cWriteBytes (UINT8 SlaveAddr, CONST UINT8 *Data, UINTN Len) {
   UINTN i;
-  MmioWrite32 (I2CCON, I2CCON_ACKEN | I2CCON_IRQEN | 0x0F);
-  MmioWrite32 (I2CDS, (SlaveAddr << 1) | 0x0);
-  MmioWrite32 (I2CSTAT, I2CSTAT_MASTER_TX | I2CSTAT_START_BUSY | I2CSTAT_TXRX_EN);
-
-  if (EFI_ERROR (I2cWaitIrq ())) {
-    I2cStop (I2CSTAT_MASTER_TX);
-    return EFI_TIMEOUT;
-  }
-  if (MmioRead32 (I2CSTAT) & I2CSTAT_LAST_BIT) {
-    I2cStop (I2CSTAT_MASTER_TX);
+  BbStart ();
+  if (!BbWriteByte ((UINT8)((SlaveAddr << 1) | 0x0U))) {
+    BbStop ();
     return EFI_NO_RESPONSE;
   }
-
   for (i = 0; i < Len; i++) {
-    MmioWrite32 (I2CDS, Data[i]);
-    I2cClearIrq (TRUE);
-    if (EFI_ERROR (I2cWaitIrq ())) {
-      I2cStop (I2CSTAT_MASTER_TX);
-      return EFI_TIMEOUT;
-    }
-    if (MmioRead32 (I2CSTAT) & I2CSTAT_LAST_BIT) {
-      I2cStop (I2CSTAT_MASTER_TX);
+    if (!BbWriteByte (Data[i])) {
+      BbStop ();
       return EFI_DEVICE_ERROR;
     }
   }
-
-  I2cStop (I2CSTAT_MASTER_TX);
+  BbStop ();
   return EFI_SUCCESS;
 }
 
 STATIC EFI_STATUS I2cReadReg (UINT16 Reg, UINT8 *Buf, UINTN Len) {
-  EFI_STATUS Status;
   UINT8 RegBytes[2];
   UINTN i;
 
   RegBytes[0] = (UINT8)(Reg & 0xFF);
   RegBytes[1] = (UINT8)((Reg >> 8) & 0xFF);
 
-  Status = I2cWriteBytes (ZINITIX_I2C_ADDR, RegBytes, 2);
-  if (EFI_ERROR (Status)) {
-    return Status;
+  BbStart ();
+  if (!BbWriteByte ((UINT8)((ZINITIX_I2C_ADDR << 1) | 0x0U))) {
+    BbStop ();
+    return EFI_NO_RESPONSE;
+  }
+  if (!BbWriteByte (RegBytes[0]) || !BbWriteByte (RegBytes[1])) {
+    BbStop ();
+    return EFI_DEVICE_ERROR;
   }
 
   MicroSecondDelay (30);
-
-  MmioWrite32 (I2CCON, I2CCON_ACKEN | I2CCON_IRQEN | 0x0F);
-  MmioWrite32 (I2CDS, (ZINITIX_I2C_ADDR << 1) | 0x1);
-  MmioWrite32 (I2CSTAT, I2CSTAT_MASTER_RX | I2CSTAT_START_BUSY | I2CSTAT_TXRX_EN);
-
-  if (EFI_ERROR (I2cWaitIrq ())) {
-    I2cStop (I2CSTAT_MASTER_RX);
-    return EFI_TIMEOUT;
-  }
-  if (MmioRead32 (I2CSTAT) & I2CSTAT_LAST_BIT) {
-    I2cStop (I2CSTAT_MASTER_RX);
+  BbStart ();
+  if (!BbWriteByte ((UINT8)((ZINITIX_I2C_ADDR << 1) | 0x1U))) {
+    BbStop ();
     return EFI_NO_RESPONSE;
   }
-
   for (i = 0; i < Len; i++) {
-    BOOLEAN SendAck = (i + 1 < Len);
-    I2cClearIrq (SendAck);
-    if (EFI_ERROR (I2cWaitIrq ())) {
-      I2cStop (I2CSTAT_MASTER_RX);
-      return EFI_TIMEOUT;
-    }
-    Buf[i] = (UINT8)(MmioRead32 (I2CDS) & 0xFF);
+    Buf[i] = BbReadByte (i + 1 < Len);
   }
-
-  I2cStop (I2CSTAT_MASTER_RX);
+  BbStop ();
   return EFI_SUCCESS;
 }
 
@@ -249,16 +247,42 @@ STATIC EFI_STATUS ZinitixWriteReg (UINT16 Reg, UINT16 Val) {
   return I2cWriteBytes (ZINITIX_I2C_ADDR, Buf, 4);
 }
 
+STATIC VOID GpioAndBusInit (VOID) {
+  UINT32 Val;
+
+  /* Activer alimentation tactile tsp_ldo_en (GPG2[1] = 1) */
+  Val = (MmioRead32 (GPG2_CON) & ~(0xFU << 4)) | (0x1U << 4);
+  MmioWrite32 (GPG2_CON, Val);
+  Val = MmioRead32 (GPG2_PUD) & ~(0x3U << 2);
+  MmioWrite32 (GPG2_PUD, Val);
+  Val = MmioRead32 (GPG2_DAT) | (1U << 1);
+  MmioWrite32 (GPG2_DAT, Val);
+
+  /* Broche interruption attn_irq (GPA0[0] entree avec pull-up) */
+  Val = MmioRead32 (GPA0_CON) & ~0xFU;
+  MmioWrite32 (GPA0_CON, Val);
+  Val = (MmioRead32 (GPA0_PUD) & ~0x3U) | 0x3U;
+  MmioWrite32 (GPA0_PUD, Val);
+
+  /* Broches I2C GPP4[0..1] en entree haute impedance avec pull-up */
+  Val = MmioRead32 (GPP4_CON) & ~0xFFU;
+  MmioWrite32 (GPP4_CON, Val);
+  Val = (MmioRead32 (GPP4_PUD) & ~0xFU) | 0xFU;
+  MmioWrite32 (GPP4_PUD, Val);
+
+  MicroSecondDelay (150000);
+}
+
 STATIC EFI_STATUS ZinitixHwInit (VOID) {
   EFI_STATUS Status = EFI_DEVICE_ERROR;
   UINTN Retry;
 
-  for (Retry = 0; Retry < 5; Retry++) {
+  for (Retry = 0; Retry < 8; Retry++) {
     Status = ZinitixWriteCmd (BT532_WAKEUP_CMD);
     if (!EFI_ERROR (Status)) {
       break;
     }
-    MicroSecondDelay (10000);
+    MicroSecondDelay (15000);
   }
   if (EFI_ERROR (Status)) {
     return Status;
@@ -279,9 +303,16 @@ STATIC EFI_STATUS ZinitixHwInit (VOID) {
   return EFI_SUCCESS;
 }
 
-STATIC VOID EFIAPI TouchPollCallback (IN EFI_EVENT Event, IN VOID *Context) {
+STATIC VOID PollHardwareTouch (IN EFI_ABSOLUTE_POINTER_PROTOCOL *This) {
   ZINITIX_POINT_INFO Info;
-  EFI_ABSOLUTE_POINTER_PROTOCOL *This = (EFI_ABSOLUTE_POINTER_PROTOCOL *)Context;
+
+  if (!mHwReady) {
+    if (!EFI_ERROR (ZinitixHwInit ())) {
+      mHwReady = TRUE;
+    } else {
+      return;
+    }
+  }
 
   if ((MmioRead32 (GPA0_DAT) & 0x1U) != 0) {
     return;
@@ -308,27 +339,31 @@ STATIC VOID EFIAPI TouchPollCallback (IN EFI_EVENT Event, IN VOID *Context) {
       mLastState.CurrentZ      = 1;
       mLastState.ActiveButtons = EFI_ABSP_TouchActive;
       mStateChanged            = TRUE;
-      gBS->SignalEvent (This->WaitForInput);
+      if (This != NULL && This->WaitForInput != NULL) {
+        gBS->SignalEvent (This->WaitForInput);
+      }
     }
   } else {
     if (mLastState.ActiveButtons != 0) {
       mLastState.ActiveButtons = 0;
       mLastState.CurrentZ      = 0;
       mStateChanged            = TRUE;
-      gBS->SignalEvent (This->WaitForInput);
+      if (This != NULL && This->WaitForInput != NULL) {
+        gBS->SignalEvent (This->WaitForInput);
+      }
     }
   }
 }
 
 STATIC EFI_STATUS EFIAPI TouchReset (
   IN EFI_ABSOLUTE_POINTER_PROTOCOL *This,
-  IN BOOLEAN                       ExtendedVerification
+  IN BOOLEAN                        ExtendedVerification
   )
 {
   ZeroMem (&mLastState, sizeof (mLastState));
   mStateChanged = FALSE;
   if (ExtendedVerification) {
-    ZinitixHwInit ();
+    mHwReady = !EFI_ERROR (ZinitixHwInit ());
   }
   return EFI_SUCCESS;
 }
@@ -341,28 +376,25 @@ STATIC EFI_STATUS EFIAPI TouchGetState (
   if (State == NULL) {
     return EFI_INVALID_PARAMETER;
   }
-  TouchPollCallback (NULL, This);
+  PollHardwareTouch (This);
+  CopyMem (State, &mLastState, sizeof (EFI_ABSOLUTE_POINTER_STATE));
   if (!mStateChanged) {
     return EFI_NOT_READY;
   }
-  CopyMem (State, &mLastState, sizeof (EFI_ABSOLUTE_POINTER_STATE));
-  mStateChanged = FALSE;
-  return EFI_SUCCESS;
+mStateChanged = FALSE;
+return EFI_SUCCESS;
 }
-
 STATIC VOID EFIAPI TouchWaitForInput (IN EFI_EVENT Event, IN VOID *Context) {
-  TouchPollCallback (Event, Context);
-  if (mStateChanged) {
-    gBS->SignalEvent (Event);
-  }
+PollHardwareTouch ((EFI_ABSOLUTE_POINTER_PROTOCOL *)Context);
+if (mStateChanged) {
+gBS->SignalEvent (Event);
 }
-
+}
 STATIC EFI_ABSOLUTE_POINTER_PROTOCOL mAbsolutePointer = {
-  TouchReset,
-  TouchGetState,
-  NULL,
-  &mTouchMode
-};
+TouchReset,
+TouchGetState,
+NULL,
+&mTouchMode
 EFI_STATUS EFIAPI ZinitixTouchEntryPoint (
 IN EFI_HANDLE       ImageHandle,
 IN EFI_SYSTEM_TABLE *SystemTable
@@ -379,17 +411,7 @@ mTouchMode.AbsoluteMaxY = 1560;
 mTouchMode.AbsoluteMaxZ = 1;
 mTouchMode.Attributes   = 0;
 GpioAndBusInit ();
-Status = ZinitixHwInit ();
-{
-  volatile UINT32 *Fb = (volatile UINT32 *)(UINTN)0xEC000000ULL;
-  UINT32 Col = EFI_ERROR (Status) ? 0xFFFF2020U : 0xFF20E040U;
-  UINTN r, c;
-  for (r = 1508; r < 1520; r++) {
-    for (c = 568; c < 580; c++) {
-      Fb[r * 720 + c] = Col;
-    }
-  }
-}
+mHwReady = !EFI_ERROR (ZinitixHwInit ());
 Status = gBS->CreateEvent (
 EVT_NOTIFY_WAIT,
 TPL_NOTIFY,
@@ -406,18 +428,5 @@ Status = gBS->InstallMultipleProtocolInterfaces (
 &gEfiDevicePathProtocolGuid, &mTouchDevicePath,
 NULL
 );
-if (EFI_ERROR (Status)) {
 return Status;
-}
-Status = gBS->CreateEvent (
-EVT_TIMER | EVT_NOTIFY_SIGNAL,
-TPL_CALLBACK,
-TouchPollCallback,
-&mAbsolutePointer,
-&mPollTimerEvent
-);
-if (!EFI_ERROR (Status)) {
-gBS->SetTimer (mPollTimerEvent, TimerPeriodic, 150000);
-}
-return EFI_SUCCESS;
 }
