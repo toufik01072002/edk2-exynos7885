@@ -28,9 +28,14 @@
 #define SCREEN_W              720
 #define SCREEN_H              1560
 
-#define TOGGLE_X              585
+#define ESC_X                 505
+#define ESC_Y                 1485
+#define ESC_W                 95
+#define ESC_H                 62
+
+#define TOGGLE_X              610
 #define TOGGLE_Y              1485
-#define TOGGLE_W              125
+#define TOGGLE_W              100
 #define TOGGLE_H              62
 
 #define KBD_TOP               1120
@@ -255,6 +260,11 @@ STATIC VOID DrawKeycapPattern (UINTN X, UINTN Y, CHAR16 Ch) {
 STATIC VOID RenderOsk (VOID) {
   UINTN Row, Col;
 
+  // Bouton ESC à gauche de KBD
+  FillRect (ESC_X, ESC_Y, ESC_W, ESC_H, 210, 105, 25);
+  DrawScaledString (ESC_X + (ESC_W - 76) / 2, ESC_Y + (ESC_H - 24) / 2, L"ESC", 3, 26, 255, 255, 255);
+
+  // Bouton KBD réduit à droite
   if (mKbdVisible) {
     FillRect (TOGGLE_X, TOGGLE_Y, TOGGLE_W, TOGGLE_H, 200, 60, 60);
   } else {
@@ -291,6 +301,12 @@ STATIC VOID RenderOsk (VOID) {
 }
 
 STATIC VOID HandleTouchAt (UINT64 X, UINT64 Y) {
+  if (X >= ESC_X && X <= (ESC_X + ESC_W) &&
+      Y >= ESC_Y && Y <= (ESC_Y + ESC_H)) {
+    PushVirtualKey (CHAR_NULL, SCAN_ESC);
+    return;
+  }
+
   if (X >= TOGGLE_X && X <= (TOGGLE_X + TOGGLE_W) &&
       Y >= TOGGLE_Y && Y <= (TOGGLE_Y + TOGGLE_H)) {
     mKbdVisible = !mKbdVisible;

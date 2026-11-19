@@ -111,7 +111,7 @@ DwMmcSetBusWidth (
   }
 
   MmioWrite32 (BaseAddr + DW_MMC_CTYPE, Ctype);
-  return EFI_SUCCESS;
+  return DwMmcUpdateClock (BaseAddr);
 }
 
 EFI_STATUS
