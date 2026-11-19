@@ -2,6 +2,7 @@
 #include <Library/UefiDriverEntryPoint.h>
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/CacheMaintenanceLib.h>
 #include <Library/MemoryAllocationLib.h>
 #include <Library/DebugLib.h>
 #include <Library/DevicePathLib.h>
@@ -94,6 +95,7 @@ STATIC VOID FillRect (
     for (Col = 0; Col < W; Col++) {
       Line[Col] = Pixel;
     }
+    WriteBackInvalidateDataCacheRange ((VOID *)Line, W * sizeof (UINT32));
   }
 }
 
