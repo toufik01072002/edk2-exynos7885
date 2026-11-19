@@ -30,6 +30,7 @@
   UefiLib
 
 [Protocols]
+  gEfiAbsolutePointerProtocolGuid
   gEfiCpuArchProtocolGuid
   gEfiDevicePathProtocolGuid
   gEfiSimpleTextInProtocolGuid
