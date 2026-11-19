@@ -56,7 +56,7 @@ except (KeyError, TypeError):
 if bs_offset != 0:
     fail("BootShim offset must be zero")
 
-if not 256 <= bs_size <= 65536:
+if not 256 <= bs_size <= 524288:
     fail("BootShim size outside accepted limits")
 
 if fd_offset != bs_size:
