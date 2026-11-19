@@ -232,7 +232,7 @@ DwMmcExecCommand (
       Packet->SdMmcStatusBlk->Resp1 = MmioRead32 (BaseAddr + DW_MMC_RESP1);
       Packet->SdMmcStatusBlk->Resp2 = MmioRead32 (BaseAddr + DW_MMC_RESP2);
       Packet->SdMmcStatusBlk->Resp3 = MmioRead32 (BaseAddr + DW_MMC_RESP3);
-    } else if (Packet->SdMmcCmdBlk->ResponseType != SdMmcResponseTypeNo) {
+    } else if (Packet->SdMmcCmdBlk->ResponseType >= SdMmcResponseTypeR1 && Packet->SdMmcCmdBlk->ResponseType <= SdMmcResponseTypeR7) {
       Packet->SdMmcStatusBlk->Resp0 = MmioRead32 (BaseAddr + DW_MMC_RESP0);
     }
   }
