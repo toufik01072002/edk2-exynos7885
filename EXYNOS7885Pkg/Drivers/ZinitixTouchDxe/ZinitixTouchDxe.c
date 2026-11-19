@@ -3,6 +3,7 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/BaseMemoryLib.h>
 #include <Library/MemoryAllocationLib.h>
+#include <Library/CacheMaintenanceLib.h>
 #include <Library/DebugLib.h>
 #include <Library/IoLib.h>
 #include <Library/TimerLib.h>
@@ -24,7 +25,14 @@
 #define GPG2_DAT                (PINCTRL_TOP_BASE + 0x164)
 #define GPG2_PUD                (PINCTRL_TOP_BASE + 0x168)
 
+#define FB_BASE_ADDR            0xEC000000ULL
+#define SCREEN_W                720
+#define SCREEN_H                1560
+
 #define ZINITIX_I2C_ADDR        0x20
+#define ZT7548_CHIP_CODE        0xE548
+
+/* Commandes et registres Zinitix ZT7548 (exynos7884B-a20) */
 #define BT532_SWRESET_CMD       0x0000
 #define BT532_WAKEUP_CMD        0x0001
 #define BT532_CLEAR_INT_CMD     0x0003
@@ -33,6 +41,12 @@
 #define BT532_X_RESOLUTION      0x00C0
 #define BT532_Y_RESOLUTION      0x00C1
 #define BT532_INT_ENABLE_FLAG   0x00F0
+
+#define ZINITIX_VENDOR_CMD_EN   0xC000
+#define ZINITIX_PROG_START      0xC001
+#define ZINITIX_NVM_INIT        0xC002
+#define ZINITIX_INTN_CLEAR      0xC004
+#define ZINITIX_CHIP_CODE_REG   0xCC00
 
 #define BIT_PT_EXIST            (1U << 11)
 #define BIT_MUST_ZERO           (1U << 13)
@@ -71,6 +85,19 @@ STATIC EFI_ABSOLUTE_POINTER_MODE  mTouchMode;
 STATIC EFI_ABSOLUTE_POINTER_STATE mLastState;
 STATIC BOOLEAN                    mStateChanged   = FALSE;
 STATIC BOOLEAN                    mHwReady        = FALSE;
+STATIC UINT16                     mChipCode       = 0;
+
+STATIC VOID DebugBox (UINTN X, UINTN Y, UINTN W, UINTN H, UINT8 R, UINT8 G, UINT8 B) {
+  volatile UINT32 *Fb = (volatile UINT32 *)(UINTN)FB_BASE_ADDR;
+  UINT32 Pixel = 0xFF000000U | ((UINT32)R << 16) | ((UINT32)G << 8) | (UINT32)B;
+  UINTN Row, Col;
+  if (X + W > SCREEN_W || Y + H > SCREEN_H) return;
+  for (Row = Y; Row < Y + H; Row++) {
+    volatile UINT32 *Line = Fb + (Row * SCREEN_W) + X;
+    for (Col = 0; Col < W; Col++) Line[Col] = Pixel;
+    WriteBackInvalidateDataCacheRange ((VOID *)Line, W * sizeof (UINT32));
+  }
+}
 
 /* --- Bit-Bang I2C sur GPP4[0] (SDA) et GPP4[1] (SCL) --- */
 
@@ -250,13 +277,15 @@ STATIC EFI_STATUS ZinitixWriteReg (UINT16 Reg, UINT16 Val) {
 STATIC VOID GpioAndBusInit (VOID) {
   UINT32 Val;
 
-  /* Activer alimentation tactile tsp_ldo_en (GPG2[1] = 1) */
+  /* Cycle d'alimentation propre sur tsp_ldo_en (GPG2[1]) */
   Val = (MmioRead32 (GPG2_CON) & ~(0xFU << 4)) | (0x1U << 4);
   MmioWrite32 (GPG2_CON, Val);
   Val = MmioRead32 (GPG2_PUD) & ~(0x3U << 2);
   MmioWrite32 (GPG2_PUD, Val);
-  Val = MmioRead32 (GPG2_DAT) | (1U << 1);
-  MmioWrite32 (GPG2_DAT, Val);
+
+  MmioWrite32 (GPG2_DAT, MmioRead32 (GPG2_DAT) & ~(1U << 1));
+  MicroSecondDelay (20000);
+  MmioWrite32 (GPG2_DAT, MmioRead32 (GPG2_DAT) | (1U << 1));
 
   /* Broche interruption attn_irq (GPA0[0] entree avec pull-up) */
   Val = MmioRead32 (GPA0_CON) & ~0xFU;
@@ -270,12 +299,59 @@ STATIC VOID GpioAndBusInit (VOID) {
   Val = (MmioRead32 (GPP4_PUD) & ~0xFU) | 0xFU;
   MmioWrite32 (GPP4_PUD, Val);
 
-  MicroSecondDelay (150000);
+  MicroSecondDelay (100000);
+}
+
+STATIC EFI_STATUS ZinitixPowerSequence (VOID) {
+  UINTN Retry;
+  EFI_STATUS Status;
+
+  for (Retry = 0; Retry < 5; Retry++) {
+    Status = ZinitixWriteReg (ZINITIX_VENDOR_CMD_EN, 0x0001);
+    if (EFI_ERROR (Status)) {
+      MicroSecondDelay (20000);
+      continue;
+    }
+    MicroSecondDelay (20);
+
+    Status = I2cReadReg (ZINITIX_CHIP_CODE_REG, (UINT8 *)&mChipCode, sizeof (mChipCode));
+    if (EFI_ERROR (Status)) {
+      MicroSecondDelay (20000);
+      continue;
+    }
+    MicroSecondDelay (20);
+
+    if (EFI_ERROR (ZinitixWriteCmd (ZINITIX_INTN_CLEAR))) {
+      MicroSecondDelay (20000);
+      continue;
+    }
+    MicroSecondDelay (20);
+
+    if (EFI_ERROR (ZinitixWriteReg (ZINITIX_NVM_INIT, 0x0001))) {
+      MicroSecondDelay (20000);
+      continue;
+    }
+    MicroSecondDelay (3000);
+
+    if (EFI_ERROR (ZinitixWriteReg (ZINITIX_PROG_START, 0x0001))) {
+      MicroSecondDelay (20000);
+      continue;
+    }
+    MicroSecondDelay (150000);
+    return EFI_SUCCESS;
+  }
+
+  return EFI_DEVICE_ERROR;
 }
 
 STATIC EFI_STATUS ZinitixHwInit (VOID) {
-  EFI_STATUS Status = EFI_DEVICE_ERROR;
+  EFI_STATUS Status;
   UINTN Retry;
+
+  Status = ZinitixPowerSequence ();
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   for (Retry = 0; Retry < 8; Retry++) {
     Status = ZinitixWriteCmd (BT532_WAKEUP_CMD);
@@ -300,87 +376,86 @@ STATIC EFI_STATUS ZinitixHwInit (VOID) {
   ZinitixWriteCmd (BT532_CLEAR_INT_CMD);
   MicroSecondDelay (1000);
   ZinitixWriteCmd (BT532_CLEAR_INT_CMD);
-  return EFI_SUCCESS;
-}
 
+
+
+return EFI_SUCCESS;
+}
 STATIC VOID PollHardwareTouch (IN EFI_ABSOLUTE_POINTER_PROTOCOL *This) {
-  ZINITIX_POINT_INFO Info;
-
-  if (!mHwReady) {
-    if (!EFI_ERROR (ZinitixHwInit ())) {
-      mHwReady = TRUE;
-    } else {
-      return;
-    }
-  }
-
-  if ((MmioRead32 (GPA0_DAT) & 0x1U) != 0) {
-    return;
-  }
-
-  ZeroMem (&Info, sizeof (Info));
-  if (EFI_ERROR (I2cReadReg (BT532_POINT_STATUS_REG, (UINT8 *)&Info, sizeof (Info)))) {
-    ZinitixWriteCmd (BT532_CLEAR_INT_CMD);
-    return;
-  }
-
-  ZinitixWriteCmd (BT532_CLEAR_INT_CMD);
-
-  if ((Info.Status & BIT_MUST_ZERO) != 0 || Info.Status == 0xFFFF || Info.Status == 0x0001) {
-    return;
-  }
-
-  if ((Info.Status & BIT_PT_EXIST) != 0 && Info.FingerCnt > 0) {
-    UINT16 X = Info.Coord[0].X;
-    UINT16 Y = Info.Coord[0].Y;
-    if (X < 720 && Y < 1560) {
-      mLastState.CurrentX      = X;
-      mLastState.CurrentY      = Y;
-      mLastState.CurrentZ      = 1;
-      mLastState.ActiveButtons = EFI_ABSP_TouchActive;
-      mStateChanged            = TRUE;
-      if (This != NULL && This->WaitForInput != NULL) {
-        gBS->SignalEvent (This->WaitForInput);
-      }
-    }
-  } else {
-    if (mLastState.ActiveButtons != 0) {
-      mLastState.ActiveButtons = 0;
-      mLastState.CurrentZ      = 0;
-      mStateChanged            = TRUE;
-      if (This != NULL && This->WaitForInput != NULL) {
-        gBS->SignalEvent (This->WaitForInput);
-      }
-    }
-  }
+ZINITIX_POINT_INFO Info;
+if (!mHwReady) {
+if (!EFI_ERROR (ZinitixHwInit ())) {
+mHwReady = TRUE;
+} else {
+/* Témoin rouge persistant en haut à droite si I2C ZT7548 KO */
+DebugBox (690, 10, 18, 18, 220, 40, 40);
+return;
 }
-
+}
+/* Témoin vert persistant en haut à droite si ZT7548 initialisé */
+DebugBox (690, 10, 18, 18, 40, 220, 80);
+/* Lecture si GPA0[0] actif bas OU lecture directe pour résilience */
+ZeroMem (&Info, sizeof (Info));
+if (EFI_ERROR (I2cReadReg (BT532_POINT_STATUS_REG, (UINT8 *)&Info, sizeof (Info)))) {
+return;
+}
+if ((MmioRead32 (GPA0_DAT) & 0x1U) == 0 || Info.Status != 0) {
+ZinitixWriteCmd (BT532_CLEAR_INT_CMD);
+}
+if ((Info.Status & BIT_MUST_ZERO) != 0 || Info.Status == 0xFFFF || Info.Status == 0x0001) {
+return;
+}
+if ((Info.Status & BIT_PT_EXIST) != 0 && Info.FingerCnt > 0) {
+UINT16 X = Info.Coord[0].X;
+UINT16 Y = Info.Coord[0].Y;
+if (X < 720 && Y < 1560) {
+/* Pointeur visuel blanc sous le doigt */
+DebugBox (X > 4 ? X - 4 : 0, Y > 4 ? Y - 4 : 0, 8, 8, 255, 255, 255);
+mLastState.CurrentX      = X;
+mLastState.CurrentY      = Y;
+mLastState.CurrentZ      = 1;
+mLastState.ActiveButtons = EFI_ABSP_TouchActive;
+mStateChanged            = TRUE;
+if (This != NULL && This->WaitForInput != NULL) {
+gBS->SignalEvent (This->WaitForInput);
+}
+}
+} else {
+if (mLastState.ActiveButtons != 0) {
+mLastState.ActiveButtons = 0;
+mLastState.CurrentZ      = 0;
+mStateChanged            = TRUE;
+if (This != NULL && This->WaitForInput != NULL) {
+gBS->SignalEvent (This->WaitForInput);
+}
+}
+}
+}
 STATIC EFI_STATUS EFIAPI TouchReset (
-  IN EFI_ABSOLUTE_POINTER_PROTOCOL *This,
-  IN BOOLEAN                        ExtendedVerification
-  )
+IN EFI_ABSOLUTE_POINTER_PROTOCOL *This,
+IN BOOLEAN                        ExtendedVerification
+)
 {
-  ZeroMem (&mLastState, sizeof (mLastState));
-  mStateChanged = FALSE;
-  if (ExtendedVerification) {
-    mHwReady = !EFI_ERROR (ZinitixHwInit ());
-  }
-  return EFI_SUCCESS;
+ZeroMem (&mLastState, sizeof (mLastState));
+mStateChanged = FALSE;
+if (ExtendedVerification) {
+mHwReady = !EFI_ERROR (ZinitixHwInit ());
 }
-
+return EFI_SUCCESS;
+}
 STATIC EFI_STATUS EFIAPI TouchGetState (
-  IN  EFI_ABSOLUTE_POINTER_PROTOCOL *This,
-  OUT EFI_ABSOLUTE_POINTER_STATE    *State
-  )
+IN  EFI_ABSOLUTE_POINTER_PROTOCOL *This,
+OUT EFI_ABSOLUTE_POINTER_STATE    *State
+)
 {
-  if (State == NULL) {
-    return EFI_INVALID_PARAMETER;
-  }
-  PollHardwareTouch (This);
-  CopyMem (State, &mLastState, sizeof (EFI_ABSOLUTE_POINTER_STATE));
-  if (!mStateChanged) {
-    return EFI_NOT_READY;
-  }
+if (State == NULL) {
+return EFI_INVALID_PARAMETER;
+}
+PollHardwareTouch (This);
+CopyMem (State, &mLastState, sizeof (EFI_ABSOLUTE_POINTER_STATE));
+if (!mStateChanged) {
+return EFI_NOT_READY;
+}
 mStateChanged = FALSE;
 return EFI_SUCCESS;
 }
