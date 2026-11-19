@@ -228,18 +228,18 @@ STATIC VOID DrawScaledString (UINTN X, UINTN Y, CONST CHAR16 *Str, UINTN Scale, 
 STATIC VOID DrawKeycapPattern (UINTN X, UINTN Y, CHAR16 Ch) {
   UINT8 R = 248, G = 250, B = 255;
   CONST CHAR16 *Label = NULL;
-  CHAR16 Single;
+  CHAR16 Single[2];
 
   if (Ch == L'\r') { Label = L"ENT"; }
   else if (Ch == L'\b') { Label = L"DEL"; }
   else if (Ch == L'^') { Label = L"SHF"; }
   else {
-    Single = Ch;
-    Single = L'\0';
+    Single[0] = Ch;
+    Single[1] = L'\0';
     Label = Single;
   }
 
-  if (Label == L'\0') {
+  if (Label[1] == L'\0') {
     // Caractère unique : échelle x4 (32x32 px) centré dans la touche 70x68
     UINTN StartX = X + (KEY_W - 32) / 2;
     UINTN StartY = Y + (KEY_H - 32) / 2;
