@@ -52,7 +52,6 @@ STATIC BOOLEAN    mSendNullClear = FALSE;
 STATIC BOOLEAN    mKbdVisible    = FALSE;
 STATIC BOOLEAN    mShiftActive   = FALSE;
 STATIC BOOLEAN    mPrevTouching  = FALSE;
-STATIC UINTN      mPollTick      = 0;
 
 STATIC EFI_INPUT_KEY mKeyQueue[KEY_QUEUE_SIZE];
 STATIC UINTN mQueueHead = 0;
