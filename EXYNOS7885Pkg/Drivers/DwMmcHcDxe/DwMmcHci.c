@@ -33,6 +33,106 @@ STATIC UINT32 mCmdSeq = 0;
 
 STATIC
 EFI_STATUS
+DwMmcRecoverController (
+  IN UINTN  BaseAddr,
+  IN UINT32 CmdIdx
+  )
+{
+  EFI_STATUS Status;
+  UINT32     Timeout;
+  UINT32     RintSts;
+  UINT32     Ctrl;
+  UINT32     ClkSelSaved;
+
+  Print (L"[DWMMC 0x%x] CMD%u recovery: CMD=0x%x RINT=0x%x STATUS=0x%x CTRL=0x%x CLKENA=0x%x CLKDIV=0x%x CLKSEL=0x%x\n",
+         (UINT32)BaseAddr,
+         CmdIdx,
+         MmioRead32 (BaseAddr + DW_MMC_CMD),
+         MmioRead32 (BaseAddr + DW_MMC_RINTSTS),
+         MmioRead32 (BaseAddr + DW_MMC_STATUS),
+         MmioRead32 (BaseAddr + DW_MMC_CTRL),
+         MmioRead32 (BaseAddr + DW_MMC_CLKENA),
+         MmioRead32 (BaseAddr + DW_MMC_CLKDIV),
+         MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL));
+
+  // Sauvegarder le timing RX Samsung avant le reset.
+  ClkSelSaved = MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL);
+
+  // Neutraliser temporairement les champs RX : bits 7:6 et 2:0.
+  MmioWrite32 (
+    BaseAddr + EXYNOS_DWMMC_CLKSEL,
+    ClkSelSaved & ~((0x3 << 6) | 0x7)
+    );
+
+  // Reset CIU + FIFO. Le contrôleur fonctionne en PIO.
+  Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
+  Ctrl |= DW_MMC_CTRL_RESET | DW_MMC_CTRL_FIFO_RESET;
+  MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
+
+  Status = DwMmcWaitForClear (
+             BaseAddr,
+             DW_MMC_CTRL,
+             DW_MMC_CTRL_RESET | DW_MMC_CTRL_FIFO_RESET,
+             100000
+             );
+
+  // Restaurer CLKSEL même si le reset a expiré.
+  MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, ClkSelSaved);
+
+  if (EFI_ERROR (Status)) {
+    Print (L"[DWMMC 0x%x] CMD%u recovery: RESET TIMEOUT CTRL=0x%x CLKSEL restored=0x%x\n",
+           (UINT32)BaseAddr,
+           CmdIdx,
+           MmioRead32 (BaseAddr + DW_MMC_CTRL),
+           ClkSelSaved);
+    return Status;
+  }
+
+  // Nettoyer les interruptions résiduelles.
+  MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
+  MmioWrite32 (BaseAddr + DW_MMC_CMDARG, 0);
+
+  // Réinitialiser les registres d'horloge CIU après le reset.
+  // Sans WAIT_PRVDATA, comme dans la récupération TWRP.
+  MmioWrite32 (
+    BaseAddr + DW_MMC_CMD,
+    DW_MMC_CMD_START | DW_MMC_CMD_UPD_CLK | BIT29
+    );
+
+  Timeout = 100000;
+  while (Timeout > 0) {
+    RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
+
+    if (RintSts & DW_MMC_INT_HLE) {
+      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, DW_MMC_INT_HLE);
+      Print (L"[DWMMC 0x%x] CMD%u recovery: HLE\n",
+             (UINT32)BaseAddr, CmdIdx);
+      return EFI_DEVICE_ERROR;
+    }
+
+    if ((MmioRead32 (BaseAddr + DW_MMC_CMD) &
+         DW_MMC_CMD_START) == 0) {
+      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
+      Print (L"[DWMMC 0x%x] CMD%u recovery: OK\n",
+             (UINT32)BaseAddr, CmdIdx);
+      return EFI_SUCCESS;
+    }
+
+    MicroSecondDelay (1);
+    Timeout--;
+  }
+
+  Print (L"[DWMMC 0x%x] CMD%u recovery: UPDATE_CLOCK TIMEOUT CMD=0x%x RINT=0x%x\n",
+         (UINT32)BaseAddr,
+         CmdIdx,
+         MmioRead32 (BaseAddr + DW_MMC_CMD),
+         MmioRead32 (BaseAddr + DW_MMC_RINTSTS));
+
+  return EFI_TIMEOUT;
+}
+
+STATIC
+EFI_STATUS
 DwMmcUpdateClock (
   IN UINTN BaseAddr
   )
@@ -282,7 +382,15 @@ DwMmcExecCommand (
              BaseAddr, DW_MMC_CMD, DW_MMC_CMD_START, 500000
              );
   if (EFI_ERROR (Status)) {
-    Print (L"[DWMMC 0x%x] CMD%d TIMEOUT pre-start\n", (UINT32)BaseAddr, CmdIdx);
+    Print (L"[DWMMC 0x%x] CMD%d TIMEOUT pre-start\n",
+           (UINT32)BaseAddr, CmdIdx);
+
+    Status = DwMmcRecoverController (BaseAddr, CmdIdx);
+    if (EFI_ERROR (Status)) {
+      Print (L"[DWMMC 0x%x] CMD%d recovery failed: 0x%x\n",
+             (UINT32)BaseAddr, CmdIdx, (UINT32)Status);
+    }
+
     Packet->TransactionStatus = EFI_TIMEOUT;
     return EFI_TIMEOUT;
   }
@@ -401,7 +509,15 @@ DwMmcExecCommand (
   }
   if ((MmioRead32 (BaseAddr + DW_MMC_RINTSTS) &
        DW_MMC_INT_CMD_DONE) == 0) {
-    Print (L"[DWMMC 0x%x] CMD%d TIMEOUT cmd_done\n", (UINT32)BaseAddr, CmdIdx);
+    Print (L"[DWMMC 0x%x] CMD%d TIMEOUT cmd_done\n",
+           (UINT32)BaseAddr, CmdIdx);
+
+    Status = DwMmcRecoverController (BaseAddr, CmdIdx);
+    if (EFI_ERROR (Status)) {
+      Print (L"[DWMMC 0x%x] CMD%d recovery failed: 0x%x\n",
+             (UINT32)BaseAddr, CmdIdx, (UINT32)Status);
+    }
+
     Packet->TransactionStatus = EFI_TIMEOUT;
     return EFI_TIMEOUT;
   }
