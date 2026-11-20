@@ -18,6 +18,6 @@ typedef struct {
 } DW_MMC_HC_PRIVATE_DATA;
 
 #define DW_MMC_HC_PRIVATE_FROM_THIS(a) \
-  CR (a, DW_MMC_HC_PRIVATE_DATA, PassThru, DW_MMC_HC_PRIVATE_SIGNATURE)
+  BASE_CR (a, DW_MMC_HC_PRIVATE_DATA, PassThru)
 
 #endif

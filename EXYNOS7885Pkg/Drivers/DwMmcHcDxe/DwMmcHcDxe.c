@@ -39,6 +39,10 @@ DwMmcPassThruPassThru (
   }
 
   Private = DW_MMC_HC_PRIVATE_FROM_THIS (This);
+  if (Private->Signature != DW_MMC_HC_PRIVATE_SIGNATURE) {
+    return EFI_INVALID_PARAMETER;
+  }
+
   if (!Private->SlotInitialized[Slot]) {
     Packet->TransactionStatus = EFI_NO_MEDIA;
     Status = EFI_NO_MEDIA;
@@ -67,6 +71,9 @@ DwMmcPassThruGetNextSlot (
   }
 
   Private = DW_MMC_HC_PRIVATE_FROM_THIS (This);
+  if (Private->Signature != DW_MMC_HC_PRIVATE_SIGNATURE) {
+    return EFI_INVALID_PARAMETER;
+  }
 
   if (*Slot == 0xFF) {
     if (Private->SlotInitialized[0]) {
@@ -100,13 +107,19 @@ DwMmcPassThruBuildDevicePath (
   OUT    EFI_DEVICE_PATH_PROTOCOL      **DevicePath
   )
 {
-  SD_DEVICE_PATH *Node;
+  DW_MMC_HC_PRIVATE_DATA *Private;
+  SD_DEVICE_PATH         *Node;
 
   if (This == NULL || DevicePath == NULL || Slot >= EXYNOS_DWMMC_MAX_SLOTS) {
     return EFI_INVALID_PARAMETER;
   }
 
-  if (!DW_MMC_HC_PRIVATE_FROM_THIS (This)->SlotInitialized[Slot]) {
+  Private = DW_MMC_HC_PRIVATE_FROM_THIS (This);
+  if (Private->Signature != DW_MMC_HC_PRIVATE_SIGNATURE) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  if (!Private->SlotInitialized[Slot]) {
     return EFI_NO_MEDIA;
   }
 
@@ -176,6 +189,10 @@ DwMmcPassThruResetDevice (
   }
 
   Private = DW_MMC_HC_PRIVATE_FROM_THIS (This);
+  if (Private->Signature != DW_MMC_HC_PRIVATE_SIGNATURE) {
+    return EFI_INVALID_PARAMETER;
+  }
+
   Private->SlotInitialized[Slot] = FALSE;
   Status = DwMmcInitController (Private->SlotBase[Slot]);
   Private->SlotInitialized[Slot] = !EFI_ERROR (Status);
