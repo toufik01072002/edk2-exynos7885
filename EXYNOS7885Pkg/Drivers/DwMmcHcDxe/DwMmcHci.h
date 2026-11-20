@@ -9,7 +9,7 @@
 #define EXYNOS_DWMMC2_BASE        0x13550000  // microSD (Slot 1)
 #define EXYNOS_DWMMC_MAX_SLOTS    2
 
-// Offsets registres DesignWare MMC
+// Offsets registres DesignWare MMC (Exynos IP >= 2.70a 64-bit)
 #define DW_MMC_CTRL               0x000
 #define DW_MMC_PWREN              0x004
 #define DW_MMC_CLKDIV             0x008
@@ -35,10 +35,10 @@
 #define DW_MMC_HCON               0x070
 #define DW_MMC_UHS_REG            0x074
 #define DW_MMC_BMOD               0x080
-#define DW_MMC_IDSTS              0x08C
-#define DW_MMC_IDINTEN            0x090
+#define DW_MMC_IDSTS              0x090
+#define DW_MMC_IDINTEN            0x094
 #define EXYNOS_DWMMC_CLKSEL       0x09C  // Registre propriétaire Samsung Exynos
-#define DW_MMC_FIFO_BASE          0x100
+#define DW_MMC_FIFO_BASE          0x200  // Offset FIFO Exynos (64-bit data width)
 
 // Bits CTRL
 #define DW_MMC_CTRL_RESET         BIT0
