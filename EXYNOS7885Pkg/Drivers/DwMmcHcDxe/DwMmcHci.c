@@ -55,7 +55,7 @@ DwMmcInitController (
   MmioWrite32 (BaseAddr + DW_MMC_IDINTEN, 0);
 
   Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
-  Ctrl &= ~(DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_INT_ENABLE);
+  Ctrl &= ~(DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE | DW_MMC_CTRL_INT_ENABLE);
   Ctrl |= (DW_MMC_CTRL_RESET | DW_MMC_CTRL_FIFO_RESET | DW_MMC_CTRL_DMA_RESET);
   MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
 
@@ -66,6 +66,14 @@ DwMmcInitController (
     MicroSecondDelay (1);
   }
 
+  // S'assurer que le mode PIO pur est actif après reset (pas d'IDMAC ni DMA externe)
+  MmioWrite32 (BaseAddr + DW_MMC_BMOD, 0);
+  MmioWrite32 (BaseAddr + DW_MMC_IDINTEN, 0);
+  Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
+  Ctrl &= ~(DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE | DW_MMC_CTRL_INT_ENABLE);
+  MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
+
+  // Conserver le CLKSEL du bootloader (ou fallback SDR si nul)
   if (ClkSelSaved == 0) {
     ClkSelSaved = 0x03020001;
   }
@@ -77,6 +85,14 @@ DwMmcInitController (
   MmioWrite32 (BaseAddr + DW_MMC_TMOUT, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_CTYPE, DW_MMC_CTYPE_1BIT);
   MmioWrite32 (BaseAddr + DW_MMC_FIFOTH, (0x2 << 28) | (15 << 16) | 16);
+
+  if (BaseAddr == EXYNOS_DWMMC0_BASE) {
+    Print (L"[DW0] VERID=0x%x HCON=0x%x CTRL=0x%x CLKSEL=0x%x\n",
+           MmioRead32 (BaseAddr + DW_MMC_VERID),
+           MmioRead32 (BaseAddr + DW_MMC_HCON),
+           MmioRead32 (BaseAddr + DW_MMC_CTRL),
+           MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL));
+  }
 
   return DwMmcSetClock (BaseAddr, 400);
 }
@@ -183,14 +199,14 @@ DwMmcExecCommand (
     }
   }
 
-  // Passer a ~12.5 MHz des CMD7 (Select) ou CMD8
+  // Passer à ~12.5 MHz dès CMD7 (Select) ou CMD8
   if (CmdIdx == 7 || CmdIdx == 8 || CmdIdx == 17 || CmdIdx == 18) {
     if (MmioRead32 (BaseAddr + DW_MMC_CLKDIV) == 64) {
       DwMmcSetClock (BaseAddr, 25000);
     }
   }
 
-  // Attendre fin de commande precedente
+  // Attendre fin de commande précédente
   Timeout = 500000;
   while ((MmioRead32 (BaseAddr + DW_MMC_CMD) & DW_MMC_CMD_START) && Timeout--) {
     MicroSecondDelay (1);

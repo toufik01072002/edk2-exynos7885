@@ -31,19 +31,21 @@
 #define DW_MMC_STATUS             0x048
 #define DW_MMC_FIFOTH             0x04C
 #define DW_MMC_CDETECT            0x050
+#define DW_MMC_VERID              0x06C
 #define DW_MMC_HCON               0x070
 #define DW_MMC_UHS_REG            0x074
 #define DW_MMC_BMOD               0x080
 #define DW_MMC_IDSTS              0x08C
 #define DW_MMC_IDINTEN            0x090
 #define EXYNOS_DWMMC_CLKSEL       0x09C  // Registre propriétaire Samsung Exynos
-#define DW_MMC_FIFO_BASE          0x100  // FIFO Exynos 7885 (DATA_240A_OFFSET = 0x100)
+#define DW_MMC_FIFO_BASE          0x200  // FIFO Exynos 7885 (v2.70a+)
 
 // Bits CTRL
 #define DW_MMC_CTRL_RESET         BIT0
 #define DW_MMC_CTRL_FIFO_RESET    BIT1
 #define DW_MMC_CTRL_DMA_RESET     BIT2
 #define DW_MMC_CTRL_INT_ENABLE    BIT4
+#define DW_MMC_CTRL_DMA_ENABLE    BIT5
 #define DW_MMC_CTRL_USE_IDMAC     BIT25
 
 // Bits CLKENA
