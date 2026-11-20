@@ -9,19 +9,17 @@
 #include <Library/UefiLib.h>
 #include "DwMmcHci.h"
 
-#define DW_MMC_MAX_DESC_COUNT   256
-#define DW_MMC_BOUNCE_SIZE      (DW_MMC_MAX_DESC_COUNT * IDMAC_MAX_BUF_SIZE) // 1 MiB
-#define DW_MMC_LOW_RAM_LIMIT    0x8FFFFFFFULL
+#define DW_MMC_IDMAC_RING_COUNT   256
+#define DW_MMC_BOUNCE_BUFFER_SIZE (1024 * 1024)
 
 STATIC UINT32               mLastLoggedErr = 0;
-STATIC UINT32               mCmdSeq = 0;
-STATIC UINT32               mSavedClkSel0 = 0;
-STATIC UINT32               mSavedClkSel2 = 0;
-
-STATIC DW_MMC_IDMAC_DESC64  *mIdmacRing0 = NULL;
-STATIC DW_MMC_IDMAC_DESC64  *mIdmacRing2 = NULL;
-STATIC UINT8                *mBounceBuf0 = NULL;
-STATIC UINT8                *mBounceBuf2 = NULL;
+STATIC UINT32               mCmdSeq        = 0;
+STATIC UINT32               mSavedClkSel0  = 0;
+STATIC UINT32               mSavedClkSel2  = 0;
+STATIC DW_MMC_IDMAC_DESC64 *mIdmacRing0    = NULL;
+STATIC DW_MMC_IDMAC_DESC64 *mIdmacRing2    = NULL;
+STATIC UINT8               *mBounceBuf0    = NULL;
+STATIC UINT8               *mBounceBuf2    = NULL;
 
 STATIC
 UINT32
@@ -37,18 +35,16 @@ DwMmcGetSavedClkSel (
 
 STATIC
 EFI_STATUS
-DwMmcEnsureIdmacBuffers (
-  IN  UINTN                BaseAddr,
-  OUT DW_MMC_IDMAC_DESC64  **OutRing,
-  OUT UINT8                **OutBounce
+DwMmcEnsureDmaResources (
+  IN  UINTN                 BaseAddr,
+  OUT DW_MMC_IDMAC_DESC64 **OutRing,
+  OUT UINT8               **OutBounce
   )
 {
-  DW_MMC_IDMAC_DESC64  **RingPtr;
-  UINT8                **BouncePtr;
-  EFI_PHYSICAL_ADDRESS PhysAddr;
-  EFI_STATUS           Status;
-  UINTN                RingPages;
-  UINTN                BouncePages;
+  EFI_STATUS            Status;
+  EFI_PHYSICAL_ADDRESS  Addr;
+  DW_MMC_IDMAC_DESC64 **RingPtr;
+  UINT8               **BouncePtr;
 
   if (BaseAddr == EXYNOS_DWMMC0_BASE) {
     RingPtr   = &mIdmacRing0;
@@ -59,35 +55,33 @@ DwMmcEnsureIdmacBuffers (
   }
 
   if (*RingPtr == NULL) {
-    RingPages = EFI_SIZE_TO_PAGES (sizeof (DW_MMC_IDMAC_DESC64) * DW_MMC_MAX_DESC_COUNT);
-    PhysAddr  = DW_MMC_LOW_RAM_LIMIT;
-    Status    = gBS->AllocatePages (
-                       AllocateMaxAddress,
-                       EfiBootServicesData,
-                       RingPages,
-                       &PhysAddr
-                       );
+    Addr   = 0x8FFFFFFFULL;
+    Status = gBS->AllocatePages (
+                    AllocateMaxAddress,
+                    EfiBootServicesData,
+                    EFI_SIZE_TO_PAGES (DW_MMC_IDMAC_RING_COUNT * sizeof (DW_MMC_IDMAC_DESC64)),
+                    &Addr
+                    );
     if (EFI_ERROR (Status)) {
       return Status;
     }
-    *RingPtr = (DW_MMC_IDMAC_DESC64 *)(UINTN)PhysAddr;
-    ZeroMem (*RingPtr, EFI_PAGES_TO_SIZE (RingPages));
+    *RingPtr = (DW_MMC_IDMAC_DESC64 *)(UINTN)Addr;
+    ZeroMem (*RingPtr, DW_MMC_IDMAC_RING_COUNT * sizeof (DW_MMC_IDMAC_DESC64));
   }
 
   if (*BouncePtr == NULL) {
-    BouncePages = EFI_SIZE_TO_PAGES (DW_MMC_BOUNCE_SIZE);
-    PhysAddr    = DW_MMC_LOW_RAM_LIMIT;
-    Status      = gBS->AllocatePages (
-                         AllocateMaxAddress,
-                         EfiBootServicesData,
-                         BouncePages,
-                         &PhysAddr
-                         );
+    Addr   = 0x8FFFFFFFULL;
+    Status = gBS->AllocatePages (
+                    AllocateMaxAddress,
+                    EfiBootServicesData,
+                    EFI_SIZE_TO_PAGES (DW_MMC_BOUNCE_BUFFER_SIZE),
+                    &Addr
+                    );
     if (EFI_ERROR (Status)) {
       return Status;
     }
-    *BouncePtr = (UINT8 *)(UINTN)PhysAddr;
-    ZeroMem (*BouncePtr, EFI_PAGES_TO_SIZE (BouncePages));
+    *BouncePtr = (UINT8 *)(UINTN)Addr;
+    ZeroMem (*BouncePtr, DW_MMC_BOUNCE_BUFFER_SIZE);
   }
 
   *OutRing   = *RingPtr;
@@ -125,21 +119,14 @@ DwMmcEnableIdmac (
   UINT32 Ctrl;
 
   MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_SWR);
-  DwMmcWaitForClear (BaseAddr, DW_MMC_BMOD, DW_MMC_BMOD_SWR, 10000);
+  DwMmcWaitForClear (BaseAddr, DW_MMC_BMOD, DW_MMC_BMOD_SWR, 100000);
 
   MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
-  MmioWrite32 (
-    BaseAddr + DW_MMC_IDINTEN,
-    DW_MMC_IDMAC_INT_TI | DW_MMC_IDMAC_INT_RI |
-    DW_MMC_IDMAC_INT_FBE | DW_MMC_IDMAC_INT_DU |
-    DW_MMC_IDMAC_INT_CES | DW_MMC_IDMAC_INT_NI |
-    DW_MMC_IDMAC_INT_AIS
-    );
-
+  MmioWrite32 (BaseAddr + DW_MMC_IDINTEN, DW_MMC_IDMAC_INT_MASK);
   MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_DE | DW_MMC_BMOD_FB);
 
-  Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
-  Ctrl |= (DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE);
+  Ctrl  = MmioRead32 (BaseAddr + DW_MMC_CTRL);
+  Ctrl |= DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE;
   MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
 }
 
@@ -158,17 +145,23 @@ DwMmcRecoverController (
 
   ClkSelSaved = DwMmcGetSavedClkSel (BaseAddr);
 
-  Print (L"[DWMMC 0x%x] CMD%u recovery: CMD=0x%x RINT=0x%x STATUS=0x%x CTRL=0x%x CLKSEL=0x%x
-",
-         (UINT32)BaseAddr,
-         CmdIdx,
-         MmioRead32 (BaseAddr + DW_MMC_CMD),
-         MmioRead32 (BaseAddr + DW_MMC_RINTSTS),
-         MmioRead32 (BaseAddr + DW_MMC_STATUS),
-         MmioRead32 (BaseAddr + DW_MMC_CTRL),
-         MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL));
+  Print (
+    L"[DWMMC 0x%x] CMD%u recovery: CMD=0x%x RINT=0x%x STATUS=0x%x CTRL=0x%x CLKSEL=0x%x\n",
+    (UINT32)BaseAddr,
+    CmdIdx,
+    MmioRead32 (BaseAddr + DW_MMC_CMD),
+    MmioRead32 (BaseAddr + DW_MMC_RINTSTS),
+    MmioRead32 (BaseAddr + DW_MMC_STATUS),
+    MmioRead32 (BaseAddr + DW_MMC_CTRL),
+    MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL)
+    );
 
-  Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
+  MmioWrite32 (
+    BaseAddr + EXYNOS_DWMMC_CLKSEL,
+    ClkSelSaved & ~((0x3U << 6) | 0x7U)
+    );
+
+  Ctrl  = MmioRead32 (BaseAddr + DW_MMC_CTRL);
   Ctrl |= DW_MMC_CTRL_RESET | DW_MMC_CTRL_FIFO_RESET | DW_MMC_CTRL_DMA_RESET;
   MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
 
@@ -180,14 +173,15 @@ DwMmcRecoverController (
              );
 
   MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, ClkSelSaved);
-  DwMmcEnableIdmac (BaseAddr);
 
   if (EFI_ERROR (Status)) {
     return Status;
   }
 
+  DwMmcEnableIdmac (BaseAddr);
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_CMDARG, 0);
+
   MmioWrite32 (
     BaseAddr + DW_MMC_CMD,
     DW_MMC_CMD_START | DW_MMC_CMD_UPD_CLK | BIT29
@@ -196,14 +190,17 @@ DwMmcRecoverController (
   Timeout = 100000;
   while (Timeout > 0) {
     RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
+
     if (RintSts & DW_MMC_INT_HLE) {
       MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, DW_MMC_INT_HLE);
       return EFI_DEVICE_ERROR;
     }
+
     if ((MmioRead32 (BaseAddr + DW_MMC_CMD) & DW_MMC_CMD_START) == 0) {
       MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
       return EFI_SUCCESS;
     }
+
     MicroSecondDelay (1);
     Timeout--;
   }
@@ -268,25 +265,25 @@ DwMmcInitController (
   IN UINTN BaseAddr
   )
 {
-  UINT32     ClkSelInit;
+  UINT32     ClkSelSaved;
   UINT32     Ctrl;
   EFI_STATUS Status;
 
-  ClkSelInit = MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL);
-  if (ClkSelInit == 0) {
-    ClkSelInit = 0x03020001;
+  ClkSelSaved = MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL);
+  if (ClkSelSaved == 0) {
+    ClkSelSaved = 0x03020001;
   }
 
   if (BaseAddr == EXYNOS_DWMMC0_BASE) {
-    mSavedClkSel0 = ClkSelInit;
+    mSavedClkSel0 = ClkSelSaved;
   } else {
-    mSavedClkSel2 = ClkSelInit;
+    mSavedClkSel2 = ClkSelSaved;
   }
 
   MmioWrite32 (BaseAddr + DW_MMC_BMOD, 0);
   MmioWrite32 (BaseAddr + DW_MMC_IDINTEN, 0);
 
-  Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
+  Ctrl  = MmioRead32 (BaseAddr + DW_MMC_CTRL);
   Ctrl &= ~(DW_MMC_CTRL_USE_IDMAC |
             DW_MMC_CTRL_DMA_ENABLE |
             DW_MMC_CTRL_INT_ENABLE);
@@ -309,22 +306,24 @@ DwMmcInitController (
     return Status;
   }
 
-  MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, ClkSelInit);
+  MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, ClkSelSaved);
   MmioWrite32 (BaseAddr + DW_MMC_PWREN, 1);
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_INTMASK, 0);
   MmioWrite32 (BaseAddr + DW_MMC_TMOUT, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_CTYPE, DW_MMC_CTYPE_1BIT);
-  MmioWrite32 (BaseAddr + DW_MMC_FIFOTH, (0x2 << 28) | (15 << 16) | 16);
+  MmioWrite32 (BaseAddr + DW_MMC_FIFOTH, (0x2U << 28) | (15U << 16) | 16U);
 
   DwMmcEnableIdmac (BaseAddr);
 
   if (BaseAddr == EXYNOS_DWMMC0_BASE) {
-    Print (L"[DW0] VERID=0x%x HCON=0x%x CTRL=0x%x CLKSEL=0x%x\n",
-           MmioRead32 (BaseAddr + DW_MMC_VERID),
-           MmioRead32 (BaseAddr + DW_MMC_HCON),
-           MmioRead32 (BaseAddr + DW_MMC_CTRL),
-           MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL));
+    Print (
+      L"[DW0] VERID=0x%x HCON=0x%x CTRL=0x%x CLKSEL=0x%x\n",
+      MmioRead32 (BaseAddr + DW_MMC_VERID),
+      MmioRead32 (BaseAddr + DW_MMC_HCON),
+      MmioRead32 (BaseAddr + DW_MMC_CTRL),
+      MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL)
+      );
   }
 
   return DwMmcSetClock (BaseAddr, 400);
@@ -399,79 +398,77 @@ DwMmcSetBusWidth (
 
 STATIC
 EFI_STATUS
-DwMmcSetupIdmacTransfer (
-  IN  UINTN    BaseAddr,
-  IN  BOOLEAN  IsRead,
-  IN  VOID     *UserBuffer,
-  IN  UINT32   TotalBytes,
-  OUT UINT8    **OutBounceBuf,
-  OUT UINT32   *OutDescCount
+DwMmcPrepareIdmac (
+  IN  UINTN                 BaseAddr,
+  IN  UINT8                *BounceBuf,
+  IN  DW_MMC_IDMAC_DESC64  *Ring,
+  IN  UINT32                TotalBytes,
+  OUT UINT32               *OutDescCount
   )
 {
-  DW_MMC_IDMAC_DESC64 *Ring;
-  UINT8               *Bounce;
-  EFI_STATUS          Status;
-  UINT32              DescCount;
-  UINT32              Remaining;
-  UINT32              Offset;
-  UINT32              i;
-  UINTN               RingPhys;
+  UINT32 Offset;
+  UINT32 i;
+  UINT32 Chunk;
+  UINTN  BufAddr;
+  UINTN  DescAddr;
+  UINT32 Des0;
 
-  if (TotalBytes > DW_MMC_BOUNCE_SIZE) {
+  if (TotalBytes == 0 || TotalBytes > DW_MMC_BOUNCE_BUFFER_SIZE) {
     return EFI_BAD_BUFFER_SIZE;
   }
 
-  Status = DwMmcEnsureIdmacBuffers (BaseAddr, &Ring, &Bounce);
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
+  Offset = 0;
+  i      = 0;
 
-  if (!IsRead) {
-    CopyMem (Bounce, UserBuffer, TotalBytes);
-  } else {
-    ZeroMem (Bounce, TotalBytes);
-  }
+  while (Offset < TotalBytes) {
+    if (i >= DW_MMC_IDMAC_RING_COUNT) {
+      return EFI_OUT_OF_RESOURCES;
+    }
 
-  DescCount = (TotalBytes + IDMAC_MAX_BUF_SIZE - 1) / IDMAC_MAX_BUF_SIZE;
-  Remaining = TotalBytes;
-  Offset    = 0;
+    Chunk   = TotalBytes - Offset;
+    if (Chunk > IDMAC_MAX_BUFFER_SIZE) {
+      Chunk = IDMAC_MAX_BUFFER_SIZE;
+    }
 
-  for (i = 0; i < DescCount; i++) {
-    UINT32 Chunk   = (Remaining > IDMAC_MAX_BUF_SIZE) ? IDMAC_MAX_BUF_SIZE : Remaining;
-    UINT64 BufAddr = (UINT64)(UINTN)(Bounce + Offset);
-    UINT32 Flags   = IDMAC_DES0_OWN;
+    BufAddr = (UINTN)(BounceBuf + Offset);
 
+    Des0 = IDMAC_DES0_OWN | IDMAC_DES0_DIC;
     if (i == 0) {
-      Flags |= IDMAC_DES0_FD;
-    }
-    if (i == DescCount - 1) {
-      Flags |= IDMAC_DES0_LD | IDMAC_DES0_ER;
+      Des0 |= IDMAC_DES0_FS;
     }
 
-    Ring[i].Des0           = Flags;
-    Ring[i].Des1           = IDMAC_SET_BUFFER1_SIZE (Chunk);
-    Ring[i].Buffer1AddrLo  = (UINT32)(BufAddr & 0xFFFFFFFFULL);
-    Ring[i].Buffer1AddrHi  = (UINT32)(BufAddr >> 32);
-    Ring[i].NextDescAddrLo = 0;
-    Ring[i].NextDescAddrHi = 0;
-    Ring[i].Reserved0      = 0;
-    Ring[i].Reserved1      = 0;
+    if ((Offset + Chunk) >= TotalBytes) {
+      Des0 &= ~IDMAC_DES0_DIC;
+      Des0 |= IDMAC_DES0_LD | IDMAC_DES0_ER;
+      Ring[i].NextDescAddrLo = 0;
+      Ring[i].NextDescAddrHi = 0;
+    } else {
+      Des0 |= IDMAC_DES0_CH;
+      DescAddr = (UINTN)(&Ring[i + 1]);
+      Ring[i].NextDescAddrLo = (UINT32)(DescAddr & 0xFFFFFFFFULL);
+      Ring[i].NextDescAddrHi = (UINT32)(DescAddr >> 32);
+    }
 
-    Remaining -= Chunk;
-    Offset    += Chunk;
+    Ring[i].Des0          = Des0;
+    Ring[i].Des1          = IDMAC_SET_BUFFER1_SIZE (Chunk);
+    Ring[i].Buffer1AddrLo = (UINT32)(BufAddr & 0xFFFFFFFFULL);
+    Ring[i].Buffer1AddrHi = (UINT32)(BufAddr >> 32);
+    Ring[i].Reserved0     = 0;
+    Ring[i].Reserved1     = 0;
+
+    Offset += Chunk;
+    i++;
   }
 
-  WriteBackInvalidateDataCacheRange (Ring, sizeof (DW_MMC_IDMAC_DESC64) * DescCount);
-  WriteBackInvalidateDataCacheRange (Bounce, TotalBytes);
+  *OutDescCount = i;
 
-  RingPhys = (UINTN)Ring;
-  MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
-  MmioWrite32 (BaseAddr + DW_MMC_DBADDRL, (UINT32)(RingPhys & 0xFFFFFFFFULL));
-  MmioWrite32 (BaseAddr + DW_MMC_DBADDRU, (UINT32)((UINT64)RingPhys >> 32));
-  MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_DE | DW_MMC_BMOD_FB);
+  WriteBackInvalidateDataCacheRange (Ring, i * sizeof (DW_MMC_IDMAC_DESC64));
+  WriteBackInvalidateDataCacheRange (BounceBuf, TotalBytes);
 
-  *OutBounceBuf = Bounce;
-  *OutDescCount = DescCount;
+  DescAddr = (UINTN)Ring;
+  MmioWrite32 (BaseAddr + DW_MMC_DBADDRL, (UINT32)(DescAddr & 0xFFFFFFFFULL));
+  MmioWrite32 (BaseAddr + DW_MMC_DBADDRU, (UINT32)(DescAddr >> 32));
+
   return EFI_SUCCESS;
 }
 
@@ -481,23 +478,32 @@ DwMmcExecCommand (
   IN OUT EFI_SD_MMC_PASS_THRU_COMMAND_PACKET *Packet
   )
 {
-  UINT32     CmdReg = DW_MMC_CMD_START | BIT29;
-  UINT32     RintSts;
-  UINT32     IdSts;
-  UINT32     Timeout;
-  EFI_STATUS Status;
-  BOOLEAN    IsRead = FALSE;
-  UINT32     TotalBytes = 0;
-  VOID       *UserBuf = NULL;
-  UINT8      *BounceBuf = NULL;
-  UINT32     DescCount = 0;
-  UINT16     CmdIdx;
-  UINT32     CmdArg;
-  BOOLEAN    IsDeselect;
+  UINT32               CmdReg;
+  UINT32               RintSts;
+  UINT32               IdSts;
+  UINT32               Timeout;
+  EFI_STATUS           Status;
+  BOOLEAN              IsRead;
+  UINT32               TotalBytes;
+  UINT8               *UserBuf;
+  UINT16               CmdIdx;
+  UINT32               CmdArg;
+  BOOLEAN              IsDeselect;
+  DW_MMC_IDMAC_DESC64 *Ring;
+  UINT8               *BounceBuf;
+  UINT32               DescCount;
 
   if (Packet == NULL || Packet->SdMmcCmdBlk == NULL) {
     return EFI_INVALID_PARAMETER;
   }
+
+  CmdReg     = DW_MMC_CMD_START | BIT29;
+  IsRead     = FALSE;
+  TotalBytes = 0;
+  UserBuf    = NULL;
+  Ring       = NULL;
+  BounceBuf  = NULL;
+  DescCount  = 0;
 
   CmdIdx     = Packet->SdMmcCmdBlk->CommandIndex;
   CmdArg     = Packet->SdMmcCmdBlk->CommandArgument;
@@ -506,8 +512,14 @@ DwMmcExecCommand (
   if (BaseAddr == EXYNOS_DWMMC0_BASE) {
     mCmdSeq++;
     if (mCmdSeq >= 18 && mCmdSeq <= 32) {
-      Print (L"[DW0 #%u] CMD%d(0x%x) RespType=%d InLen=%u\n",
-             mCmdSeq, CmdIdx, CmdArg, Packet->SdMmcCmdBlk->ResponseType, Packet->InTransferLength);
+      Print (
+        L"[DW0 #%u] CMD%d(0x%x) RespType=%d InLen=%u\n",
+        mCmdSeq,
+        CmdIdx,
+        CmdArg,
+        Packet->SdMmcCmdBlk->ResponseType,
+        Packet->InTransferLength
+        );
     }
   }
 
@@ -515,7 +527,6 @@ DwMmcExecCommand (
     CmdReg |= DW_MMC_CMD_WAIT_PRVDATA;
   }
 
-  // Filtrer CMD6 BUS_WIDTH (183) et HS_TIMING (185) sur DWMMC0 pour rester en 1-bit SDR stable
   if (CmdIdx == 6 && BaseAddr == EXYNOS_DWMMC0_BASE) {
     UINT8 Index = (CmdArg >> 16) & 0xFF;
     UINT8 Value = (CmdArg >> 8) & 0xFF;
@@ -528,7 +539,6 @@ DwMmcExecCommand (
     }
   }
 
-  // Attendre fin de commande précédente
   Status = DwMmcWaitForClear (BaseAddr, DW_MMC_CMD, DW_MMC_CMD_START, 500000);
   if (EFI_ERROR (Status)) {
     Print (L"[DWMMC 0x%x] CMD%d TIMEOUT pre-start\n", (UINT32)BaseAddr, CmdIdx);
@@ -537,7 +547,6 @@ DwMmcExecCommand (
     return EFI_TIMEOUT;
   }
 
-  // Attendre fin de DATA_BUSY sauf pour CMD12/CMD13/CMD7(0)
   if (CmdIdx != 13 && CmdIdx != 12 && !IsDeselect) {
     Status = DwMmcWaitForClear (BaseAddr, DW_MMC_STATUS, DW_MMC_STATUS_DATA_BUSY, 500000);
     if (EFI_ERROR (Status)) {
@@ -558,6 +567,8 @@ DwMmcExecCommand (
   }
 
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
+  MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
+
   CmdReg |= (CmdIdx & 0x3F);
 
   if (CmdIdx == 0) {
@@ -587,16 +598,28 @@ DwMmcExecCommand (
   if (Packet->InDataBuffer != NULL && Packet->InTransferLength > 0) {
     IsRead     = TRUE;
     TotalBytes = Packet->InTransferLength;
-    UserBuf    = Packet->InDataBuffer;
+    UserBuf    = (UINT8 *)Packet->InDataBuffer;
     CmdReg    |= DW_MMC_CMD_DATA_EXP;
   } else if (Packet->OutDataBuffer != NULL && Packet->OutTransferLength > 0) {
     IsRead     = FALSE;
     TotalBytes = Packet->OutTransferLength;
-    UserBuf    = Packet->OutDataBuffer;
+    UserBuf    = (UINT8 *)Packet->OutDataBuffer;
     CmdReg    |= (DW_MMC_CMD_DATA_EXP | DW_MMC_CMD_RW);
   }
 
   if (TotalBytes > 0) {
+    Status = DwMmcEnsureDmaResources (BaseAddr, &Ring, &BounceBuf);
+    if (EFI_ERROR (Status)) {
+      Packet->TransactionStatus = Status;
+      return Status;
+    }
+
+    if (!IsRead) {
+      CopyMem (BounceBuf, UserBuf, TotalBytes);
+    } else {
+      ZeroMem (BounceBuf, TotalBytes);
+    }
+
     MmioOr32 (BaseAddr + DW_MMC_CTRL, DW_MMC_CTRL_FIFO_RESET | DW_MMC_CTRL_DMA_RESET);
     Status = DwMmcWaitForClear (
                BaseAddr,
@@ -614,14 +637,7 @@ DwMmcExecCommand (
     MmioWrite32 (BaseAddr + DW_MMC_BLKSIZ, (TotalBytes < 512) ? TotalBytes : 512);
     MmioWrite32 (BaseAddr + DW_MMC_BYTCNT, TotalBytes);
 
-    Status = DwMmcSetupIdmacTransfer (
-               BaseAddr,
-               IsRead,
-               UserBuf,
-               TotalBytes,
-               &BounceBuf,
-               &DescCount
-               );
+    Status = DwMmcPrepareIdmac (BaseAddr, BounceBuf, Ring, TotalBytes, &DescCount);
     if (EFI_ERROR (Status)) {
       Packet->TransactionStatus = Status;
       return Status;
@@ -644,8 +660,13 @@ DwMmcExecCommand (
     RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
     if (RintSts & DW_MMC_INT_ERROR) {
       if (mLastLoggedErr < 8) {
-        Print (L"[DWMMC 0x%x] CMD%d(0x%x) err RINTSTS=0x%x\n",
-               (UINT32)BaseAddr, CmdIdx, CmdArg, RintSts);
+        Print (
+          L"[DWMMC 0x%x] CMD%d(0x%x) err RINTSTS=0x%x\n",
+          (UINT32)BaseAddr,
+          CmdIdx,
+          CmdArg,
+          RintSts
+          );
         mLastLoggedErr++;
       }
       MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
@@ -678,23 +699,30 @@ DwMmcExecCommand (
     }
   }
 
-  if (TotalBytes > 0) {
+  if (TotalBytes > 0 && UserBuf != NULL) {
     Timeout = 2000000;
     while (Timeout > 0) {
       RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
       IdSts   = MmioRead32 (BaseAddr + DW_MMC_IDSTS);
 
       if ((RintSts & DW_MMC_INT_ERROR) || (IdSts & DW_MMC_IDMAC_INT_FBE)) {
-        Print (L"[DWMMC 0x%x] CMD%d IDMAC err IDSTS=0x%x RINT=0x%x DBADDR=0x%x\n",
-               (UINT32)BaseAddr, CmdIdx, IdSts, RintSts,
-               MmioRead32 (BaseAddr + DW_MMC_DBADDRL));
+        Print (
+          L"[DWMMC 0x%x] CMD%d IDMAC err IDSTS=0x%x RINT=0x%x Desc=0x%x Buf=0x%x\n",
+          (UINT32)BaseAddr,
+          CmdIdx,
+          IdSts,
+          RintSts,
+          (UINT32)(UINTN)Ring,
+          (UINT32)(UINTN)BounceBuf
+          );
         MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
         MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
         Packet->TransactionStatus = EFI_DEVICE_ERROR;
         return EFI_DEVICE_ERROR;
       }
 
-      if (RintSts & DW_MMC_INT_DTO) {
+      if ((RintSts & DW_MMC_INT_DTO) &&
+          (IdSts & (DW_MMC_IDMAC_INT_RI | DW_MMC_IDMAC_INT_TI))) {
         break;
       }
 
@@ -703,31 +731,40 @@ DwMmcExecCommand (
     }
 
     if (Timeout == 0) {
-      Print (L"[DWMMC 0x%x] CMD%d TIMEOUT DTO IDSTS=0x%x RINT=0x%x STATUS=0x%x\n",
-             (UINT32)BaseAddr, CmdIdx,
-             MmioRead32 (BaseAddr + DW_MMC_IDSTS),
-             MmioRead32 (BaseAddr + DW_MMC_RINTSTS),
-             MmioRead32 (BaseAddr + DW_MMC_STATUS));
+      Print (
+        L"[DWMMC 0x%x] CMD%d TIMEOUT IDMAC IDSTS=0x%x RINT=0x%x\n",
+        (UINT32)BaseAddr,
+        CmdIdx,
+        MmioRead32 (BaseAddr + DW_MMC_IDSTS),
+        MmioRead32 (BaseAddr + DW_MMC_RINTSTS)
+        );
       Packet->TransactionStatus = EFI_TIMEOUT;
       return EFI_TIMEOUT;
     }
 
-    if (IsRead && BounceBuf != NULL) {
+    MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
+
+    if (IsRead) {
       InvalidateDataCacheRange (BounceBuf, TotalBytes);
       CopyMem (UserBuf, BounceBuf, TotalBytes);
     }
 
     if (BaseAddr == EXYNOS_DWMMC0_BASE && CmdIdx == 8 && TotalBytes == 512) {
-      UINT8 *B = (UINT8 *)UserBuf;
-      UINT32 SecCount = B[212] | (B[213] << 8) | (B[214] << 16) | (B[215] << 24);
-      Print (L"[DW0 CMD8 IDMAC] Rev=%u SecCnt=0x%x B0..7=%02x%02x%02x%02x %02x%02x%02x%02x\n",
-             B[192], SecCount,
-             B[0], B[1], B[2], B[3], B[4], B[5], B[6], B[7]);
+      UINT32 SecCnt = (UINT32)UserBuf[212] |
+                      ((UINT32)UserBuf[213] << 8) |
+                      ((UINT32)UserBuf[214] << 16) |
+                      ((UINT32)UserBuf[215] << 24);
+      Print (
+        L"[DW0 CMD8 IDMAC] Rev=%u SecCnt=0x%x B0..7=%02x%02x%02x%02x %02x%02x%02x%02x\n",
+        UserBuf[192],
+        SecCnt,
+        UserBuf[0], UserBuf[1], UserBuf[2], UserBuf[3],
+        UserBuf[4], UserBuf[5], UserBuf[6], UserBuf[7]
+        );
     }
   }
 
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
-  MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
   Packet->TransactionStatus = EFI_SUCCESS;
   return EFI_SUCCESS;
 }
