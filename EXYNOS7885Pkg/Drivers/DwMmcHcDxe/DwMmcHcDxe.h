@@ -14,6 +14,7 @@ typedef struct {
   EFI_SD_MMC_PASS_THRU_PROTOCOL PassThru;
   EFI_DEVICE_PATH_PROTOCOL      *DevicePath;
   UINTN                         SlotBase[EXYNOS_DWMMC_MAX_SLOTS];
+  BOOLEAN                       SlotInitialized[EXYNOS_DWMMC_MAX_SLOTS];
 } DW_MMC_HC_PRIVATE_DATA;
 
 #define DW_MMC_HC_PRIVATE_FROM_THIS(a) \

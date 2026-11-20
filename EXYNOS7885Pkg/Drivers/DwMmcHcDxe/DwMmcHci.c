@@ -5,8 +5,31 @@
 #include <Library/UefiLib.h>
 #include "DwMmcHci.h"
 
+
+STATIC
+EFI_STATUS
+DwMmcWaitForClear (
+  IN UINTN  BaseAddr,
+  IN UINT32 Offset,
+  IN UINT32 Mask,
+  IN UINT32 Timeout
+  )
+{
+  while (Timeout > 0) {
+    if ((MmioRead32 (BaseAddr + Offset) & Mask) == 0) {
+      return EFI_SUCCESS;
+    }
+    MicroSecondDelay (1);
+    Timeout--;
+  }
+
+  return ((MmioRead32 (BaseAddr + Offset) & Mask) == 0)
+         ? EFI_SUCCESS : EFI_TIMEOUT;
+}
+
 STATIC UINT32 mLastLoggedErr = 0;
 STATIC UINT32 mCmdSeq = 0;
+
 
 STATIC
 EFI_STATUS
@@ -14,40 +37,62 @@ DwMmcUpdateClock (
   IN UINTN BaseAddr
   )
 {
-  UINT32 Timeout = 100000;
-  UINT32 CmdVal  = DW_MMC_CMD_START | DW_MMC_CMD_UPD_CLK | DW_MMC_CMD_WAIT_PRVDATA | BIT29;
+  EFI_STATUS Status;
+  UINT32     Timeout;
+  UINT32     CmdVal;
+  UINT32     RintSts;
 
-  while ((MmioRead32 (BaseAddr + DW_MMC_CMD) & DW_MMC_CMD_START) && Timeout--) {
-    MicroSecondDelay (1);
+  Status = DwMmcWaitForClear (
+             BaseAddr,
+             DW_MMC_CMD,
+             DW_MMC_CMD_START,
+             100000
+             );
+  if (EFI_ERROR (Status)) {
+    return Status;
   }
 
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_CMDARG, 0);
+
+  CmdVal = DW_MMC_CMD_START |
+           DW_MMC_CMD_UPD_CLK |
+           DW_MMC_CMD_WAIT_PRVDATA |
+           BIT29;
+
   MmioWrite32 (BaseAddr + DW_MMC_CMD, CmdVal);
 
   Timeout = 100000;
-  while (Timeout--) {
-    if ((MmioRead32 (BaseAddr + DW_MMC_CMD) & DW_MMC_CMD_START) == 0) {
+  while (Timeout > 0) {
+    RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
+
+    if (RintSts & DW_MMC_INT_HLE) {
+      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, DW_MMC_INT_HLE);
+      return EFI_DEVICE_ERROR;
+    }
+
+    if ((MmioRead32 (BaseAddr + DW_MMC_CMD) &
+         DW_MMC_CMD_START) == 0) {
       MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
       return EFI_SUCCESS;
     }
-    if (MmioRead32 (BaseAddr + DW_MMC_RINTSTS) & DW_MMC_INT_HLE) {
-      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, DW_MMC_INT_HLE);
-      MmioWrite32 (BaseAddr + DW_MMC_CMD, CmdVal);
-    }
+
     MicroSecondDelay (1);
+    Timeout--;
   }
+
   return EFI_TIMEOUT;
 }
+
 
 EFI_STATUS
 DwMmcInitController (
   IN UINTN BaseAddr
   )
 {
-  UINT32 ClkSelSaved;
-  UINT32 Ctrl;
-  UINT32 Timeout = 100000;
+  UINT32     ClkSelSaved;
+  UINT32     Ctrl;
+  EFI_STATUS Status;
 
   ClkSelSaved = MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL);
 
@@ -55,36 +100,50 @@ DwMmcInitController (
   MmioWrite32 (BaseAddr + DW_MMC_IDINTEN, 0);
 
   Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
-  Ctrl &= ~(DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE | DW_MMC_CTRL_INT_ENABLE);
-  Ctrl |= (DW_MMC_CTRL_RESET | DW_MMC_CTRL_FIFO_RESET | DW_MMC_CTRL_DMA_RESET);
+  Ctrl &= ~(DW_MMC_CTRL_USE_IDMAC |
+            DW_MMC_CTRL_DMA_ENABLE |
+            DW_MMC_CTRL_INT_ENABLE);
+  Ctrl |= DW_MMC_CTRL_RESET |
+          DW_MMC_CTRL_FIFO_RESET |
+          DW_MMC_CTRL_DMA_RESET;
+
   MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
 
-  while (Timeout--) {
-    if ((MmioRead32 (BaseAddr + DW_MMC_CTRL) & (DW_MMC_CTRL_RESET | DW_MMC_CTRL_FIFO_RESET | DW_MMC_CTRL_DMA_RESET)) == 0) {
-      break;
-    }
-    MicroSecondDelay (1);
+  Status = DwMmcWaitForClear (
+             BaseAddr,
+             DW_MMC_CTRL,
+             DW_MMC_CTRL_RESET |
+             DW_MMC_CTRL_FIFO_RESET |
+             DW_MMC_CTRL_DMA_RESET,
+             100000
+             );
+  if (EFI_ERROR (Status)) {
+    Print (L"[DWMMC 0x%x] controller reset timeout\n",
+           (UINT32)BaseAddr);
+    return Status;
   }
 
-  // S'assurer que le mode PIO pur est actif après reset (pas d'IDMAC ni DMA externe)
   MmioWrite32 (BaseAddr + DW_MMC_BMOD, 0);
   MmioWrite32 (BaseAddr + DW_MMC_IDINTEN, 0);
+
   Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
-  Ctrl &= ~(DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE | DW_MMC_CTRL_INT_ENABLE);
+  Ctrl &= ~(DW_MMC_CTRL_USE_IDMAC |
+            DW_MMC_CTRL_DMA_ENABLE |
+            DW_MMC_CTRL_INT_ENABLE);
   MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
 
-  // Conserver le CLKSEL du bootloader (ou fallback SDR si nul)
   if (ClkSelSaved == 0) {
     ClkSelSaved = 0x03020001;
   }
-  MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, ClkSelSaved);
 
-  MmioWrite32 (BaseAddr + DW_MMC_PWREN, 0x1);
+  MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, ClkSelSaved);
+  MmioWrite32 (BaseAddr + DW_MMC_PWREN, 1);
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
-  MmioWrite32 (BaseAddr + DW_MMC_INTMASK, 0x0);
+  MmioWrite32 (BaseAddr + DW_MMC_INTMASK, 0);
   MmioWrite32 (BaseAddr + DW_MMC_TMOUT, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_CTYPE, DW_MMC_CTYPE_1BIT);
-  MmioWrite32 (BaseAddr + DW_MMC_FIFOTH, (0x2 << 28) | (15 << 16) | 16);
+  MmioWrite32 (BaseAddr + DW_MMC_FIFOTH,
+               (0x2 << 28) | (15 << 16) | 16);
 
   if (BaseAddr == EXYNOS_DWMMC0_BASE) {
     Print (L"[DW0] VERID=0x%x HCON=0x%x CTRL=0x%x CLKSEL=0x%x\n",
@@ -97,16 +156,22 @@ DwMmcInitController (
   return DwMmcSetClock (BaseAddr, 400);
 }
 
+
 EFI_STATUS
 DwMmcSetClock (
   IN UINTN  BaseAddr,
   IN UINT32 ClockFreqKhz
   )
 {
-  UINT32 Div = 0;
+  UINT32     Div;
+  EFI_STATUS Status;
 
   MmioWrite32 (BaseAddr + DW_MMC_CLKENA, 0);
-  DwMmcUpdateClock (BaseAddr);
+
+  Status = DwMmcUpdateClock (BaseAddr);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   if (ClockFreqKhz == 0) {
     return EFI_SUCCESS;
@@ -122,10 +187,22 @@ DwMmcSetClock (
 
   MmioWrite32 (BaseAddr + DW_MMC_CLKSRC, 0);
   MmioWrite32 (BaseAddr + DW_MMC_CLKDIV, Div);
-  DwMmcUpdateClock (BaseAddr);
 
-  MmioWrite32 (BaseAddr + DW_MMC_CLKENA, DW_MMC_CLKENA_CCLK_ENABLE);
-  return DwMmcUpdateClock (BaseAddr);
+  Status = DwMmcUpdateClock (BaseAddr);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  MmioWrite32 (BaseAddr + DW_MMC_CLKENA,
+               DW_MMC_CLKENA_CCLK_ENABLE);
+
+  Status = DwMmcUpdateClock (BaseAddr);
+  if (EFI_ERROR (Status)) {
+    MmioWrite32 (BaseAddr + DW_MMC_CLKENA, 0);
+    return Status;
+  }
+
+  return EFI_SUCCESS;
 }
 
 EFI_STATUS
@@ -157,6 +234,7 @@ DwMmcExecCommand (
   UINT32  CmdReg = DW_MMC_CMD_START | BIT29;
   UINT32  RintSts;
   UINT32  Timeout;
+  EFI_STATUS Status;
   BOOLEAN IsRead = FALSE;
   UINT32  TotalBytes = 0;
   UINT32  *Buf32 = NULL;
@@ -199,19 +277,11 @@ DwMmcExecCommand (
     }
   }
 
-  // Passer à ~12.5 MHz dès CMD7 (Select) ou CMD8
-  if (CmdIdx == 7 || CmdIdx == 8 || CmdIdx == 17 || CmdIdx == 18) {
-    if (MmioRead32 (BaseAddr + DW_MMC_CLKDIV) == 64) {
-      DwMmcSetClock (BaseAddr, 25000);
-    }
-  }
-
   // Attendre fin de commande précédente
-  Timeout = 500000;
-  while ((MmioRead32 (BaseAddr + DW_MMC_CMD) & DW_MMC_CMD_START) && Timeout--) {
-    MicroSecondDelay (1);
-  }
-  if (Timeout == 0) {
+  Status = DwMmcWaitForClear (
+             BaseAddr, DW_MMC_CMD, DW_MMC_CMD_START, 500000
+             );
+  if (EFI_ERROR (Status)) {
     Print (L"[DWMMC 0x%x] CMD%d TIMEOUT pre-start\n", (UINT32)BaseAddr, CmdIdx);
     Packet->TransactionStatus = EFI_TIMEOUT;
     return EFI_TIMEOUT;
@@ -219,14 +289,25 @@ DwMmcExecCommand (
 
   // Attendre fin de DATA_BUSY sauf pour CMD12/CMD13/CMD7(0)
   if (CmdIdx != 13 && CmdIdx != 12 && !IsDeselect) {
-    Timeout = 500000;
-    while ((MmioRead32 (BaseAddr + DW_MMC_STATUS) & DW_MMC_STATUS_DATA_BUSY) && Timeout--) {
-      MicroSecondDelay (1);
-    }
-    if (Timeout == 0) {
+    Status = DwMmcWaitForClear (
+               BaseAddr, DW_MMC_STATUS,
+               DW_MMC_STATUS_DATA_BUSY, 500000
+               );
+    if (EFI_ERROR (Status)) {
       Print (L"[DWMMC 0x%x] CMD%d TIMEOUT data_busy\n", (UINT32)BaseAddr, CmdIdx);
       Packet->TransactionStatus = EFI_TIMEOUT;
       return EFI_TIMEOUT;
+    }
+  }
+
+  // Passer à ~12.5 MHz dès CMD7 (Select) ou CMD8
+  if (CmdIdx == 7 || CmdIdx == 8 || CmdIdx == 17 || CmdIdx == 18) {
+    if (MmioRead32 (BaseAddr + DW_MMC_CLKDIV) == 64) {
+      Status = DwMmcSetClock (BaseAddr, 25000);
+      if (EFI_ERROR (Status)) {
+        Packet->TransactionStatus = Status;
+        return Status;
+      }
     }
   }
 
@@ -258,6 +339,11 @@ DwMmcExecCommand (
     }
   }
 
+  // CMD13 : attendre la fin de l'activite data precedente.
+  if (CmdIdx == 13) {
+    CmdReg |= DW_MMC_CMD_WAIT_PRVDATA;
+  }
+
   if (Packet->InDataBuffer != NULL && Packet->InTransferLength > 0) {
     IsRead     = TRUE;
     TotalBytes = Packet->InTransferLength;
@@ -273,8 +359,13 @@ DwMmcExecCommand (
   if (TotalBytes > 0) {
     MmioOr32 (BaseAddr + DW_MMC_CTRL, DW_MMC_CTRL_FIFO_RESET);
     Timeout = 100000;
-    while ((MmioRead32 (BaseAddr + DW_MMC_CTRL) & DW_MMC_CTRL_FIFO_RESET) && Timeout--) {
-      MicroSecondDelay (1);
+    Status = DwMmcWaitForClear (
+               BaseAddr, DW_MMC_CTRL,
+               DW_MMC_CTRL_FIFO_RESET, 100000
+               );
+    if (EFI_ERROR (Status)) {
+      Packet->TransactionStatus = Status;
+      return Status;
     }
 
     MmioWrite32 (BaseAddr + DW_MMC_BLKSIZ, (TotalBytes < 512) ? TotalBytes : 512);
@@ -290,7 +381,7 @@ DwMmcExecCommand (
   MmioWrite32 (BaseAddr + DW_MMC_CMD, CmdReg);
 
   Timeout = 500000;
-  while (Timeout--) {
+  while (Timeout > 0) {
     RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
     if (RintSts & DW_MMC_INT_ERROR) {
       if (mLastLoggedErr < 8) {
@@ -306,8 +397,10 @@ DwMmcExecCommand (
       break;
     }
     MicroSecondDelay (1);
+    Timeout--;
   }
-  if (Timeout == 0) {
+  if ((MmioRead32 (BaseAddr + DW_MMC_RINTSTS) &
+       DW_MMC_INT_CMD_DONE) == 0) {
     Print (L"[DWMMC 0x%x] CMD%d TIMEOUT cmd_done\n", (UINT32)BaseAddr, CmdIdx);
     Packet->TransactionStatus = EFI_TIMEOUT;
     return EFI_TIMEOUT;
@@ -327,7 +420,7 @@ DwMmcExecCommand (
 
   if (TotalWords > 0 && Buf32 != NULL) {
     Timeout = 2000000;
-    while (WordsDone < TotalWords && Timeout--) {
+    while (WordsDone < TotalWords && Timeout > 0) {
       RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
       if (RintSts & DW_MMC_INT_ERROR) {
         if (mLastLoggedErr < 8) {
@@ -354,6 +447,7 @@ DwMmcExecCommand (
       if (WordsDone < TotalWords) {
         MicroSecondDelay (1);
       }
+      Timeout--;
     }
 
     if (WordsDone < TotalWords) {
@@ -363,12 +457,26 @@ DwMmcExecCommand (
     }
 
     Timeout = 1000000;
-    while (Timeout--) {
+    while (Timeout > 0) {
       RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
+      if (RintSts & DW_MMC_INT_ERROR) {
+        Packet->TransactionStatus = EFI_DEVICE_ERROR;
+        MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
+        return EFI_DEVICE_ERROR;
+      }
       if (RintSts & DW_MMC_INT_DTO) {
         break;
       }
       MicroSecondDelay (1);
+      Timeout--;
+    }
+
+    if ((MmioRead32 (BaseAddr + DW_MMC_RINTSTS) &
+         DW_MMC_INT_DTO) == 0) {
+      Print (L"[DWMMC 0x%x] CMD%d TIMEOUT data_done\n",
+             (UINT32)BaseAddr, CmdIdx);
+      Packet->TransactionStatus = EFI_TIMEOUT;
+      return EFI_TIMEOUT;
     }
 
     if (CmdIdx == 8 && BaseAddr == EXYNOS_DWMMC0_BASE && TotalBytes >= 512) {
@@ -379,16 +487,24 @@ DwMmcExecCommand (
     }
 
     MmioOr32 (BaseAddr + DW_MMC_CTRL, DW_MMC_CTRL_FIFO_RESET);
-    Timeout = 100000;
-    while ((MmioRead32 (BaseAddr + DW_MMC_CTRL) & DW_MMC_CTRL_FIFO_RESET) && Timeout--) {
-      MicroSecondDelay (1);
+    Status = DwMmcWaitForClear (
+               BaseAddr, DW_MMC_CTRL,
+               DW_MMC_CTRL_FIFO_RESET, 100000
+               );
+    if (EFI_ERROR (Status)) {
+      Packet->TransactionStatus = Status;
+      return Status;
     }
   }
 
   if (Packet->SdMmcCmdBlk->ResponseType == SdMmcResponseTypeR1b && !IsDeselect) {
-    Timeout = 1000000;
-    while ((MmioRead32 (BaseAddr + DW_MMC_STATUS) & DW_MMC_STATUS_DATA_BUSY) && Timeout--) {
-      MicroSecondDelay (1);
+    Status = DwMmcWaitForClear (
+               BaseAddr, DW_MMC_STATUS,
+               DW_MMC_STATUS_DATA_BUSY, 1000000
+               );
+    if (EFI_ERROR (Status)) {
+      Packet->TransactionStatus = Status;
+      return Status;
     }
   }
 

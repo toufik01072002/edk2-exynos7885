@@ -39,7 +39,12 @@ DwMmcPassThruPassThru (
   }
 
   Private = DW_MMC_HC_PRIVATE_FROM_THIS (This);
-  Status  = DwMmcExecCommand (Private->SlotBase[Slot], Packet);
+  if (!Private->SlotInitialized[Slot]) {
+    Packet->TransactionStatus = EFI_NO_MEDIA;
+    Status = EFI_NO_MEDIA;
+  } else {
+    Status = DwMmcExecCommand (Private->SlotBase[Slot], Packet);
+  }
 
   if (Event != NULL) {
     gBS->SignalEvent (Event);
@@ -55,22 +60,32 @@ DwMmcPassThruGetNextSlot (
   IN OUT UINT8                         *Slot
   )
 {
+  DW_MMC_HC_PRIVATE_DATA *Private;
+
   if (This == NULL || Slot == NULL) {
     return EFI_INVALID_PARAMETER;
   }
 
-  if (*Slot == 0xFF) {
-    *Slot = 0; // Slot 0 = eMMC interne (0x13500000)
-    return EFI_SUCCESS;
-  }
+  Private = DW_MMC_HC_PRIVATE_FROM_THIS (This);
 
-  // Vérifier si une carte SD est insérée dans Slot 1 (CDETECT bit 0 == 0)
-  if (*Slot == 0) {
-    DW_MMC_HC_PRIVATE_DATA *Private = DW_MMC_HC_PRIVATE_FROM_THIS (This);
-    if ((MmioRead32 (Private->SlotBase[1] + DW_MMC_CDETECT) & BIT0) == 0) {
+  if (*Slot == 0xFF) {
+    if (Private->SlotInitialized[0]) {
+      *Slot = 0;
+      return EFI_SUCCESS;
+    }
+
+    if (Private->SlotInitialized[1]) {
       *Slot = 1;
       return EFI_SUCCESS;
     }
+
+    return EFI_NOT_FOUND;
+  }
+
+  if (*Slot == 0 && Private->SlotInitialized[1] &&
+      ((MmioRead32 (Private->SlotBase[1] + DW_MMC_CDETECT) & BIT0) == 0)) {
+    *Slot = 1;
+    return EFI_SUCCESS;
   }
 
   return EFI_NOT_FOUND;
@@ -89,6 +104,10 @@ DwMmcPassThruBuildDevicePath (
 
   if (This == NULL || DevicePath == NULL || Slot >= EXYNOS_DWMMC_MAX_SLOTS) {
     return EFI_INVALID_PARAMETER;
+  }
+
+  if (!DW_MMC_HC_PRIVATE_FROM_THIS (This)->SlotInitialized[Slot]) {
+    return EFI_NO_MEDIA;
   }
 
   if (Slot == 0) {
@@ -150,13 +169,17 @@ DwMmcPassThruResetDevice (
   )
 {
   DW_MMC_HC_PRIVATE_DATA *Private;
+  EFI_STATUS             Status;
 
   if (This == NULL || Slot >= EXYNOS_DWMMC_MAX_SLOTS) {
     return EFI_INVALID_PARAMETER;
   }
 
   Private = DW_MMC_HC_PRIVATE_FROM_THIS (This);
-  return DwMmcInitController (Private->SlotBase[Slot]);
+  Private->SlotInitialized[Slot] = FALSE;
+  Status = DwMmcInitController (Private->SlotBase[Slot]);
+  Private->SlotInitialized[Slot] = !EFI_ERROR (Status);
+  return Status;
 }
 
 EFI_STATUS
@@ -185,12 +208,19 @@ InitializeDwMmcHcDxe (
   Private->PassThru.GetSlotNumber    = DwMmcPassThruGetSlotNumber;
   Private->PassThru.ResetDevice      = DwMmcPassThruResetDevice;
 
-  // Initialiser le contrôleur eMMC interne (DWMMC0)
-  DwMmcInitController (Private->SlotBase[0]);
+  // Initialiser le contrôleur eMMC interne (DWMMC0).
+  Status = DwMmcInitController (Private->SlotBase[0]);
+  Private->SlotInitialized[0] = !EFI_ERROR (Status);
 
-  // Initialiser DWMMC2 seulement si une carte SD est détectée
+  // Initialiser DWMMC2 seulement si une carte SD est détectée.
   if ((MmioRead32 (Private->SlotBase[1] + DW_MMC_CDETECT) & BIT0) == 0) {
-    DwMmcInitController (Private->SlotBase[1]);
+    Status = DwMmcInitController (Private->SlotBase[1]);
+    Private->SlotInitialized[1] = !EFI_ERROR (Status);
+  }
+
+  if (!Private->SlotInitialized[0] && !Private->SlotInitialized[1]) {
+    FreePool (Private);
+    return EFI_DEVICE_ERROR;
   }
 
   Status = gBS->InstallMultipleProtocolInterfaces (
