@@ -9,7 +9,7 @@
 #define EXYNOS_DWMMC2_BASE        0x13550000  // microSD (Slot 1)
 #define EXYNOS_DWMMC_MAX_SLOTS    2
 
-// Offsets registres DesignWare MMC (IP Exynos 64-bit >= 2.70a)
+// Offsets registres DesignWare MMC (IP Exynos >= 2.70a 64-bit)
 #define DW_MMC_CTRL               0x000
 #define DW_MMC_PWREN              0x004
 #define DW_MMC_CLKDIV             0x008
@@ -34,6 +34,8 @@
 #define DW_MMC_VERID              0x06C
 #define DW_MMC_HCON               0x070
 #define DW_MMC_UHS_REG            0x074
+
+// Registres IDMAC 64-bit Exynos
 #define DW_MMC_BMOD               0x080
 #define DW_MMC_PLDMND             0x084
 #define DW_MMC_DBADDRL            0x088
@@ -42,10 +44,7 @@
 #define DW_MMC_IDINTEN            0x094
 #define DW_MMC_DSCADDRL           0x098
 #define EXYNOS_DWMMC_CLKSEL       0x09C  // Registre propriétaire Samsung Exynos
-#define DW_MMC_DSCADDRU           0x0A0
-#define DW_MMC_BUFADDRL           0x0A4
-#define DW_MMC_BUFADDRU           0x0A8
-#define DW_MMC_FIFO_BASE          0x200
+#define DW_MMC_FIFO_BASE          0x200  // Offset FIFO Exynos 64-bit
 
 // Bits CTRL
 #define DW_MMC_CTRL_RESET         BIT0
@@ -66,34 +65,36 @@
 #define DW_MMC_IDMAC_INT_FBE      BIT2
 #define DW_MMC_IDMAC_INT_DU       BIT4
 #define DW_MMC_IDMAC_INT_CES      BIT5
-#define DW_MMC_IDMAC_INT_NIS      BIT8
+#define DW_MMC_IDMAC_INT_NI       BIT8
 #define DW_MMC_IDMAC_INT_AIS      BIT9
 
-// Descripteurs IDMAC 64-bit Exynos (32 octets)
+// Descripteur IDMAC 64-bit (32 octets)
 #define IDMAC_DES0_DIC            BIT1
 #define IDMAC_DES0_LD             BIT2
-#define IDMAC_DES0_FS             BIT3
+#define IDMAC_DES0_FD             BIT3
 #define IDMAC_DES0_CH             BIT4
 #define IDMAC_DES0_ER             BIT5
 #define IDMAC_DES0_CES            BIT30
 #define IDMAC_DES0_OWN            BIT31
 
-#define DW_MMC_IDMAC_MAX_DESC     256
-#define DW_MMC_IDMAC_MAX_BYTES_PER_DESC 4096
+#define IDMAC_MAX_BUF_SIZE        4096
+#define IDMAC_SET_BUFFER1_SIZE(x) ((UINT32)(x) & 0x1FFF)
 
+#pragma pack(1)
 typedef struct {
   UINT32 Des0;
   UINT32 Des1;
-  UINT32 Des2; // Buffer1AddrLo
-  UINT32 Des3; // Buffer1AddrHi
-  UINT32 Des4; // NextDescAddrLo
-  UINT32 Des5; // NextDescAddrHi
-  UINT32 Des6; // Reserved
-  UINT32 Des7; // Reserved
+  UINT32 Buffer1AddrLo;
+  UINT32 Buffer1AddrHi;
+  UINT32 NextDescAddrLo;
+  UINT32 NextDescAddrHi;
+  UINT32 Reserved0;
+  UINT32 Reserved1;
 } DW_MMC_IDMAC_DESC64;
+#pragma pack()
 
 // Bits CLKENA
-#define DW_MMC_CLKENA_CCLK_ENABLE BIT0
+#define DW_MMC_CLKENA_CCLK_ENABLE  BIT0
 #define DW_MMC_CLKENA_CCLK_LOW_PWR BIT16
 
 // Bits CTYPE
@@ -136,9 +137,9 @@ typedef struct {
                                    DW_MMC_INT_EBE)
 
 // Bits STATUS
-#define DW_MMC_STATUS_FIFO_EMPTY  BIT2
-#define DW_MMC_STATUS_FIFO_FULL   BIT3
-#define DW_MMC_STATUS_DATA_BUSY   BIT9
+#define DW_MMC_STATUS_FIFO_EMPTY       BIT2
+#define DW_MMC_STATUS_FIFO_FULL        BIT3
+#define DW_MMC_STATUS_DATA_BUSY        BIT9
 #define DW_MMC_STATUS_FIFO_COUNT_MASK  0x1FFF
 #define DW_MMC_STATUS_FIFO_COUNT_SHIFT 17
 
