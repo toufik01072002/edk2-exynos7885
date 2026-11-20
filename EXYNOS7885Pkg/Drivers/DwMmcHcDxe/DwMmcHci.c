@@ -1,25 +1,54 @@
 #include <Library/BaseLib.h>
+#include <Library/BaseMemoryLib.h>
 #include <Library/DebugLib.h>
 #include <Library/IoLib.h>
 #include <Library/TimerLib.h>
 #include <Library/UefiLib.h>
 #include "DwMmcHci.h"
 
-STATIC UINT32 mLastLoggedErr   = 0;
-STATIC UINT32 mCmdSeq          = 0;
-STATIC UINT32 mSavedClkSel0    = 0x03020001;
-STATIC UINT32 mSavedClkSel2    = 0x03020001;
+STATIC UINT32 mLastLoggedErr = 0;
+STATIC UINT32 mCmdSeq        = 0;
+
+// Sauvegarde statique de CLKSEL (0x09C) par contrôleur pour éviter tout écrasement à 0x0
+STATIC UINT32  mSavedClkSel0 = 0x03020001;
+STATIC UINT32  mSavedClkSel2 = 0x03020001;
+STATIC BOOLEAN mClkSel0Init  = FALSE;
+STATIC BOOLEAN mClkSel2Init  = FALSE;
 
 STATIC
 UINT32
-DwMmcGetSavedClkSel (
+GetSavedClkSel (
   IN UINTN BaseAddr
   )
 {
   if (BaseAddr == EXYNOS_DWMMC0_BASE) {
-    return (mSavedClkSel0 != 0) ? mSavedClkSel0 : 0x03020001;
+    return mSavedClkSel0;
   }
-  return (mSavedClkSel2 != 0) ? mSavedClkSel2 : 0x03020001;
+  return mSavedClkSel2;
+}
+
+STATIC
+VOID
+SaveInitialClkSel (
+  IN UINTN BaseAddr
+  )
+{
+  UINT32 Val = MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL);
+  if (Val == 0) {
+    Val = 0x03020001;
+  }
+
+  if (BaseAddr == EXYNOS_DWMMC0_BASE) {
+    if (!mClkSel0Init) {
+      mSavedClkSel0 = Val;
+      mClkSel0Init  = TRUE;
+    }
+  } else {
+    if (!mClkSel2Init) {
+      mSavedClkSel2 = Val;
+      mClkSel2Init  = TRUE;
+    }
+  }
 }
 
 STATIC
@@ -56,7 +85,9 @@ DwMmcRecoverController (
   UINT32     Ctrl;
   UINT32     ClkSelSaved;
 
-  Print (L"[DWMMC 0x%x] CMD%u recovery: CMD=0x%x RINT=0x%x STATUS=0x%x CTRL=0x%x CLKENA=0x%x CLKDIV=0x%x CLKSEL=0x%x\n",
+  ClkSelSaved = GetSavedClkSel (BaseAddr);
+
+  Print (L"[DWMMC 0x%x] CMD%u recovery: CMD=0x%x RINT=0x%x STATUS=0x%x CTRL=0x%x CLKENA=0x%x CLKDIV=0x%x CLKSEL=0x%x (saved=0x%x)\n",
          (UINT32)BaseAddr,
          CmdIdx,
          MmioRead32 (BaseAddr + DW_MMC_CMD),
@@ -65,18 +96,16 @@ DwMmcRecoverController (
          MmioRead32 (BaseAddr + DW_MMC_CTRL),
          MmioRead32 (BaseAddr + DW_MMC_CLKENA),
          MmioRead32 (BaseAddr + DW_MMC_CLKDIV),
-         MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL));
+         MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL),
+         ClkSelSaved);
 
-  // Toujours utiliser le CLKSEL initial valide, jamais une valeur corrompue à 0x0
-  ClkSelSaved = DwMmcGetSavedClkSel (BaseAddr);
-
-  // Neutraliser temporairement les champs RX : bits 7:6 et 2:0
+  // Neutraliser temporairement les champs RX : bits 7:6 et 2:0.
   MmioWrite32 (
     BaseAddr + EXYNOS_DWMMC_CLKSEL,
     ClkSelSaved & ~((0x3 << 6) | 0x7)
     );
 
-  // Reset CIU + FIFO en conservant le mode PIO (pas d'IDMAC)
+  // Reset CIU + FIFO en mode PIO.
   Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
   Ctrl &= ~(DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE | DW_MMC_CTRL_INT_ENABLE);
   Ctrl |= DW_MMC_CTRL_RESET | DW_MMC_CTRL_FIFO_RESET;
@@ -89,7 +118,7 @@ DwMmcRecoverController (
              100000
              );
 
-  // Restaurer CLKSEL valide même si le reset a expiré
+  // Toujours restaurer la valeur valide de CLKSEL (jamais 0x0).
   MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, ClkSelSaved);
 
   if (EFI_ERROR (Status)) {
@@ -101,11 +130,11 @@ DwMmcRecoverController (
     return Status;
   }
 
-  // Nettoyer les interruptions résiduelles
+  // Nettoyer les interruptions résiduelles.
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_CMDARG, 0);
 
-  // Réinitialiser les registres d'horloge CIU après le reset
+  // Réinitialiser les registres d'horloge CIU après le reset.
   MmioWrite32 (
     BaseAddr + DW_MMC_CMD,
     DW_MMC_CMD_START | DW_MMC_CMD_UPD_CLK | BIT29
@@ -199,20 +228,12 @@ DwMmcInitController (
   IN UINTN BaseAddr
   )
 {
-  UINT32     ClkSelInit;
+  UINT32     ClkSelSaved;
   UINT32     Ctrl;
   EFI_STATUS Status;
 
-  ClkSelInit = MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL);
-  if (ClkSelInit == 0) {
-    ClkSelInit = 0x03020001;
-  }
-
-  if (BaseAddr == EXYNOS_DWMMC0_BASE) {
-    mSavedClkSel0 = ClkSelInit;
-  } else {
-    mSavedClkSel2 = ClkSelInit;
-  }
+  SaveInitialClkSel (BaseAddr);
+  ClkSelSaved = GetSavedClkSel (BaseAddr);
 
   MmioWrite32 (BaseAddr + DW_MMC_BMOD, 0);
   MmioWrite32 (BaseAddr + DW_MMC_IDINTEN, 0);
@@ -250,7 +271,7 @@ DwMmcInitController (
             DW_MMC_CTRL_INT_ENABLE);
   MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
 
-  MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, ClkSelInit);
+  MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, ClkSelSaved);
   MmioWrite32 (BaseAddr + DW_MMC_PWREN, 1);
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_INTMASK, 0);
@@ -290,6 +311,7 @@ DwMmcSetClock (
     return EFI_SUCCESS;
   }
 
+  // Conserver une division modérée (Div=16 au lieu de 4) pour éviter tout décrochage RX
   if (ClockFreqKhz <= 400) {
     Div = 64;
   } else if (ClockFreqKhz <= 25000) {
@@ -344,16 +366,19 @@ DwMmcExecCommand (
   IN OUT EFI_SD_MMC_PASS_THRU_COMMAND_PACKET *Packet
   )
 {
-  UINT32     CmdReg = DW_MMC_CMD_START | BIT29;
+  UINT32     CmdReg     = DW_MMC_CMD_START | BIT29;
   UINT32     RintSts;
   UINT32     Timeout;
   EFI_STATUS Status;
-  BOOLEAN    IsRead      = FALSE;
-  UINT32     TotalBytes  = 0;
-  UINT8      *Buf8       = NULL;
+  BOOLEAN    IsRead     = FALSE;
+  UINT32     TotalBytes = 0;
+  UINT8      *Buf8      = NULL;
   UINT16     CmdIdx;
   UINT32     CmdArg;
   BOOLEAN    IsDeselect;
+  UINT32     Hcon;
+  UINT32     HDataWidth;
+  BOOLEAN    IsFifo64;
 
   if (Packet == NULL || Packet->SdMmcCmdBlk == NULL) {
     return EFI_INVALID_PARAMETER;
@@ -419,7 +444,7 @@ DwMmcExecCommand (
     }
   }
 
-  // Conserver une fréquence modérée et stable (~1.5 - 3 MHz) sans décrochage CLKSEL
+  // Passer à une horloge modérée dès CMD7 (Select) ou CMD8
   if (CmdIdx == 7 || CmdIdx == 8 || CmdIdx == 17 || CmdIdx == 18) {
     if (MmioRead32 (BaseAddr + DW_MMC_CLKDIV) == 64) {
       Status = DwMmcSetClock (BaseAddr, 25000);
@@ -511,7 +536,6 @@ DwMmcExecCommand (
     MicroSecondDelay (1);
     Timeout--;
   }
-
   if ((MmioRead32 (BaseAddr + DW_MMC_RINTSTS) & DW_MMC_INT_CMD_DONE) == 0) {
     Print (L"[DWMMC 0x%x] CMD%d TIMEOUT cmd_done\n",
            (UINT32)BaseAddr, CmdIdx);
@@ -538,9 +562,14 @@ DwMmcExecCommand (
     }
   }
 
-  // Transfert FIFO 64-bit Exynos à l'offset 0x200
   if (TotalBytes > 0 && Buf8 != NULL) {
     UINT32 BytesDone = 0;
+
+    // Auto-détection de la largeur du bus FIFO via HCON bits [5:3] (HDATA_WIDTH)
+    // 0: 16-bit, 1: 32-bit, 2: 64-bit, 3: 128-bit, 4: 256-bit
+    Hcon       = MmioRead32 (BaseAddr + DW_MMC_HCON);
+    HDataWidth = (Hcon >> 3) & 0x7;
+    IsFifo64   = (HDataWidth >= 2);
 
     Timeout = 2000000;
     while (BytesDone < TotalBytes && Timeout > 0) {
@@ -558,21 +587,34 @@ DwMmcExecCommand (
       UINT32 FifoCount = (MmioRead32 (BaseAddr + DW_MMC_STATUS) >> DW_MMC_STATUS_FIFO_COUNT_SHIFT) & DW_MMC_STATUS_FIFO_COUNT_MASK;
       if (IsRead) {
         while (FifoCount > 0 && BytesDone < TotalBytes) {
-          UINT64 Data64 = MmioRead64 (BaseAddr + DW_MMC_FIFO_BASE);
-          UINT32 Chunk  = ((TotalBytes - BytesDone) >= 8) ? 8 : (TotalBytes - BytesDone);
-          for (UINT32 i = 0; i < Chunk; i++) {
-            Buf8[BytesDone++] = (UINT8)((Data64 >> (i * 8)) & 0xFF);
+          if (IsFifo64) {
+            UINT64 Qword = MmioRead64 (BaseAddr + DW_MMC_FIFO_BASE);
+            UINT32 Chunk = (TotalBytes - BytesDone >= 8) ? 8 : (TotalBytes - BytesDone);
+            CopyMem (Buf8 + BytesDone, &Qword, Chunk);
+            BytesDone += Chunk;
+          } else {
+            UINT32 Dword = MmioRead32 (BaseAddr + DW_MMC_FIFO_BASE);
+            UINT32 Chunk = (TotalBytes - BytesDone >= 4) ? 4 : (TotalBytes - BytesDone);
+            CopyMem (Buf8 + BytesDone, &Dword, Chunk);
+            BytesDone += Chunk;
           }
           FifoCount--;
         }
       } else {
         while (FifoCount < 32 && BytesDone < TotalBytes) {
-          UINT64 Data64 = 0;
-          UINT32 Chunk  = ((TotalBytes - BytesDone) >= 8) ? 8 : (TotalBytes - BytesDone);
-          for (UINT32 i = 0; i < Chunk; i++) {
-            Data64 |= ((UINT64)Buf8[BytesDone++]) << (i * 8);
+          if (IsFifo64) {
+            UINT64 Qword = 0;
+            UINT32 Chunk = (TotalBytes - BytesDone >= 8) ? 8 : (TotalBytes - BytesDone);
+            CopyMem (&Qword, Buf8 + BytesDone, Chunk);
+            MmioWrite64 (BaseAddr + DW_MMC_FIFO_BASE, Qword);
+            BytesDone += Chunk;
+          } else {
+            UINT32 Dword = 0;
+            UINT32 Chunk = (TotalBytes - BytesDone >= 4) ? 4 : (TotalBytes - BytesDone);
+            CopyMem (&Dword, Buf8 + BytesDone, Chunk);
+            MmioWrite32 (BaseAddr + DW_MMC_FIFO_BASE, Dword);
+            BytesDone += Chunk;
           }
-          MmioWrite64 (BaseAddr + DW_MMC_FIFO_BASE, Data64);
           FifoCount++;
         }
       }
@@ -584,7 +626,8 @@ DwMmcExecCommand (
     }
 
     if (BytesDone < TotalBytes) {
-      Print (L"[DWMMC 0x%x] CMD%d TIMEOUT fifo (%u/%u)\n", (UINT32)BaseAddr, CmdIdx, BytesDone, TotalBytes);
+      Print (L"[DWMMC 0x%x] CMD%d TIMEOUT fifo (%u/%u bytes) HCON=0x%x\n",
+             (UINT32)BaseAddr, CmdIdx, BytesDone, TotalBytes, Hcon);
       Packet->TransactionStatus = EFI_TIMEOUT;
       return EFI_TIMEOUT;
     }
@@ -604,10 +647,20 @@ DwMmcExecCommand (
       Timeout--;
     }
 
-    if ((MmioRead32 (BaseAddr + DW_MMC_RINTSTS) & DW_MMC_INT_DTO) == 0) {
-      Print (L"[DWMMC 0x%x] CMD%d TIMEOUT dto\n", (UINT32)BaseAddr, CmdIdx);
-      Packet->TransactionStatus = EFI_TIMEOUT;
-      return EFI_TIMEOUT;
+    // Diagnostic complet de CMD8 (EXT_CSD) sur DWMMC0
+    if (BaseAddr == EXYNOS_DWMMC0_BASE && CmdIdx == 8 && TotalBytes == 512) {
+      UINT32 SecCount = (UINT32)Buf8[212] |
+                        ((UINT32)Buf8[213] << 8) |
+                        ((UINT32)Buf8[214] << 16) |
+                        ((UINT32)Buf8[215] << 24);
+      Print (L"[DW0 CMD8] VERID=0x%x HCON=0x%x (W=%u) Rev=%u SecCnt=0x%x B0..7=%02x%02x%02x%02x %02x%02x%02x%02x\n",
+             MmioRead32 (BaseAddr + DW_MMC_VERID),
+             Hcon,
+             HDataWidth,
+             Buf8[192],
+             SecCount,
+             Buf8[0], Buf8[1], Buf8[2], Buf8[3],
+             Buf8[4], Buf8[5], Buf8[6], Buf8[7]);
     }
   }
 
