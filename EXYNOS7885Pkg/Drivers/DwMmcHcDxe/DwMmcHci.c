@@ -466,6 +466,7 @@ DwMmcSetupIdmacDescriptors (
   EFI_PHYSICAL_ADDRESS RingAddr;
   EFI_PHYSICAL_ADDRESS NextAddr;
   UINT32               Des0;
+  EFI_STATUS           Status;
 
   if (TotalBytes > DW_MMC_BOUNCE_BUF_SIZE) {
     return EFI_BAD_BUFFER_SIZE;
