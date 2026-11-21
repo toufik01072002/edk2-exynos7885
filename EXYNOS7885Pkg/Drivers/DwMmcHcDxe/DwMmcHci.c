@@ -14,7 +14,16 @@
 #define DW_MMC_MAX_BYTES_PER_DESC  4096
 #define DW_MMC_BOUNCE_BUF_SIZE     (DW_MMC_MAX_DESC_COUNT * DW_MMC_MAX_BYTES_PER_DESC)
 #define DW_MMC_DMA_MAX_ADDR        0x87FFFFFFULL
+
+#ifndef EXYNOS_DWMMC_UHS_REG_EXT
+#define EXYNOS_DWMMC_UHS_REG_EXT   0x108
+#endif
+#ifndef EXYNOS_DWMMC_DDR_REG
 #define EXYNOS_DWMMC_DDR_REG       0x10C
+#endif
+
+// Masque des bits HS400 / DDR dans UHS_REG_EXT (0x108) sur Exynos 7885
+#define EXYNOS_UHS_EXT_HS400_MASK  (BIT31 | BIT30 | BIT29 | BIT28 | BIT27 | BIT26 | BIT25 | BIT24)
 
 STATIC UINT32 mSavedClkSel0 = 0x03040000;
 STATIC UINT32 mSavedClkSel2 = 0x03040000;
@@ -68,6 +77,23 @@ DwMmcSetSavedClkSel (
   } else {
     mSavedClkSel2 = Val;
   }
+}
+
+STATIC
+VOID
+DwMmcCleanExynosSbootRegs (
+  IN UINTN BaseAddr
+  )
+{
+  UINT32 UhsExt;
+
+  // Desactiver tout residu DDR / HS400 configure par S-Boot
+  MmioWrite32 (BaseAddr + DW_MMC_UHS_REG, 0);
+  MmioWrite32 (BaseAddr + EXYNOS_DWMMC_DDR_REG, 0);
+
+  UhsExt = MmioRead32 (BaseAddr + EXYNOS_DWMMC_UHS_REG_EXT);
+  UhsExt &= ~EXYNOS_UHS_EXT_HS400_MASK;
+  MmioWrite32 (BaseAddr + EXYNOS_DWMMC_UHS_REG_EXT, UhsExt);
 }
 
 STATIC
@@ -195,6 +221,7 @@ DwMmcRecoverController (
     return Status;
   }
 
+  DwMmcCleanExynosSbootRegs (BaseAddr);
   DwMmcEnableIdmac (BaseAddr);
 
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
@@ -285,7 +312,12 @@ DwMmcInitController (
 {
   UINT32     ClkSelInit;
   UINT32     Ctrl;
+  UINT32     UhsExtBefore;
+  UINT32     DdrBefore;
   EFI_STATUS Status;
+
+  UhsExtBefore = MmioRead32 (BaseAddr + EXYNOS_DWMMC_UHS_REG_EXT);
+  DdrBefore    = MmioRead32 (BaseAddr + EXYNOS_DWMMC_DDR_REG);
 
   ClkSelInit = MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL);
   if (ClkSelInit == 0) {
@@ -318,9 +350,8 @@ DwMmcInitController (
     return Status;
   }
 
-  // Forcer le mode SDR pur (desactiver le DDR laisse actif par S-Boot)
-  MmioWrite32 (BaseAddr + DW_MMC_UHS_REG, 0);
-  MmioWrite32 (BaseAddr + EXYNOS_DWMMC_DDR_REG, 0);
+  // Nettoyer les registres DDR / HS400 Samsung laisses actifs par S-Boot
+  DwMmcCleanExynosSbootRegs (BaseAddr);
 
   MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, ClkSelInit);
   MmioWrite32 (BaseAddr + DW_MMC_PWREN, 1);
@@ -334,12 +365,12 @@ DwMmcInitController (
   DwMmcEnableIdmac (BaseAddr);
 
   if (BaseAddr == EXYNOS_DWMMC0_BASE) {
-    Print (L"[DW0] VERID=0x%x HCON=0x%x CLKSEL=0x%x UHS=0x%x DDR=0x%x\n",
+    Print (L"[DW0] VERID=0x%x HCON=0x%x CLKSEL=0x%x UHS_EXT=0x%x->0x%x DDR=0x%x->0x%x\n",
            MmioRead32 (BaseAddr + DW_MMC_VERID),
            MmioRead32 (BaseAddr + DW_MMC_HCON),
            MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL),
-           MmioRead32 (BaseAddr + DW_MMC_UHS_REG),
-           MmioRead32 (BaseAddr + EXYNOS_DWMMC_DDR_REG));
+           UhsExtBefore, MmioRead32 (BaseAddr + EXYNOS_DWMMC_UHS_REG_EXT),
+           DdrBefore, MmioRead32 (BaseAddr + EXYNOS_DWMMC_DDR_REG));
   }
 
   return DwMmcSetClock (BaseAddr, 400);
@@ -398,12 +429,10 @@ DwMmcSetBusWidth (
 {
   UINT32 Ctype = DW_MMC_CTYPE_1BIT;
 
-  if (BaseAddr != EXYNOS_DWMMC0_BASE) {
-    if (BusWidth == 4) {
-      Ctype = DW_MMC_CTYPE_4BIT;
-    } else if (BusWidth == 8) {
-      Ctype = DW_MMC_CTYPE_8BIT;
-    }
+  if (BusWidth == 4) {
+    Ctype = DW_MMC_CTYPE_4BIT;
+  } else if (BusWidth == 8) {
+    Ctype = DW_MMC_CTYPE_8BIT;
   }
 
   MmioWrite32 (BaseAddr + DW_MMC_CTYPE, Ctype);
@@ -733,19 +762,25 @@ DwMmcExecCommand (
   CmdIdx = Packet->SdMmcCmdBlk->CommandIndex;
   CmdArg = Packet->SdMmcCmdBlk->CommandArgument;
 
-  if (CmdIdx == 6 && BaseAddr == EXYNOS_DWMMC0_BASE) {
-    UINT8 Index = (CmdArg >> 16) & 0xFF;
-    UINT8 Value = (CmdArg >> 8) & 0xFF;
-    if ((Index == 183 || Index == 185) && Value != 0) {
-      if (Packet->SdMmcStatusBlk != NULL) {
-        Packet->SdMmcStatusBlk->Resp0 = 0x00000900;
+  // Autoriser CMD6 sur DWMMC0 pour synchroniser la largeur de bus (CTYPE) avec l'eMMC
+  Status = DwMmcExecuteSingleTransaction (BaseAddr, Packet, &RintSts);
+
+  if (!EFI_ERROR (Status) && CmdIdx == 6) {
+    UINT8 Access = (CmdArg >> 24) & 0x3;
+    UINT8 Index  = (CmdArg >> 16) & 0xFF;
+    UINT8 Value  = (CmdArg >> 8) & 0xFF;
+
+    // SWITCH Write Byte (Access == 3) sur EXT_CSD[183] (BUS_WIDTH)
+    if (Access == 3 && Index == 183) {
+      if (Value == 0) {
+        DwMmcSetBusWidth (BaseAddr, 1);
+      } else if (Value == 1 || Value == 5) {
+        DwMmcSetBusWidth (BaseAddr, 4);
+      } else if (Value == 2 || Value == 6) {
+        DwMmcSetBusWidth (BaseAddr, 8);
       }
-      Packet->TransactionStatus = EFI_SUCCESS;
-      return EFI_SUCCESS;
     }
   }
-
-  Status = DwMmcExecuteSingleTransaction (BaseAddr, Packet, &RintSts);
 
   TunedFlag = (BaseAddr == EXYNOS_DWMMC0_BASE) ? &mRxTuned0 : &mRxTuned2;
   if (Status == EFI_CRC_ERROR && Packet->InDataBuffer != NULL && !(*TunedFlag)) {
@@ -770,18 +805,35 @@ DwMmcExecCommand (
   if (EFI_ERROR (Status) && BaseAddr == EXYNOS_DWMMC0_BASE && Packet->InDataBuffer != NULL) {
     UINT8 *B = (UINT8 *)Packet->InDataBuffer;
     UINT32 SecCnt = (UINT32)B[212] | ((UINT32)B[213] << 8) | ((UINT32)B[214] << 16) | ((UINT32)B[215] << 24);
-    Print (L"[DW0 CMD%d err] St=0x%x RINT=0x%x UHS=0x%x DDR=0x%x Rev=%u SecCnt=0x%x B0..3=%02x%02x%02x%02x\n",
+    UINT32 FirstFf = 0xFFFF;
+    UINT32 i;
+    for (i = 0; i < Packet->InTransferLength; i++) {
+      if (B[i] == 0xFF) {
+        FirstFf = i;
+        break;
+      }
+    }
+    Print (L"[DW0 CMD%d err] St=0x%x RINT=0x%x CTYPE=0x%x UHS_EXT=0x%x DDR=0x%x Rev=%u SecCnt=0x%x FirstFF=%u\n",
            CmdIdx, (UINT32)Status, RintSts,
-           MmioRead32 (BaseAddr + DW_MMC_UHS_REG),
+           MmioRead32 (BaseAddr + DW_MMC_CTYPE),
+           MmioRead32 (BaseAddr + EXYNOS_DWMMC_UHS_REG_EXT),
            MmioRead32 (BaseAddr + EXYNOS_DWMMC_DDR_REG),
-           B[192], SecCnt, B[0], B[1], B[2], B[3]);
+           B[192], SecCnt, FirstFf);
+    if (Packet->InTransferLength >= 260) {
+      Print (L"[DW0 CMD%d dump] B60..67=%02x%02x%02x%02x_%02x%02x%02x%02x B252..259=%02x%02x%02x%02x_%02x%02x%02x%02x\n",
+             CmdIdx,
+             B[60], B[61], B[62], B[63], B[64], B[65], B[66], B[67],
+             B[252], B[253], B[254], B[255], B[256], B[257], B[258], B[259]);
+    }
   }
 
   if (!EFI_ERROR (Status) && BaseAddr == EXYNOS_DWMMC0_BASE && CmdIdx == 8 && Packet->InTransferLength == 512) {
     UINT8 *B = (UINT8 *)Packet->InDataBuffer;
     UINT32 SecCnt = (UINT32)B[212] | ((UINT32)B[213] << 8) | ((UINT32)B[214] << 16) | ((UINT32)B[215] << 24);
-    Print (L"[DW0 CMD8 OK] CLKSEL=0x%x Rev=%u SecCnt=0x%x\n",
-           MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL), B[192], SecCnt);
+    Print (L"[DW0 CMD8 OK] CLKSEL=0x%x CTYPE=0x%x Rev=%u SecCnt=0x%x\n",
+           MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL),
+           MmioRead32 (BaseAddr + DW_MMC_CTYPE),
+           B[192], SecCnt);
   }
 
   Packet->TransactionStatus = Status;
