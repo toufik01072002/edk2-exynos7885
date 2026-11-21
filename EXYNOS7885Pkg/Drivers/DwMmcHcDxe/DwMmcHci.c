@@ -192,7 +192,7 @@ DwMmcEnableIdmac (
     DW_MMC_IDMAC_INT_RI | DW_MMC_IDMAC_INT_TI
     );
 
-  // Do not enable the DMA engine here. Linux enables CTRL.USE_IDMAC,
+  // Enable CTRL.USE_IDMAC and CTRL.DMA_ENABLE per request after descriptors are ready.
   // BMOD.DE and BMOD.FB for each data request after DBADDR is programmed.
   return EFI_SUCCESS;
 }
@@ -382,11 +382,11 @@ DwMmcInitController (
   // U-Boot dwmci_init_dma(): HCON[27] selects 64-bit IDMAC descriptors/registers.
   Hcon = MmioRead32 (BaseAddr + DW_MMC_HCON);
   if ((Hcon & DW_MMC_HCON_ADDR_CONFIG_64) == 0) {
-    Print (L"[DWMMC IDMAC-MODE-ERR] Base=0x%lx HCON=0x%x expected 64-bit IDMAC (HCON[27])\\n",
+    Print (L"[DWMMC IDMAC-MODE-ERR] Base=0x%lx HCON=0x%x expected 64-bit IDMAC (HCON[27])\n",
            (UINT64)BaseAddr, Hcon);
     return EFI_UNSUPPORTED;
   }
-  Print (L"[DWMMC IDMAC-MODE] Base=0x%lx HCON=0x%x mode=64-bit desc=32-byte regs=0x88..0xA4\\n",
+  Print (L"[DWMMC IDMAC-MODE] Base=0x%lx HCON=0x%x mode=64-bit desc=32-byte regs=0x88..0xA4\n",
          (UINT64)BaseAddr, Hcon);
 
   // Match Mu-Silicium's Exynos 7885 MshcBoardPostReset() sequence.
@@ -677,9 +677,6 @@ DwMmcExecuteSingleTransaction (
       return Status;
     }
 
-    // Follow U-Boot dwmci_prepare_data(): enable both IDMAC and DMA engines.
-    MmioOr32 (BaseAddr + DW_MMC_CTRL,
-              DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE);
 
     MmioWrite32 (BaseAddr + DW_MMC_BLKSIZ, (TotalBytes < 512) ? TotalBytes : 512);
     MmioWrite32 (BaseAddr + DW_MMC_BYTCNT, TotalBytes);
@@ -689,6 +686,10 @@ DwMmcExecuteSingleTransaction (
       return Status;
     }
 
+    // U-Boot dwmci_prepare_data(): enable IDMAC after DBADDR and descriptors are ready.
+    MmioOr32 (BaseAddr + DW_MMC_CTRL,
+              DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE);
+
     if (CmdIdx == 18 || CmdIdx == 25) {
       CmdReg |= DW_MMC_CMD_SEND_STOP;
     }
@@ -696,8 +697,7 @@ DwMmcExecuteSingleTransaction (
 
   ArmDataSynchronizationBarrier ();
 
-  // Match Samsung Linux dw_mci_idmac_start_dma(): preserve BMOD state,
-  // enable descriptor DMA, then issue the poll demand before the command.
+  // Enable descriptor DMA in BMOD, then issue poll demand before the command.
   if (TotalBytes > 0) {
     UINT32 Bmod = MmioRead32 (BaseAddr + DW_MMC_BMOD);
     Bmod |= DW_MMC_BMOD_DE | DW_MMC_BMOD_FB;
