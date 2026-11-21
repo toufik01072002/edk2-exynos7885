@@ -25,6 +25,12 @@
 // Masque des bits HS400 / DDR dans UHS_REG_EXT (0x108) sur Exynos 7885
 #define EXYNOS_UHS_EXT_HS400_MASK       (BIT31 | BIT30 | BIT29 | BIT28 | BIT27 | BIT26 | BIT25 | BIT24)
 
+// Exynos 7885 Samsung MSHC post-reset controls (Mu-Silicium reference).
+#define EXYNOS_MSHCI_FORCE_CLK_STOP      0x0B0
+#define EXYNOS_MSHCI_BLOCK_DMA_FOR_CI    0x1F8
+#define EXYNOS_MSHCI_HWACG_CONTROL       BIT4
+#define EXYNOS_MSHCI_BLOCK_DMA_NO_TIMEOUT BIT29
+
 // Samsung CLKSEL64 timing fields from the SM-A205W kernel driver.
 #define EXYNOS_DWMMC_CLKSEL_SAMPLE_MASK  0x00000007U
 #define EXYNOS_DWMMC_CLKSEL_TIMING_MASK  ((0x7U << 24) | (0x3U << 22) | \
@@ -371,6 +377,10 @@ DwMmcInitController (
   if (EFI_ERROR (Status)) {
     return Status;
   }
+
+  // Match Mu-Silicium's Exynos 7885 MshcBoardPostReset() sequence.
+  MmioOr32 (BaseAddr + EXYNOS_MSHCI_FORCE_CLK_STOP, EXYNOS_MSHCI_HWACG_CONTROL);
+  MmioOr32 (BaseAddr + EXYNOS_MSHCI_BLOCK_DMA_FOR_CI, EXYNOS_MSHCI_BLOCK_DMA_NO_TIMEOUT);
 
   // Nettoyer les registres DDR / HS400 Samsung laisses actifs par S-Boot
   DwMmcCleanExynosSbootRegs (BaseAddr);
