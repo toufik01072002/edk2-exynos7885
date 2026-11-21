@@ -71,7 +71,8 @@
 #define DW_MMC_IDMAC_INT_CES      BIT5
 #define DW_MMC_IDMAC_INT_NI       BIT8
 #define DW_MMC_IDMAC_INT_AIS      BIT9
-#define DW_MMC_IDMAC_INT_ERR      (DW_MMC_IDMAC_INT_FBE | DW_MMC_IDMAC_INT_DU | DW_MMC_IDMAC_INT_AIS)
+#define DW_MMC_IDMAC_INT_ERR      (DW_MMC_IDMAC_INT_FBE | DW_MMC_IDMAC_INT_DU | \
+                                   DW_MMC_IDMAC_INT_CES | DW_MMC_IDMAC_INT_AIS)
 
 // Descripteur IDMAC 64-bit conforme à struct idmac_desc_64addr du noyau Linux
 #define IDMAC_DES0_DIC            BIT1
@@ -84,9 +85,10 @@
 #define IDMAC_MAX_BUF_SIZE        4096
 #define IDMAC_SET_BUFFER1_SIZE(x) ((UINT32)(x) & 0x1FFFU)
 
-#pragma pack(1)
+// Layout matches Linux struct idmac_desc_64addr (8 x u32, 32 bytes).
+// Natural 32-bit alignment is retained; AllocatePages provides page alignment.
 typedef struct {
-  UINT32 Des0;           // Control flags (OWN, FS, LD, CH, ER, DIC)
+  UINT32 Des0;           // Control flags (OWN, FD, LD, CH, ER, DIC)
   UINT32 Des1;           // Reserved
   UINT32 Des2;           // Buffer 1 size (BS1)
   UINT32 Des3;           // Reserved
@@ -95,7 +97,6 @@ typedef struct {
   UINT32 NextDescAddrLo; // Next descriptor physical address [31:0]
   UINT32 NextDescAddrHi; // Next descriptor physical address [63:32]
 } DW_MMC_IDMAC_DESC64;
-#pragma pack()
 
 // Bits CLKENA
 #define DW_MMC_CLKENA_CCLK_ENABLE  BIT0
