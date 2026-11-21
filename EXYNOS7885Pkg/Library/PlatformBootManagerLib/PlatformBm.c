@@ -25,6 +25,7 @@
 #include <Library/UefiBootManagerLib.h>
 #include <Library/UefiLib.h>
 #include <Library/PrintLib.h>
+#include <Library/TimerLib.h>
 #include <Protocol/DevicePath.h>
 #include <Protocol/EsrtManagement.h>
 #include <Protocol/GraphicsOutput.h>
@@ -593,6 +594,11 @@ PlatformBootManagerAfterConsole (
   // Connect the rest of the devices.
   //
   EfiBootManagerConnectAll ();
+
+  // Pause diagnostique pour lire les traces d'initialisation avant le menu UEFI.
+  Print (L"\n[UEFI DIAG] Initialisation terminee. Pause de 30 secondes avant le menu.\n");
+  MicroSecondDelay (30 * 1000 * 1000);
+  Print (L"[UEFI DIAG] Reprise du demarrage du menu UEFI.\n");
 
   Status = gBS->LocateProtocol (&gEsrtManagementProtocolGuid, NULL,
                   (VOID **)&EsrtManagement);
