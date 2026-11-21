@@ -23,7 +23,14 @@
 #endif
 
 // Masque des bits HS400 / DDR dans UHS_REG_EXT (0x108) sur Exynos 7885
-#define EXYNOS_UHS_EXT_HS400_MASK  (BIT31 | BIT30 | BIT29 | BIT28 | BIT27 | BIT26 | BIT25 | BIT24)
+#define EXYNOS_UHS_EXT_HS400_MASK       (BIT31 | BIT30 | BIT29 | BIT28 | BIT27 | BIT26 | BIT25 | BIT24)
+
+// Samsung CLKSEL64 timing fields from the SM-A205W kernel driver.
+#define EXYNOS_DWMMC_CLKSEL_SAMPLE_MASK  0x00000007U
+#define EXYNOS_DWMMC_CLKSEL_TIMING_MASK  ((0x7U << 24) | (0x3U << 22) | \
+                                          (0x7U << 16) | 0x7U)
+#define EXYNOS_DWMMC0_SDR_TIMING         ((3U << 24) | (0U << 22) | \
+                                          (4U << 16) | 0U)
 
 STATIC UINT32 mSavedClkSel0 = 0x03040000;
 STATIC UINT32 mSavedClkSel2 = 0x03040000;
@@ -323,7 +330,12 @@ DwMmcInitController (
   DdrBefore    = MmioRead32 (BaseAddr + EXYNOS_DWMMC_DDR_REG);
 
   ClkSelInit = MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL);
-  if (ClkSelInit == 0) {
+  if (BaseAddr == EXYNOS_DWMMC0_BASE) {
+    // SM-A205W eMMC DTS: <3 0 4 0> = divider, fine-drive, drive, sample.
+    ClkSelInit = (ClkSelInit & ~EXYNOS_DWMMC_CLKSEL_TIMING_MASK) |
+                 EXYNOS_DWMMC0_SDR_TIMING;
+    ClkSelInit &= ~(BIT30 | BIT19);
+  } else if (ClkSelInit == 0) {
     ClkSelInit = 0x03040000;
   }
   DwMmcSetSavedClkSel (BaseAddr, ClkSelInit);
@@ -825,20 +837,47 @@ DwMmcExecCommand (
 
   TunedFlag = (BaseAddr == EXYNOS_DWMMC0_BASE) ? &mRxTuned0 : &mRxTuned2;
   if (Status == EFI_CRC_ERROR && Packet->InDataBuffer != NULL && !(*TunedFlag)) {
-    *TunedFlag = TRUE;
-    BaseClkSel = DwMmcGetSavedClkSel (BaseAddr) & ~0x7;
+    EFI_STATUS ClockStatus;
 
-    for (Phase = 0; Phase < 8; Phase++) {
+    *TunedFlag = TRUE;
+    BaseClkSel = DwMmcGetSavedClkSel (BaseAddr) & ~EXYNOS_DWMMC_CLKSEL_SAMPLE_MASK;
+
+    // Phase 0 was tested by the initial transaction. Preserve Samsung's
+    // divider/drive fields while testing the remaining RX sample phases.
+    for (Phase = 1; Phase < 8; Phase++) {
       UINT32 TestClkSel = BaseClkSel | Phase;
+
       MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, TestClkSel);
-      DwMmcUpdateClock (BaseAddr);
+      ArmDataSynchronizationBarrier ();
+      ClockStatus = DwMmcUpdateClock (BaseAddr);
+      if (EFI_ERROR (ClockStatus)) {
+        Print (L"[DWMMC CLK-ERR] CMD=%u phase=%u CLKSEL=0x%x status=0x%lx\n",
+               CmdIdx, Phase, TestClkSel, (UINT64)ClockStatus);
+        Status = ClockStatus;
+        break;
+      }
+
+      Print (L"[DWMMC CLK] CMD=%u phase=%u CLKSEL=0x%x CLKDIV=%u\n",
+             CmdIdx, Phase, MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL),
+             MmioRead32 (BaseAddr + DW_MMC_CLKDIV));
 
       Status = DwMmcExecuteSingleTransaction (BaseAddr, Packet, &RintSts);
       if (!EFI_ERROR (Status)) {
         DwMmcSetSavedClkSel (BaseAddr, TestClkSel);
-        Print (L"[DWMMC 0x%x] RX phase %u OK (CLKSEL=0x%x)\n",
-               (UINT32)BaseAddr, Phase, TestClkSel);
+        Print (L"[DWMMC RX-TUNED] CMD=%u phase=%u CLKSEL=0x%x\n",
+               CmdIdx, Phase, TestClkSel);
         break;
+      }
+    }
+
+    if (EFI_ERROR (Status)) {
+      // Restore the last known Samsung SDR timing after an unsuccessful sweep.
+      MmioWrite32 (BaseAddr + EXYNOS_DWMMC_CLKSEL, BaseClkSel);
+      ArmDataSynchronizationBarrier ();
+      ClockStatus = DwMmcUpdateClock (BaseAddr);
+      if (EFI_ERROR (ClockStatus)) {
+        Print (L"[DWMMC CLK-RESTORE-ERR] status=0x%lx\n",
+               (UINT64)ClockStatus);
       }
     }
   }
