@@ -159,15 +159,19 @@ DwMmcEnsureDmaBuffers (
 }
 
 STATIC
-VOID
+EFI_STATUS
 DwMmcEnableIdmac (
   IN UINTN BaseAddr
   )
 {
-  UINT32 Ctrl;
+  EFI_STATUS Status;
+  UINT32     Ctrl;
 
   MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_SWR);
-  DwMmcWaitForClear (BaseAddr, DW_MMC_BMOD, DW_MMC_BMOD_SWR, 10000);
+  Status = DwMmcWaitForClear (BaseAddr, DW_MMC_BMOD, DW_MMC_BMOD_SWR, 10000);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
   // Match Samsung Linux dw_mci_idmac_init(): normal, Rx and Tx completion.
@@ -181,6 +185,7 @@ DwMmcEnableIdmac (
   Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
   Ctrl |= (DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE);
   MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
+  return EFI_SUCCESS;
 }
 
 STATIC
@@ -221,7 +226,10 @@ DwMmcRecoverController (
   }
 
   DwMmcCleanExynosSbootRegs (BaseAddr);
-  DwMmcEnableIdmac (BaseAddr);
+  Status = DwMmcEnableIdmac (BaseAddr);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
   MmioWrite32 (BaseAddr + DW_MMC_CMDARG, 0);
@@ -361,7 +369,10 @@ DwMmcInitController (
   MmioWrite32 (BaseAddr + DW_MMC_FIFOTH,
                (0x2 << 28) | (15 << 16) | 16);
 
-  DwMmcEnableIdmac (BaseAddr);
+  Status = DwMmcEnableIdmac (BaseAddr);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   if (BaseAddr == EXYNOS_DWMMC0_BASE) {
     Print (L"[DW0] VERID=0x%x HCON=0x%x CLKSEL=0x%x UHS_EXT=0x%x->0x%x DDR=0x%x->0x%x\n",
