@@ -165,7 +165,6 @@ DwMmcEnableIdmac (
   )
 {
   EFI_STATUS Status;
-  UINT32     Ctrl;
 
   MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_SWR);
   Status = DwMmcWaitForClear (BaseAddr, DW_MMC_BMOD, DW_MMC_BMOD_SWR, 10000);
