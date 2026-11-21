@@ -180,11 +180,8 @@ DwMmcEnableIdmac (
     DW_MMC_IDMAC_INT_NI | DW_MMC_IDMAC_INT_RI | DW_MMC_IDMAC_INT_TI
     );
 
-  MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_DE | DW_MMC_BMOD_FB);
-
-  Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
-  Ctrl |= (DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE);
-  MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
+  // Do not enable the DMA engine here. Linux enables CTRL.USE_IDMAC,
+  // BMOD.DE and BMOD.FB for each data request after DBADDR is programmed.
   return EFI_SUCCESS;
 }
 
