@@ -775,6 +775,8 @@ DwMmcExecuteSingleTransaction (
              CmdIdx, IsRead, IdSts, RintSts,
              MmioRead32 (BaseAddr + DW_MMC_CTRL),
              MmioRead32 (BaseAddr + DW_MMC_BMOD),
+             MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL),
+             MmioRead32 (BaseAddr + DW_MMC_CLKDIV),
              MmioRead32 (BaseAddr + DW_MMC_DBADDRU),
              MmioRead32 (BaseAddr + DW_MMC_DBADDRL),
              Ring[0].Des0, Ring[0].Des2,
