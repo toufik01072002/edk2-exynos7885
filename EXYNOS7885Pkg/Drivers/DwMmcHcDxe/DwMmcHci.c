@@ -508,21 +508,11 @@ DwMmcSetupIdmacDescriptors (
 
   WriteBackInvalidateDataCacheRange (Ring, DescCount * sizeof (DW_MMC_IDMAC_DESC64));
 
-  MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_SWR);
-  Status = DwMmcWaitForClear (
-             BaseAddr,
-             DW_MMC_BMOD,
-             DW_MMC_BMOD_SWR,
-             10000
-             );
-  if (EFI_ERROR (Status)) {
-    return Status;
-  }
-
+  // Linux dw_mci_idmac_init() resets BMOD once during controller setup.
+  // Keep this per-request path limited to publishing the descriptor base.
   MmioWrite32 (BaseAddr + DW_MMC_DBADDRL, (UINT32)(RingAddr & 0xFFFFFFFFULL));
   MmioWrite32 (BaseAddr + DW_MMC_DBADDRU, (UINT32)(RingAddr >> 32));
   MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
-  MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_DE | DW_MMC_BMOD_FB);
 
   return EFI_SUCCESS;
 }
@@ -648,7 +638,9 @@ DwMmcExecuteSingleTransaction (
       return Status;
     }
 
-    MmioOr32 (BaseAddr + DW_MMC_CTRL, DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE);
+    // Match dw_mci_idmac_start_dma(): select IDMAC, then enable BMOD.
+    // CTRL.DMA_ENABLE is not set by the Samsung Linux IDMAC path.
+    MmioOr32 (BaseAddr + DW_MMC_CTRL, DW_MMC_CTRL_USE_IDMAC);
 
     MmioWrite32 (BaseAddr + DW_MMC_BLKSIZ, (TotalBytes < 512) ? TotalBytes : 512);
     MmioWrite32 (BaseAddr + DW_MMC_BYTCNT, TotalBytes);
@@ -665,8 +657,13 @@ DwMmcExecuteSingleTransaction (
 
   ArmDataSynchronizationBarrier ();
 
-  // Linux dw_mci_submit_data() starts IDMAC before dw_mci_start_command().
+  // Match Samsung Linux dw_mci_idmac_start_dma(): preserve BMOD state,
+  // enable descriptor DMA, then issue the poll demand before the command.
   if (TotalBytes > 0) {
+    UINT32 Bmod = MmioRead32 (BaseAddr + DW_MMC_BMOD);
+    Bmod |= DW_MMC_BMOD_DE | DW_MMC_BMOD_FB;
+    MmioWrite32 (BaseAddr + DW_MMC_BMOD, Bmod);
+    ArmDataSynchronizationBarrier ();
     MmioWrite32 (BaseAddr + DW_MMC_PLDMND, 1);
     ArmDataSynchronizationBarrier ();
   }
