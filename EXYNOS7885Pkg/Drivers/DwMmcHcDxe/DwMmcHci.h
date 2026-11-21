@@ -36,13 +36,18 @@
 #define DW_MMC_UHS_REG            0x074
 #define DW_MMC_BMOD               0x080
 #define DW_MMC_PLDMND             0x084
+// IDMAC 64-bit register layout (CONFIG_MMC_DW_64BIT_DESC):
+// DBADDRL/U, IDSTS64, IDINTEN64, DSCADDRL/U, BUFADDRL/U.
+// Samsung's CLKSEL follows BUFADDRU in 64-bit descriptor mode.
 #define DW_MMC_DBADDRL            0x088
 #define DW_MMC_DBADDRU            0x08C
 #define DW_MMC_IDSTS              0x090
 #define DW_MMC_IDINTEN            0x094
 #define DW_MMC_DSCADDRL           0x098
-#define EXYNOS_DWMMC_CLKSEL       0x09C  // Registre propriétaire Samsung Exynos
+#define DW_MMC_DSCADDRU           0x09C
 #define DW_MMC_BUFADDRL           0x0A0
+#define DW_MMC_BUFADDRU           0x0A4
+#define EXYNOS_DWMMC_CLKSEL       0x0A8  // Samsung Exynos: BUFADDRU + 4
 #define DW_MMC_FIFO_BASE          0x200
 
 // Bits CTRL
