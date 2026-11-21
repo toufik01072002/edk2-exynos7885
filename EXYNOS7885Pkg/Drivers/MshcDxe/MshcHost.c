@@ -513,7 +513,7 @@ MshcStartDma (
   UINTN             Index     = 0;
 
   Status = DmaMap ((OperationType == READ) ? MapOperationBusMasterWrite : MapOperationBusMasterRead,
-                   Buffer, &Mapped, 0, 0, &DeviceAddress, &Ctrl->BufferMap);
+                   Buffer, &Mapped, &DeviceAddress, &Ctrl->BufferMap);
 
   if (EFI_ERROR (Status) || Mapped != Length) {
     DEBUG ((EFI_D_ERROR, "%a: Failed to Map the Transfer Buffer! Status = %r\n", __FUNCTION__, Status));
