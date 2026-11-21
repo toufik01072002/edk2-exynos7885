@@ -175,7 +175,6 @@ DwMmcEnableIdmac (
     BaseAddr + DW_MMC_IDINTEN,
     DW_MMC_IDMAC_INT_NI | DW_MMC_IDMAC_INT_RI | DW_MMC_IDMAC_INT_TI
     );
-    );
 
   MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_DE | DW_MMC_BMOD_FB);
 
@@ -484,7 +483,6 @@ DwMmcSetupIdmacDescriptors (
       NextAddr = 0;
     } else {
       NextAddr = RingAddr + ((i + 1) * sizeof (DW_MMC_IDMAC_DESC64));
-    }
     }
 
     Ring[i].Des0           = Des0;
