@@ -189,7 +189,7 @@ DwMmcEnableIdmac (
   // Match Samsung Linux dw_mci_idmac_init(): normal, Rx and Tx completion.
   MmioWrite32 (
     BaseAddr + DW_MMC_IDINTEN,
-    DW_MMC_IDMAC_INT_NI | DW_MMC_IDMAC_INT_RI | DW_MMC_IDMAC_INT_TI
+    DW_MMC_IDMAC_INT_RI | DW_MMC_IDMAC_INT_TI
     );
 
   // Do not enable the DMA engine here. Linux enables CTRL.USE_IDMAC,
@@ -331,6 +331,7 @@ DwMmcInitController (
   UINT32     UhsExtBefore;
   UINT32     DdrBefore;
   EFI_STATUS Status;
+  UINT32     Hcon;
 
   UhsExtBefore = MmioRead32 (BaseAddr + EXYNOS_DWMMC_UHS_REG_EXT);
   DdrBefore    = MmioRead32 (BaseAddr + EXYNOS_DWMMC_DDR_REG);
@@ -377,6 +378,16 @@ DwMmcInitController (
   if (EFI_ERROR (Status)) {
     return Status;
   }
+
+  // U-Boot dwmci_init_dma(): HCON[27] selects 64-bit IDMAC descriptors/registers.
+  Hcon = MmioRead32 (BaseAddr + DW_MMC_HCON);
+  if ((Hcon & DW_MMC_HCON_ADDR_CONFIG_64) == 0) {
+    Print (L"[DWMMC IDMAC-MODE-ERR] Base=0x%lx HCON=0x%x expected 64-bit IDMAC (HCON[27])\\n",
+           (UINT64)BaseAddr, Hcon);
+    return EFI_UNSUPPORTED;
+  }
+  Print (L"[DWMMC IDMAC-MODE] Base=0x%lx HCON=0x%x mode=64-bit desc=32-byte regs=0x88..0xA4\\n",
+         (UINT64)BaseAddr, Hcon);
 
   // Match Mu-Silicium's Exynos 7885 MshcBoardPostReset() sequence.
   MmioOr32 (BaseAddr + EXYNOS_MSHCI_FORCE_CLK_STOP, EXYNOS_MSHCI_HWACG_CONTROL);
@@ -666,9 +677,9 @@ DwMmcExecuteSingleTransaction (
       return Status;
     }
 
-    // Match dw_mci_idmac_start_dma(): select IDMAC, then enable BMOD.
-    // CTRL.DMA_ENABLE is not set by the Samsung Linux IDMAC path.
-    MmioOr32 (BaseAddr + DW_MMC_CTRL, DW_MMC_CTRL_USE_IDMAC);
+    // Follow U-Boot dwmci_prepare_data(): enable both IDMAC and DMA engines.
+    MmioOr32 (BaseAddr + DW_MMC_CTRL,
+              DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE);
 
     MmioWrite32 (BaseAddr + DW_MMC_BLKSIZ, (TotalBytes < 512) ? TotalBytes : 512);
     MmioWrite32 (BaseAddr + DW_MMC_BYTCNT, TotalBytes);
@@ -812,6 +823,9 @@ DwMmcExecuteSingleTransaction (
       }
       return EFI_TIMEOUT;
     }
+
+    // U-Boot disables CTRL.DMA_EN after the IDMAC completion indication.
+    MmioAnd32 (BaseAddr + DW_MMC_CTRL, ~DW_MMC_CTRL_DMA_ENABLE);
 
     if (IsRead) {
       InvalidateDataCacheRange (BounceBuf, TotalBytes);
