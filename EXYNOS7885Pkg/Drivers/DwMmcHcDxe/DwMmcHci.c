@@ -329,6 +329,13 @@ DwMmcInitController (
   UhsExtBefore = MmioRead32 (BaseAddr + EXYNOS_DWMMC_UHS_REG_EXT);
   DdrBefore    = MmioRead32 (BaseAddr + EXYNOS_DWMMC_DDR_REG);
 
+  // A controller reinitialization starts a fresh RX tuning attempt.
+  if (BaseAddr == EXYNOS_DWMMC0_BASE) {
+    mRxTuned0 = FALSE;
+  } else {
+    mRxTuned2 = FALSE;
+  }
+
   ClkSelInit = MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL);
   if (BaseAddr == EXYNOS_DWMMC0_BASE) {
     // SM-A205W eMMC DTS: <3 0 4 0> = divider, fine-drive, drive, sample.
@@ -845,8 +852,10 @@ DwMmcExecCommand (
   if (Status == EFI_CRC_ERROR && Packet->InDataBuffer != NULL && !(*TunedFlag)) {
     EFI_STATUS ClockStatus;
 
-    *TunedFlag = TRUE;
     BaseClkSel = DwMmcGetSavedClkSel (BaseAddr) & ~EXYNOS_DWMMC_CLKSEL_SAMPLE_MASK;
+
+    Print (L"[DWMMC RX-SWEEP-BEGIN] CMD=%u initial=0x%x RINT=0x%x\n",
+           CmdIdx, MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL), RintSts);
 
     // Phase 0 was tested by the initial transaction. Preserve Samsung's
     // divider/drive fields while testing the remaining RX sample phases.
@@ -875,6 +884,10 @@ DwMmcExecCommand (
         break;
       }
     }
+
+    *TunedFlag = TRUE;
+    Print (L"[DWMMC RX-SWEEP-END] CMD=%u status=0x%lx CLKSEL=0x%x\n",
+           CmdIdx, (UINT64)Status, MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL));
 
     if (EFI_ERROR (Status)) {
       // Restore the last known Samsung SDR timing after an unsuccessful sweep.
