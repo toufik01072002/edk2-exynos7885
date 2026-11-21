@@ -45,6 +45,7 @@ jobs:
           fi
           git clone --recursive -b "$EDK2_REF" https://github.com/tianocore/edk2
           git clone https://github.com/tianocore/edk2-platforms.git
+          sed -i 's/BaseUcs2Utf8Lib/Ucs2Utf8Lib/g' edk2-platforms/Features/Ext4Pkg/Ext4Dxe/Ext4Dxe.inf
           ls -la
 
       - name: Compiler

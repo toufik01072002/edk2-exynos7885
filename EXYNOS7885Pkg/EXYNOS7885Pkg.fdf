@@ -117,9 +117,7 @@ READ_LOCK_STATUS   = TRUE
   #
   # Storage (eMMC / SD)
   #
-  INF EXYNOS7885Pkg/Drivers/DwMmcHcDxe/DwMmcHcDxe.inf
-  INF MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
-  INF MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
+  INF EXYNOS7885Pkg/Drivers/MshcDxe/MshcDxe.inf
   INF MdeModulePkg/Universal/Console/ConPlatformDxe/ConPlatformDxe.inf
   INF MdeModulePkg/Universal/Console/ConSplitterDxe/ConSplitterDxe.inf
   INF   MdeModulePkg/Universal/Console/GraphicsConsoleDxe/GraphicsConsoleDxe.inf
@@ -173,6 +171,7 @@ READ_LOCK_STATUS   = TRUE
   #
   INF MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf
   INF MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
+  INF Features/Ext4Pkg/Ext4Dxe/Ext4Dxe.inf
   INF FatPkg/EnhancedFatDxe/Fat.inf
   INF MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
 

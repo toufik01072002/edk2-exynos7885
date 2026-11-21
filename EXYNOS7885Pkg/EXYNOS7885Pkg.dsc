@@ -38,6 +38,7 @@
 
 [LibraryClasses.common]
   OrderedCollectionLib|MdePkg/Library/BaseOrderedCollectionRedBlackTreeLib/BaseOrderedCollectionRedBlackTreeLib.inf
+  Ucs2Utf8Lib|RedfishPkg/Library/BaseUcs2Utf8Lib/BaseUcs2Utf8Lib.inf
   ArmLib|MdePkg/Library/ArmLib/ArmBaseLib.inf
   ArmPlatformLib|EXYNOS7885Pkg/Library/EXYNOS7885PkgLib/EXYNOS7885PkgLib.inf
   CompilerIntrinsicsLib|MdePkg/Library/CompilerIntrinsicsLib/CompilerIntrinsicsLib.inf
@@ -211,9 +212,10 @@
   #
   # Storage (eMMC / SD)
   #
-  EXYNOS7885Pkg/Drivers/DwMmcHcDxe/DwMmcHcDxe.inf
-  MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
-  MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
+  EXYNOS7885Pkg/Drivers/MshcDxe/MshcDxe.inf {
+    <LibraryClasses>
+      DmaLib|EmbeddedPkg/Library/NonCoherentDmaLib/NonCoherentDmaLib.inf
+  }
   EXYNOS7885Pkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
   EXYNOS7885Pkg/Drivers/LogoDxe/LogoDxe.inf
 
@@ -243,6 +245,7 @@
   #
   MdeModulePkg/Universal/Disk/DiskIoDxe/DiskIoDxe.inf
   MdeModulePkg/Universal/Disk/PartitionDxe/PartitionDxe.inf
+  Features/Ext4Pkg/Ext4Dxe/Ext4Dxe.inf
   MdeModulePkg/Universal/Disk/UnicodeCollation/EnglishDxe/EnglishDxe.inf
   FatPkg/EnhancedFatDxe/Fat.inf
 

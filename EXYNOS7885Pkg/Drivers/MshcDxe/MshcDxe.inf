@@ -1,0 +1,43 @@
+[Defines]
+  INF_VERSION                    = 0x0001001A
+  BASE_NAME                      = MshcDxe
+  FILE_GUID                      = 7A2C4D11-5B91-4F30-9D4C-205A78850001
+  MODULE_TYPE                    = DXE_DRIVER
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = MshcEntryPoint
+
+[Sources]
+  MshcDxe.c
+  MshcDxe.h
+  MshcDxe_CMD.h
+  MshcHost.c
+  MshcHost.h
+  MshcMmc.c
+  MshcA20Board.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  EmbeddedPkg/EmbeddedPkg.dec
+  ArmPkg/ArmPkg.dec
+  EXYNOS7885Pkg/EXYNOS7885Pkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  BaseLib
+  BaseMemoryLib
+  MemoryAllocationLib
+  DevicePathLib
+  CacheMaintenanceLib
+  DmaLib
+  DebugLib
+  IoLib
+  TimerLib
+
+[Protocols]
+  gEfiBlockIoProtocolGuid
+  gEfiDevicePathProtocolGuid
+
+[Depex]
+  TRUE
