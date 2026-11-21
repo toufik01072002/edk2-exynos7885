@@ -557,6 +557,81 @@ DwMmcSetupIdmacDescriptors (
   return EFI_SUCCESS;
 }
 
+
+STATIC
+EFI_STATUS
+DwMmcReadDataPio (
+  IN  UINTN  BaseAddr,
+  OUT VOID   *Buffer,
+  IN  UINT32 TotalBytes
+  )
+{
+  UINT8  *Bytes;
+  UINT32 WordsRemaining;
+  UINT32 FifoWords;
+  UINT32 Word;
+  UINT32 Byte;
+  UINT32 RintSts;
+  UINT32 Timeout;
+
+  if (Buffer == NULL || TotalBytes == 0 || (TotalBytes & 3) != 0) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Bytes          = (UINT8 *)Buffer;
+  WordsRemaining = TotalBytes / sizeof (UINT32);
+  Timeout        = 1000000;
+
+  while (WordsRemaining > 0 && Timeout > 0) {
+    RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
+    if (RintSts & DW_MMC_INT_ERROR) {
+      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, RintSts);
+      return ((RintSts & DW_MMC_INT_DCRC) != 0) ? EFI_CRC_ERROR : EFI_DEVICE_ERROR;
+    }
+
+    FifoWords = (MmioRead32 (BaseAddr + DW_MMC_STATUS) &
+                 DW_MMC_STATUS_FIFO_COUNT_MASK) >>
+                DW_MMC_STATUS_FIFO_COUNT_SHIFT;
+
+    while (FifoWords > 0 && WordsRemaining > 0) {
+      Word = MmioRead32 (BaseAddr + DW_MMC_FIFO_BASE);
+      for (Byte = 0; Byte < sizeof (UINT32); Byte++) {
+        *Bytes++ = (UINT8)(Word >> (Byte * 8));
+      }
+      WordsRemaining--;
+      FifoWords--;
+    }
+
+    if (RintSts & DW_MMC_INT_RXDR) {
+      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, DW_MMC_INT_RXDR);
+    }
+
+    MicroSecondDelay (1);
+    Timeout--;
+  }
+
+  if (WordsRemaining != 0) {
+    return EFI_TIMEOUT;
+  }
+
+  Timeout = 500000;
+  while (Timeout > 0) {
+    RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
+    if (RintSts & DW_MMC_INT_ERROR) {
+      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, RintSts);
+      return ((RintSts & DW_MMC_INT_DCRC) != 0) ? EFI_CRC_ERROR : EFI_DEVICE_ERROR;
+    }
+    if (RintSts & DW_MMC_INT_DTO) {
+      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, DW_MMC_INT_DTO | DW_MMC_INT_RXDR);
+      return EFI_SUCCESS;
+    }
+    MicroSecondDelay (1);
+    Timeout--;
+  }
+
+  return EFI_TIMEOUT;
+}
+
 STATIC
 EFI_STATUS
 DwMmcExecuteSingleTransaction (
@@ -571,6 +646,7 @@ DwMmcExecuteSingleTransaction (
   UINT32              Timeout;
   EFI_STATUS          Status;
   BOOLEAN             IsRead     = FALSE;
+  BOOLEAN             UsePioRead = FALSE;
   UINT32              TotalBytes = 0;
   VOID                *UserBuf   = NULL;
   UINT16              CmdIdx;
@@ -654,42 +730,65 @@ DwMmcExecuteSingleTransaction (
     CmdReg    |= (DW_MMC_CMD_DATA_EXP | DW_MMC_CMD_RW);
   }
 
+  UsePioRead = (BaseAddr == EXYNOS_DWMMC0_BASE) &&
+                (CmdIdx == 8) && IsRead && (TotalBytes == 512);
+
   if (TotalBytes > 0 && UserBuf != NULL) {
-    Status = DwMmcEnsureDmaBuffers (BaseAddr, &Ring, &BounceBuf);
-    if (EFI_ERROR (Status)) {
-      return Status;
-    }
+    if (UsePioRead) {
+      // Diagnostic path: CMD8 EXT_CSD is transferred through the FIFO only.
+      // Keep IDMAC disabled for this request; do not prepare descriptors.
+      MmioAnd32 (BaseAddr + DW_MMC_CTRL,
+                 ~(DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE));
+      MmioAnd32 (BaseAddr + DW_MMC_BMOD, ~DW_MMC_BMOD_DE);
+      ZeroMem (UserBuf, TotalBytes);
+      WriteBackInvalidateDataCacheRange (UserBuf, TotalBytes);
 
-    if (IsRead) {
-      ZeroMem (BounceBuf, TotalBytes);
+      MmioOr32 (BaseAddr + DW_MMC_CTRL, DW_MMC_CTRL_FIFO_RESET);
+      Status = DwMmcWaitForClear (
+                 BaseAddr,
+                 DW_MMC_CTRL,
+                 DW_MMC_CTRL_FIFO_RESET,
+                 100000
+                 );
+      if (EFI_ERROR (Status)) {
+        return Status;
+      }
     } else {
-      CopyMem (BounceBuf, UserBuf, TotalBytes);
-    }
-    WriteBackInvalidateDataCacheRange (BounceBuf, TotalBytes);
+      Status = DwMmcEnsureDmaBuffers (BaseAddr, &Ring, &BounceBuf);
+      if (EFI_ERROR (Status)) {
+        return Status;
+      }
 
-    MmioOr32 (BaseAddr + DW_MMC_CTRL, DW_MMC_CTRL_FIFO_RESET | DW_MMC_CTRL_DMA_RESET);
-    Status = DwMmcWaitForClear (
-               BaseAddr,
-               DW_MMC_CTRL,
-               DW_MMC_CTRL_FIFO_RESET | DW_MMC_CTRL_DMA_RESET,
-               100000
-               );
-    if (EFI_ERROR (Status)) {
-      return Status;
-    }
+      if (IsRead) {
+        ZeroMem (BounceBuf, TotalBytes);
+      } else {
+        CopyMem (BounceBuf, UserBuf, TotalBytes);
+      }
+      WriteBackInvalidateDataCacheRange (BounceBuf, TotalBytes);
 
+      MmioOr32 (BaseAddr + DW_MMC_CTRL, DW_MMC_CTRL_FIFO_RESET | DW_MMC_CTRL_DMA_RESET);
+      Status = DwMmcWaitForClear (
+                 BaseAddr,
+                 DW_MMC_CTRL,
+                 DW_MMC_CTRL_FIFO_RESET | DW_MMC_CTRL_DMA_RESET,
+                 100000
+                 );
+      if (EFI_ERROR (Status)) {
+        return Status;
+      }
+
+      Status = DwMmcSetupIdmacDescriptors (BaseAddr, Ring, BounceBuf, TotalBytes);
+      if (EFI_ERROR (Status)) {
+        return Status;
+      }
+
+      // U-Boot dwmci_prepare_data(): enable IDMAC after DBADDR and descriptors are ready.
+      MmioOr32 (BaseAddr + DW_MMC_CTRL,
+                DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE);
+    }
 
     MmioWrite32 (BaseAddr + DW_MMC_BLKSIZ, (TotalBytes < 512) ? TotalBytes : 512);
     MmioWrite32 (BaseAddr + DW_MMC_BYTCNT, TotalBytes);
-
-    Status = DwMmcSetupIdmacDescriptors (BaseAddr, Ring, BounceBuf, TotalBytes);
-    if (EFI_ERROR (Status)) {
-      return Status;
-    }
-
-    // U-Boot dwmci_prepare_data(): enable IDMAC after DBADDR and descriptors are ready.
-    MmioOr32 (BaseAddr + DW_MMC_CTRL,
-              DW_MMC_CTRL_USE_IDMAC | DW_MMC_CTRL_DMA_ENABLE);
 
     if (CmdIdx == 18 || CmdIdx == 25) {
       CmdReg |= DW_MMC_CMD_SEND_STOP;
@@ -699,7 +798,7 @@ DwMmcExecuteSingleTransaction (
   ArmDataSynchronizationBarrier ();
 
   // Trace BMOD read/write visibility without changing the DMA sequence.
-  if (TotalBytes > 0) {
+  if (TotalBytes > 0 && !UsePioRead) {
     UINT32 Bmod;
     UINT32 BmodRead;
 
@@ -769,7 +868,23 @@ DwMmcExecuteSingleTransaction (
     }
   }
 
-  if (TotalBytes > 0 && UserBuf != NULL) {
+  if (TotalBytes > 0 && UserBuf != NULL && UsePioRead) {
+    Print (L"[DWMMC PIO-BEGIN] CMD=%u bytes=%u CTRL=0x%x BMOD=0x%x\n",
+           CmdIdx, TotalBytes,
+           MmioRead32 (BaseAddr + DW_MMC_CTRL),
+           MmioRead32 (BaseAddr + DW_MMC_BMOD));
+    Status = DwMmcReadDataPio (BaseAddr, UserBuf, TotalBytes);
+    InvalidateDataCacheRange (UserBuf, TotalBytes);
+    Print (L"[DWMMC PIO-END] CMD=%u status=0x%lx RINT=0x%x CTRL=0x%x BMOD=0x%x\n",
+           CmdIdx, (UINT64)Status,
+           MmioRead32 (BaseAddr + DW_MMC_RINTSTS),
+           MmioRead32 (BaseAddr + DW_MMC_CTRL),
+           MmioRead32 (BaseAddr + DW_MMC_BMOD));
+    if (EFI_ERROR (Status)) {
+      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
+      return Status;
+    }
+  } else if (TotalBytes > 0 && UserBuf != NULL) {
     UINT32 DmaDoneMask;
 
     DmaDoneMask = IsRead ? DW_MMC_IDMAC_INT_RI : DW_MMC_IDMAC_INT_TI;
