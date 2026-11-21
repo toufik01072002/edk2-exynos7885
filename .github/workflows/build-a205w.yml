@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
   push:
-    branches: [main, feature/kexec-arm64-virtual-boot]
+    branches: [main, feature/kexec-arm64-virtual-boot, port/dwmmc-samsung-idmac]
     paths:
       - "EXYNOS7885Pkg/**"
       - "BootShim/**"
