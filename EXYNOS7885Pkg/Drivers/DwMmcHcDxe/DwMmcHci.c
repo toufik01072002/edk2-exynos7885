@@ -730,10 +730,12 @@ DwMmcExecuteSingleTransaction (
       }
 
       if (IdSts & DW_MMC_IDMAC_INT_ERR) {
-        Print (L"[DWMMC DMA-ERR] CMD=%u IDSTS=0x%x RINT=0x%x CTRL=0x%x BMOD=0x%x DBADDR=%08x:%08x DESC0=0x%x DESC2=0x%x BUF=%08x:%08x NEXT=%08x:%08x\\n",
+        Print (L"[DWMMC DMA-ERR] CMD=%u IDSTS=0x%x RINT=0x%x CTRL=0x%x BMOD=0x%x DBADDR=%08x:%08x DESC0=0x%x DESC2=0x%x BUF=%08x:%08x NEXT=%08x:%08x\n",
                CmdIdx, IdSts, RintSts,
                MmioRead32 (BaseAddr + DW_MMC_CTRL),
                MmioRead32 (BaseAddr + DW_MMC_BMOD),
+               MmioRead32 (BaseAddr + EXYNOS_DWMMC_CLKSEL),
+               MmioRead32 (BaseAddr + DW_MMC_CLKDIV),
                MmioRead32 (BaseAddr + DW_MMC_DBADDRU),
                MmioRead32 (BaseAddr + DW_MMC_DBADDRL),
                Ring[0].Des0, Ring[0].Des2,
@@ -745,7 +747,7 @@ DwMmcExecuteSingleTransaction (
       }
 
       if (RintSts & DW_MMC_INT_ERROR) {
-        Print (L"[DWMMC DATA-ERR] CMD=%u IDSTS=0x%x RINT=0x%x CTRL=0x%x BMOD=0x%x DBADDR=%08x:%08x DESC0=0x%x DESC2=0x%x\\n",
+        Print (L"[DWMMC DATA-ERR] CMD=%u IDSTS=0x%x RINT=0x%x CTRL=0x%x BMOD=0x%x DBADDR=%08x:%08x DESC0=0x%x DESC2=0x%x\n",
                CmdIdx, IdSts, RintSts,
                MmioRead32 (BaseAddr + DW_MMC_CTRL),
                MmioRead32 (BaseAddr + DW_MMC_BMOD),
@@ -767,7 +769,7 @@ DwMmcExecuteSingleTransaction (
     }
 
     if (((RintSts & DW_MMC_INT_DTO) == 0) || ((IdSts & DmaDoneMask) == 0)) {
-      Print (L"[DWMMC DMA-TIMEOUT] CMD=%u READ=%u IDSTS=0x%x RINT=0x%x CTRL=0x%x BMOD=0x%x DBADDR=%08x:%08x DESC0=0x%x DESC2=0x%x BUF=%08x:%08x NEXT=%08x:%08x\\n",
+      Print (L"[DWMMC DMA-TIMEOUT] CMD=%u READ=%u IDSTS=0x%x RINT=0x%x CTRL=0x%x BMOD=0x%x DBADDR=%08x:%08x DESC0=0x%x DESC2=0x%x BUF=%08x:%08x NEXT=%08x:%08x\n",
              CmdIdx, IsRead, IdSts, RintSts,
              MmioRead32 (BaseAddr + DW_MMC_CTRL),
              MmioRead32 (BaseAddr + DW_MMC_BMOD),
