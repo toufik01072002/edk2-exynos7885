@@ -170,11 +170,11 @@ DwMmcEnableIdmac (
   DwMmcWaitForClear (BaseAddr, DW_MMC_BMOD, DW_MMC_BMOD_SWR, 10000);
 
   MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
+  // Match Samsung Linux dw_mci_idmac_init(): normal, Rx and Tx completion.
   MmioWrite32 (
     BaseAddr + DW_MMC_IDINTEN,
-    DW_MMC_IDMAC_INT_TI | DW_MMC_IDMAC_INT_RI | DW_MMC_IDMAC_INT_FBE |
-    DW_MMC_IDMAC_INT_DU | DW_MMC_IDMAC_INT_CES | DW_MMC_IDMAC_INT_NI |
-    BIT9
+    DW_MMC_IDMAC_INT_NI | DW_MMC_IDMAC_INT_RI | DW_MMC_IDMAC_INT_TI
+    );
     );
 
   MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_DE | DW_MMC_BMOD_FB);
@@ -473,16 +473,18 @@ DwMmcSetupIdmacDescriptors (
   for (i = 0; i < DescCount; i++) {
     Chunk = (Remaining > DW_MMC_MAX_BYTES_PER_DESC) ? DW_MMC_MAX_BYTES_PER_DESC : Remaining;
 
-    Des0 = IDMAC_DES0_OWN | IDMAC_DES0_DIC;
+    // Linux idmac_desc_64addr: OWN | DIC | CH, FD on first, LD on last.
+    Des0 = IDMAC_DES0_OWN | IDMAC_DES0_DIC | IDMAC_DES0_CH;
     if (i == 0) {
-      Des0 |= IDMAC_DES0_FS;
+      Des0 |= IDMAC_DES0_FS; // FD in Linux (same bit position)
     }
     if (i == (DescCount - 1)) {
-      Des0 |= (IDMAC_DES0_LD | IDMAC_DES0_ER);
+      Des0 &= ~(IDMAC_DES0_CH | IDMAC_DES0_DIC);
+      Des0 |= IDMAC_DES0_LD;
       NextAddr = 0;
     } else {
-      Des0 |= IDMAC_DES0_CH;
       NextAddr = RingAddr + ((i + 1) * sizeof (DW_MMC_IDMAC_DESC64));
+    }
     }
 
     Ring[i].Des0           = Des0;
@@ -501,7 +503,15 @@ DwMmcSetupIdmacDescriptors (
   WriteBackInvalidateDataCacheRange (Ring, DescCount * sizeof (DW_MMC_IDMAC_DESC64));
 
   MmioWrite32 (BaseAddr + DW_MMC_BMOD, DW_MMC_BMOD_SWR);
-  DwMmcWaitForClear (BaseAddr, DW_MMC_BMOD, DW_MMC_BMOD_SWR, 10000);
+  Status = DwMmcWaitForClear (
+             BaseAddr,
+             DW_MMC_BMOD,
+             DW_MMC_BMOD_SWR,
+             10000
+             );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
 
   MmioWrite32 (BaseAddr + DW_MMC_DBADDRL, (UINT32)(RingAddr & 0xFFFFFFFFULL));
   MmioWrite32 (BaseAddr + DW_MMC_DBADDRU, (UINT32)(RingAddr >> 32));
@@ -649,12 +659,14 @@ DwMmcExecuteSingleTransaction (
 
   ArmDataSynchronizationBarrier ();
 
-  MmioWrite32 (BaseAddr + DW_MMC_CMDARG, CmdArg);
-  MmioWrite32 (BaseAddr + DW_MMC_CMD, CmdReg);
-
+  // Linux dw_mci_submit_data() starts IDMAC before dw_mci_start_command().
   if (TotalBytes > 0) {
     MmioWrite32 (BaseAddr + DW_MMC_PLDMND, 1);
+    ArmDataSynchronizationBarrier ();
   }
+
+  MmioWrite32 (BaseAddr + DW_MMC_CMDARG, CmdArg);
+  MmioWrite32 (BaseAddr + DW_MMC_CMD, CmdReg);
 
   Timeout = 200000;
   while (Timeout > 0) {
