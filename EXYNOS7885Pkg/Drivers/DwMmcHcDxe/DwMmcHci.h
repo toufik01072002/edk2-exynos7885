@@ -33,6 +33,7 @@
 #define DW_MMC_CDETECT            0x050
 #define DW_MMC_VERID              0x06C
 #define DW_MMC_HCON               0x070
+#define DW_MMC_HCON_ADDR_CONFIG_64 BIT27
 #define DW_MMC_UHS_REG            0x074
 #define DW_MMC_BMOD               0x080
 #define DW_MMC_PLDMND             0x084
