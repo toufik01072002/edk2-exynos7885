@@ -211,9 +211,10 @@
   #
   # Storage (eMMC / SD)
   #
-  EXYNOS7885Pkg/Drivers/DwMmcHcDxe/DwMmcHcDxe.inf
-  MdeModulePkg/Bus/Sd/EmmcDxe/EmmcDxe.inf
-  MdeModulePkg/Bus/Sd/SdDxe/SdDxe.inf
+  EXYNOS7885Pkg/Drivers/MshcDxe/MshcDxe.inf {
+    <LibraryClasses>
+      DmaLib|EmbeddedPkg/Library/NonCoherentDmaLib/NonCoherentDmaLib.inf
+  }
   EXYNOS7885Pkg/Drivers/SimpleFbDxe/SimpleFbDxe.inf
   EXYNOS7885Pkg/Drivers/LogoDxe/LogoDxe.inf
 
