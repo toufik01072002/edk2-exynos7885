@@ -9,7 +9,7 @@
 #define EXYNOS_DWMMC2_BASE        0x13550000  // microSD (Slot 1)
 #define EXYNOS_DWMMC_MAX_SLOTS    2
 
-// Offsets registres DesignWare MMC (IP Exynos 64-bit >= 2.70a)
+// Offsets registres DesignWare MMC (IP Exynos >= 2.70a avec support 64-bit)
 #define DW_MMC_CTRL               0x000
 #define DW_MMC_PWREN              0x004
 #define DW_MMC_CLKDIV             0x008
@@ -42,7 +42,10 @@
 #define DW_MMC_IDINTEN            0x094
 #define DW_MMC_DSCADDRL           0x098
 #define EXYNOS_DWMMC_CLKSEL       0x09C  // Registre propriétaire Samsung Exynos
-#define DW_MMC_FIFO_BASE          0x200  // Offset FIFO Exynos 64-bit
+#define DW_MMC_DSCADDRU           0x0A0
+#define DW_MMC_BUFADDRL           0x0A4
+#define DW_MMC_BUFADDRU           0x0A8
+#define DW_MMC_FIFO_BASE          0x200  // Offset FIFO Exynos (IP >= 2.70a 64-bit)
 
 // Bits CTRL
 #define DW_MMC_CTRL_RESET         BIT0
@@ -52,7 +55,7 @@
 #define DW_MMC_CTRL_DMA_ENABLE    BIT5
 #define DW_MMC_CTRL_USE_IDMAC     BIT25
 
-// Bits BMOD
+// Bits BMOD (Bus Mode Register)
 #define DW_MMC_BMOD_SWR           BIT0
 #define DW_MMC_BMOD_FB            BIT1
 #define DW_MMC_BMOD_DE            BIT7
@@ -65,32 +68,33 @@
 #define DW_MMC_IDMAC_INT_CES      BIT5
 #define DW_MMC_IDMAC_INT_NIS      BIT8
 #define DW_MMC_IDMAC_INT_AIS      BIT9
-#define DW_MMC_IDMAC_INT_MASK     (DW_MMC_IDMAC_INT_TI | DW_MMC_IDMAC_INT_RI | \
-                                   DW_MMC_IDMAC_INT_FBE | DW_MMC_IDMAC_INT_DU | \
-                                   DW_MMC_IDMAC_INT_CES | DW_MMC_IDMAC_INT_NIS | \
-                                   DW_MMC_IDMAC_INT_AIS)
 
-// Descripteur IDMAC 64-bit Exynos (32 octets)
+// Descripteur IDMAC 64-bit (struct idmac_desc_64addr du noyau Linux : 32 octets)
+// Des0: contrôle, Des1: réservé, Des2: BS1/BS2, Des3: réservé,
+// Des4/Des5: adresse buffer 64-bit, Des6/Des7: adresse descripteur suivant 64-bit
 #define IDMAC_DES0_DIC            BIT1
 #define IDMAC_DES0_LD             BIT2
 #define IDMAC_DES0_FS             BIT3
 #define IDMAC_DES0_CH             BIT4
 #define IDMAC_DES0_ER             BIT5
+#define IDMAC_DES0_CES            BIT30
 #define IDMAC_DES0_OWN            BIT31
 
 #define IDMAC_MAX_BUFFER_SIZE     4096
-#define IDMAC_SET_BUFFER1_SIZE(x) ((UINT32)(x) & 0x1FFFU)
+#define IDMAC_SET_BUFFER1_SIZE(x) ((UINT32)(x) & 0x1FFF)
 
+#pragma pack(1)
 typedef struct {
   UINT32 Des0;
   UINT32 Des1;
+  UINT32 Des2;
+  UINT32 Des3;
   UINT32 Buffer1AddrLo;
   UINT32 Buffer1AddrHi;
   UINT32 NextDescAddrLo;
   UINT32 NextDescAddrHi;
-  UINT32 Reserved0;
-  UINT32 Reserved1;
 } DW_MMC_IDMAC_DESC64;
+#pragma pack()
 
 // Bits CLKENA
 #define DW_MMC_CLKENA_CCLK_ENABLE  BIT0
