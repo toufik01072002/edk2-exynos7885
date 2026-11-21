@@ -80,6 +80,7 @@
 #define IDMAC_DES0_FD            BIT3
 #define IDMAC_DES0_CH             BIT4
 #define IDMAC_DES0_ER             BIT5
+#define IDMAC_DES0_CES            BIT30
 #define IDMAC_DES0_OWN            BIT31
 
 #define IDMAC_MAX_BUF_SIZE        4096
