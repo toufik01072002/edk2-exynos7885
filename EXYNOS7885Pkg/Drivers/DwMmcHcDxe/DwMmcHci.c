@@ -758,8 +758,11 @@ DwMmcExecuteSingleTransaction (
                Ring[0].Des0, Ring[0].Des2,
                Ring[0].Buffer1AddrHi, Ring[0].Buffer1AddrLo,
                Ring[0].NextDescAddrHi, Ring[0].NextDescAddrLo);
-        MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
-        MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
+        Status = DwMmcRecoverController (BaseAddr, CmdIdx);
+        if (EFI_ERROR (Status)) {
+          Print (L"[DWMMC RECOVER-ERR] CMD=%u status=0x%lx after IDMAC error\n",
+                 CmdIdx, (UINT64)Status);
+        }
         return EFI_DEVICE_ERROR;
       }
 
@@ -773,8 +776,11 @@ DwMmcExecuteSingleTransaction (
                MmioRead32 (BaseAddr + DW_MMC_DBADDRU),
                MmioRead32 (BaseAddr + DW_MMC_DBADDRL),
                Ring[0].Des0, Ring[0].Des2);
-        MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
-        MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
+        Status = DwMmcRecoverController (BaseAddr, CmdIdx);
+        if (EFI_ERROR (Status)) {
+          Print (L"[DWMMC RECOVER-ERR] CMD=%u status=0x%lx after data error\n",
+                 CmdIdx, (UINT64)Status);
+        }
         return EFI_CRC_ERROR;
       }
 
@@ -799,8 +805,11 @@ DwMmcExecuteSingleTransaction (
              Ring[0].Des0, Ring[0].Des2,
              Ring[0].Buffer1AddrHi, Ring[0].Buffer1AddrLo,
              Ring[0].NextDescAddrHi, Ring[0].NextDescAddrLo);
-      MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
-      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
+      Status = DwMmcRecoverController (BaseAddr, CmdIdx);
+      if (EFI_ERROR (Status)) {
+        Print (L"[DWMMC RECOVER-ERR] CMD=%u status=0x%lx after DMA timeout\n",
+               CmdIdx, (UINT64)Status);
+      }
       return EFI_TIMEOUT;
     }
 
