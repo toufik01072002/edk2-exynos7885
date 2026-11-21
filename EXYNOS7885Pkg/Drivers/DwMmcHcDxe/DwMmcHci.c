@@ -712,21 +712,32 @@ DwMmcExecuteSingleTransaction (
   }
 
   if (TotalBytes > 0 && UserBuf != NULL) {
+    UINT32 DmaDoneMask;
+
+    DmaDoneMask = IsRead ? DW_MMC_IDMAC_INT_RI : DW_MMC_IDMAC_INT_TI;
     Timeout = 500000;
     while (Timeout > 0) {
       RintSts = MmioRead32 (BaseAddr + DW_MMC_RINTSTS);
       IdSts   = MmioRead32 (BaseAddr + DW_MMC_IDSTS);
 
-      if (IdSts & DW_MMC_IDMAC_INT_FBE) {
-        if (OutRintSts != NULL) {
-          *OutRintSts = RintSts;
-        }
+      if (OutRintSts != NULL) {
+        *OutRintSts = RintSts;
+      }
+
+      if (IdSts & DW_MMC_IDMAC_INT_ERR) {
         MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
         MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
         return EFI_DEVICE_ERROR;
       }
 
-      if (RintSts & DW_MMC_INT_DTO) {
+      if (RintSts & DW_MMC_INT_ERROR) {
+        MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
+        MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
+        return EFI_CRC_ERROR;
+      }
+
+      // DATA_OVER and IDMAC RI/TI are independent completion indications.
+      if ((RintSts & DW_MMC_INT_DTO) && (IdSts & DmaDoneMask)) {
         break;
       }
 
@@ -734,8 +745,10 @@ DwMmcExecuteSingleTransaction (
       Timeout--;
     }
 
-    if (OutRintSts != NULL) {
-      *OutRintSts = RintSts;
+    if (((RintSts & DW_MMC_INT_DTO) == 0) || ((IdSts & DmaDoneMask) == 0)) {
+      MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
+      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
+      return EFI_TIMEOUT;
     }
 
     if (IsRead) {
@@ -743,19 +756,8 @@ DwMmcExecuteSingleTransaction (
       CopyMem (UserBuf, BounceBuf, TotalBytes);
     }
 
-    if ((RintSts & DW_MMC_INT_DTO) == 0) {
-      MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
-      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
-      return EFI_TIMEOUT;
-    }
-
-    if (RintSts & DW_MMC_INT_ERROR) {
-      MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
-      MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
-      return EFI_CRC_ERROR;
-    }
-
     MmioWrite32 (BaseAddr + DW_MMC_IDSTS, 0xFFFFFFFF);
+    MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
   }
 
   MmioWrite32 (BaseAddr + DW_MMC_RINTSTS, 0xFFFFFFFF);
