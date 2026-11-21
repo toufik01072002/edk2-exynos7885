@@ -77,7 +77,7 @@
 // Descripteur IDMAC 64-bit conforme à struct idmac_desc_64addr du noyau Linux
 #define IDMAC_DES0_DIC            BIT1
 #define IDMAC_DES0_LD             BIT2
-#define IDMAC_DES0_FS             BIT3
+#define IDMAC_DES0_FD            BIT3
 #define IDMAC_DES0_CH             BIT4
 #define IDMAC_DES0_ER             BIT5
 #define IDMAC_DES0_OWN            BIT31
