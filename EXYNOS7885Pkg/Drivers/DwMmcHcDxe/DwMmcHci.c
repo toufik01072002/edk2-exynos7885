@@ -218,6 +218,7 @@ DwMmcRecoverController (
     );
 
   Ctrl = MmioRead32 (BaseAddr + DW_MMC_CTRL);
+  Ctrl &= ~DW_MMC_CTRL_DMA_ENABLE;
   Ctrl |= DW_MMC_CTRL_RESET | DW_MMC_CTRL_FIFO_RESET | DW_MMC_CTRL_DMA_RESET;
   MmioWrite32 (BaseAddr + DW_MMC_CTRL, Ctrl);
 
