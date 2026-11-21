@@ -484,7 +484,7 @@ DwMmcSetupIdmacDescriptors (
     // Linux idmac_desc_64addr: OWN | DIC | CH, FD on first, LD on last.
     Des0 = IDMAC_DES0_OWN | IDMAC_DES0_DIC | IDMAC_DES0_CH;
     if (i == 0) {
-      Des0 |= IDMAC_DES0_FS; // FD in Linux (same bit position)
+      Des0 |= IDMAC_DES0_FD; // First descriptor (FD)
     }
     if (i == (DescCount - 1)) {
       Des0 &= ~(IDMAC_DES0_CH | IDMAC_DES0_DIC);
