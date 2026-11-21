@@ -698,16 +698,40 @@ DwMmcExecuteSingleTransaction (
 
   ArmDataSynchronizationBarrier ();
 
-  // Enable descriptor DMA in BMOD, then issue poll demand before the command.
+  // Trace BMOD read/write visibility without changing the DMA sequence.
   if (TotalBytes > 0) {
-    UINT32 Bmod = MmioRead32 (BaseAddr + DW_MMC_BMOD);
+    UINT32 Bmod;
+    UINT32 BmodRead;
+
+    Bmod = MmioRead32 (BaseAddr + DW_MMC_BMOD);
+    Print (L"[DWMMC BMOD-BEFORE] CMD=%u BMOD=0x%x CTRL=0x%x HCON=0x%x\\n",
+           CmdIdx, Bmod,
+           MmioRead32 (BaseAddr + DW_MMC_CTRL),
+           MmioRead32 (BaseAddr + DW_MMC_HCON));
+
     Bmod |= DW_MMC_BMOD_DE | DW_MMC_BMOD_FB;
+    Print (L"[DWMMC BMOD-WRITE] CMD=%u value=0x%x DE=%u FB=%u\\n",
+           CmdIdx, Bmod,
+           (Bmod & DW_MMC_BMOD_DE) != 0,
+           (Bmod & DW_MMC_BMOD_FB) != 0);
     MmioWrite32 (BaseAddr + DW_MMC_BMOD, Bmod);
     ArmDataSynchronizationBarrier ();
+    BmodRead = MmioRead32 (BaseAddr + DW_MMC_BMOD);
+    Print (L"[DWMMC BMOD-AFTER] CMD=%u BMOD=0x%x\\n", CmdIdx, BmodRead);
+
     MmioWrite32 (BaseAddr + DW_MMC_PLDMND, 1);
     ArmDataSynchronizationBarrier ();
+    BmodRead = MmioRead32 (BaseAddr + DW_MMC_BMOD);
+    Print (L"[DWMMC BMOD-PLDMND] CMD=%u BMOD=0x%x PLDMND=0x%x\\n",
+           CmdIdx, BmodRead, MmioRead32 (BaseAddr + DW_MMC_PLDMND));
   }
 
+  if (TotalBytes > 0) {
+    Print (L"[DWMMC BMOD-CMD] CMD=%u BMOD=0x%x CTRL=0x%x\\n",
+           CmdIdx,
+           MmioRead32 (BaseAddr + DW_MMC_BMOD),
+           MmioRead32 (BaseAddr + DW_MMC_CTRL));
+  }
   MmioWrite32 (BaseAddr + DW_MMC_CMDARG, CmdArg);
   MmioWrite32 (BaseAddr + DW_MMC_CMD, CmdReg);
 
