@@ -46,8 +46,7 @@ UefiMain (
       return Status;
     }
 
-    if (Key.ScanCode == SCAN_ESC ||
-        Key.UnicodeChar == CHAR_ESCAPE) {
+    if (Key.ScanCode == SCAN_ESC) {
       return EFI_SUCCESS;
     }
 
