@@ -1,4 +1,5 @@
 #include "AndroidImageLoader.h"
+#include "GzipDecompress.h"
 
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
@@ -453,20 +454,28 @@ AndroidStageBootImage (
   EFI_PHYSICAL_ADDRESS MaxAddress;
   EFI_PHYSICAL_ADDRESS KernelAddress;
   EFI_PHYSICAL_ADDRESS RamdiskAddress;
+  EFI_PHYSICAL_ADDRESS DecompressedRamdiskAddress;
+  UINTN DecompressedRamdiskSize;
+  UINTN DecompressedRamdiskPages;
   BOOLEAN KernelAllocated;
   BOOLEAN RamdiskAllocated;
+  BOOLEAN DecompressedRamdiskAllocated;
   BOOLEAN FdtAllocated;
 
   File = NULL;
   Info = NULL;
   KernelAddress = 0;
   RamdiskAddress = 0;
+  DecompressedRamdiskAddress = 0;
+  DecompressedRamdiskSize = 0;
+  DecompressedRamdiskPages = 0;
   FdtBuffer = NULL;
   FdtBufferSize = 0;
   FdtPages = 0;
   FdtAddress = 0;
   KernelAllocated = FALSE;
   RamdiskAllocated = FALSE;
+  DecompressedRamdiskAllocated = FALSE;
   FdtAllocated = FALSE;
   KernelPages = 0;
   RamdiskPages = 0;
@@ -628,10 +637,22 @@ AndroidStageBootImage (
     goto Done;
   }
 
+  Status = GzipDecompress (
+             (CONST UINT8 *)(UINTN)RamdiskAddress,
+             RamdiskSize,
+             &DecompressedRamdiskAddress,
+             &DecompressedRamdiskSize,
+             &DecompressedRamdiskPages
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+  DecompressedRamdiskAllocated = TRUE;
+
   Status = LoadAndPatchFdt (
              Directory,
-             RamdiskAddress,
-             RamdiskAddress + RamdiskSize,
+             DecompressedRamdiskAddress,
+             DecompressedRamdiskAddress + DecompressedRamdiskSize,
              &FdtBuffer,
              &FdtBufferSize
              );
@@ -662,9 +683,11 @@ AndroidStageBootImage (
   Print (L"Noyau ARM64 : %u octets, memoire image : 0x%Lx\n",
          KernelSize, KernelImageSize);
   Print (L"Ramdisk gzip : %u octets\n", RamdiskSize);
+  Print (L"Ramdisk CPIO decompresse : %u octets\n", (UINT32)DecompressedRamdiskSize);
   Print (L"DTB actif patche : %u octets\n", (UINT32)FdtBufferSize);
   Print (L"Adresse tampon noyau : 0x%Lx\n", KernelAddress);
-  Print (L"Adresse tampon ramdisk : 0x%Lx\n", RamdiskAddress);
+  Print (L"Adresse tampon gzip : 0x%Lx\n", RamdiskAddress);
+  Print (L"Adresse ramdisk CPIO : 0x%Lx\n", DecompressedRamdiskAddress);
   Print (L"Adresse DTB temporaire : 0x%Lx\n", FdtAddress);
   Print (L"DTB : linux,initrd-start/end actualises, bootargs conserves.\n");
   Print (L"Ces adresses sont temporaires, pas les adresses finales de boot.\n");
@@ -693,6 +716,9 @@ Done:
   }
   if (FdtBuffer != NULL) {
     gBS->FreePool (FdtBuffer);
+  }
+  if (DecompressedRamdiskAllocated) {
+    gBS->FreePages (DecompressedRamdiskAddress, DecompressedRamdiskPages);
   }
   if (RamdiskAllocated) {
     gBS->FreePages (RamdiskAddress, (UINTN)RamdiskPages);
