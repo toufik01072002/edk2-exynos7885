@@ -593,6 +593,10 @@ AndroidStageBootImage (
   UINT64 ImageEnd;
   UINT64 KernelTextOffset;
   UINT64 KernelImageSize;
+  UINT64 KernelFlags;
+  UINT64 KernelAllocationSize;
+  UINT64 KernelAllocationEnd;
+  UINT64 KernelAlignedBase;
   UINT64 KernelPages;
   UINT64 RamdiskPages;
   UINTN EventIndex;
@@ -603,6 +607,7 @@ AndroidStageBootImage (
   EFI_PHYSICAL_ADDRESS FdtAddress;
   EFI_PHYSICAL_ADDRESS MaxAddress;
   EFI_PHYSICAL_ADDRESS KernelAddress;
+  EFI_PHYSICAL_ADDRESS KernelAllocationAddress;
   EFI_PHYSICAL_ADDRESS RamdiskAddress;
   EFI_PHYSICAL_ADDRESS DecompressedRamdiskAddress;
   UINTN DecompressedRamdiskSize;
@@ -616,6 +621,7 @@ AndroidStageBootImage (
   File = NULL;
   Info = NULL;
   KernelAddress = 0;
+  KernelAllocationAddress = 0;
   RamdiskAddress = 0;
   DecompressedRamdiskAddress = 0;
   DecompressedRamdiskSize = 0;
@@ -725,9 +731,12 @@ AndroidStageBootImage (
 
   KernelTextOffset = ReadLe64 (KernelHeader + 8);
   KernelImageSize = ReadLe64 (KernelHeader + 16);
+  KernelFlags = ReadLe64 (KernelHeader + 24);
   if (KernelImageSize < KernelSize ||
       KernelImageSize > ANDROID_MAX_KERNEL_MEM ||
-      KernelTextOffset > 0x200000) {
+      KernelTextOffset > 0x200000 ||
+      (KernelFlags & 0xFFFFFFFFFFFFFFF1ULL) != 0 ||
+      ((KernelFlags >> 1) & 3) != 1) {
     Status = EFI_BAD_BUFFER_SIZE;
     goto Done;
   }
@@ -741,19 +750,38 @@ AndroidStageBootImage (
     goto Done;
   }
 
-  KernelPages = EFI_SIZE_TO_PAGES ((UINTN)KernelImageSize);
+  KernelAllocationSize = KernelTextOffset + KernelImageSize + 0x1FFFFFULL;
+  if (KernelAllocationSize < KernelImageSize || KernelAllocationSize > MAX_UINTN) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+  KernelPages = EFI_SIZE_TO_PAGES ((UINTN)KernelAllocationSize);
   RamdiskPages = EFI_SIZE_TO_PAGES ((UINTN)RamdiskSize);
 
+  MaxAddress = 0xFFFFFFFFULL;
   Status = gBS->AllocatePages (
-                  AllocateAnyPages,
+                  AllocateMaxAddress,
                   EfiLoaderData,
                   (UINTN)KernelPages,
-                  &KernelAddress
+                  &MaxAddress
                   );
   if (EFI_ERROR (Status)) {
     goto Done;
   }
+  KernelAllocationAddress = MaxAddress;
   KernelAllocated = TRUE;
+
+  KernelAlignedBase = AlignUp (KernelAllocationAddress, 0x200000);
+  KernelAddress = KernelAlignedBase + KernelTextOffset;
+  KernelAllocationEnd = KernelAllocationAddress + EFI_PAGES_TO_SIZE (KernelPages);
+  if (KernelAlignedBase < KernelAllocationAddress ||
+      KernelAddress < KernelAlignedBase ||
+      KernelAddress > MAX_UINT64 - KernelImageSize ||
+      KernelAddress + KernelImageSize > KernelAllocationEnd ||
+      KernelAllocationEnd > 0x100000000ULL) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Done;
+  }
 
   MaxAddress = 0xFFFFFFFFULL;
   Status = gBS->AllocatePages (
@@ -768,7 +796,7 @@ AndroidStageBootImage (
   }
   RamdiskAllocated = TRUE;
 
-  SetMem ((VOID *)(UINTN)KernelAddress, (UINTN)EFI_PAGES_TO_SIZE (KernelPages), 0);
+  SetMem ((VOID *)(UINTN)KernelAddress, (UINTN)KernelImageSize, 0);
   Status = ReadExact (
              File,
              KernelOffset,
@@ -846,7 +874,8 @@ AndroidStageBootImage (
   Print (L"Ramdisk gzip : %u octets\n", RamdiskSize);
   Print (L"Ramdisk CPIO decompresse : %u octets\n", (UINT32)DecompressedRamdiskSize);
   Print (L"DTB actif patche : %u octets\n", (UINT32)FdtBufferSize);
-  Print (L"Adresse tampon noyau : 0x%Lx\n", KernelAddress);
+  Print (L"Base alignee 2 Mio : 0x%Lx\n", KernelAlignedBase);
+  Print (L"Adresse Image / entree ARM64 : 0x%Lx\n", KernelAddress);
   Print (L"Adresse tampon gzip : 0x%Lx\n", RamdiskAddress);
   Print (L"Adresse ramdisk CPIO : 0x%Lx\n", DecompressedRamdiskAddress);
   Print (L"Adresse DTB temporaire : 0x%Lx\n", FdtAddress);
@@ -885,7 +914,7 @@ Done:
     gBS->FreePages (RamdiskAddress, (UINTN)RamdiskPages);
   }
   if (KernelAllocated) {
-    gBS->FreePages (KernelAddress, (UINTN)KernelPages);
+    gBS->FreePages (KernelAllocationAddress, (UINTN)KernelPages);
   }
   if (Info != NULL) {
     gBS->FreePool (Info);
