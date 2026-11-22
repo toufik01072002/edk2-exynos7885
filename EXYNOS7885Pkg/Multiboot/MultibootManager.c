@@ -1106,6 +1106,8 @@ LaunchAndroidFromVolumes (
                               );
   if (EFI_ERROR (Status) || MediaDirectory == NULL) {
     Print (L"Le dossier \\media est introuvable sur le volume 5 : %r\n", Status);
+    Print (L"Ouverture de l'explorateur du volume pour diagnostic.\n");
+    BrowseVolume (ParentImage, &Volumes[4]);
     goto Done;
   }
 
