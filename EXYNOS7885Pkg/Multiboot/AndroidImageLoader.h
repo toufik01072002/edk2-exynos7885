@@ -7,6 +7,7 @@
 EFI_STATUS
 EFIAPI
 AndroidStageBootImage (
+  IN EFI_HANDLE ImageHandle,
   IN EFI_FILE_PROTOCOL *Directory,
   IN CONST CHAR16 *FileName
   );
