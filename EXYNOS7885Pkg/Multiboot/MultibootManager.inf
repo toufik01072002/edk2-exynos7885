@@ -9,6 +9,7 @@
 [Sources]
   MultibootManager.c
   AndroidImageLoader.c
+  AndroidImageLoader.S
   GzipDecompress.c
   puff.c
 
