@@ -11,12 +11,28 @@ WaitForKey (
   UINTN Index;
   EFI_STATUS Status;
 
-  Status = gBS->WaitForEvent (1, &gST->ConIn->WaitForKey, &Index);
-  if (EFI_ERROR (Status)) {
-    return Status;
+  if (gST->ConIn == NULL || Key == NULL) {
+    return EFI_NOT_READY;
   }
 
-  return gST->ConIn->ReadKeyStroke (gST->ConIn, Key);
+  while (TRUE) {
+    Status = gBS->WaitForEvent (
+                    1,
+                    &gST->ConIn->WaitForKey,
+                    &Index
+                    );
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+
+    Status = gST->ConIn->ReadKeyStroke (gST->ConIn, Key);
+
+    if (Status == EFI_NOT_READY) {
+      continue;
+    }
+
+    return Status;
+  }
 }
 
 EFI_STATUS
