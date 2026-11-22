@@ -828,6 +828,8 @@ AndroidStageBootImage (
   Status = GzipDecompress (
              (CONST UINT8 *)(UINTN)RamdiskAddress,
              RamdiskSize,
+             KernelWindowBase,
+             KernelWindowBase + 0x40000000ULL,
              &DecompressedRamdiskAddress,
              &DecompressedRamdiskSize,
              &DecompressedRamdiskPages
