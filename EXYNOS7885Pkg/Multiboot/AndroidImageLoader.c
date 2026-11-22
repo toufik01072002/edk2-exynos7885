@@ -118,7 +118,7 @@ FdtNameEquals (
     }
   }
 
-  return (Index < NameLimit && Name[Index] == '\0');
+  return (Index == NameLimit && Name[Index] == '\0');
 }
 
 STATIC
