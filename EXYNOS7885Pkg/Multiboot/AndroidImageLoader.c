@@ -461,8 +461,10 @@ RangesOverlap (
   IN UINT64 SizeB
   )
 {
-  if (SizeA == 0 || SizeB == 0 ||
-      BaseA > MAX_UINT64 - SizeA ||
+  if (SizeA == 0 || SizeB == 0) {
+    return FALSE;
+  }
+  if (BaseA > MAX_UINT64 - SizeA ||
       BaseB > MAX_UINT64 - SizeB) {
     return TRUE;
   }
@@ -506,7 +508,6 @@ ValidateFdtReservedMemory (
   UINT64 RegionSize;
   CONST CHAR8 *PropertyName;
   BOOLEAN InReserved;
-  BOOLEAN SawReservedRanges;
 
   if (Fdt == NULL || BufferSize < 40 || ReadBe32 (Fdt) != 0xD00DFEEDU) {
     return EFI_UNSUPPORTED;
@@ -530,7 +531,6 @@ ValidateFdtReservedMemory (
   AddressCells = 2;
   SizeCells = 1;
   InReserved = FALSE;
-  SawReservedRanges = FALSE;
 
   while (Position <= StructEnd && StructEnd - Position >= 4) {
     Token = ReadBe32 (Fdt + Position);
@@ -605,7 +605,6 @@ ValidateFdtReservedMemory (
           if (PropertySize != 0) {
             return EFI_UNSUPPORTED;
           }
-          SawReservedRanges = TRUE;
         }
       } else if (InReserved && Depth == ReservedDepth + 1 &&
                  FdtNameEquals (PropertyName, NameLength, "reg")) {
@@ -1210,22 +1209,6 @@ AndroidStageBootImage (
     goto Done;
   }
 
-  Status = ValidateFdtReservedMemory (
-             FdtBuffer,
-             FdtBufferSize,
-             KernelAllocationAddress,
-             EFI_PAGES_TO_SIZE ((UINTN)KernelPages),
-             RamdiskAddress,
-             EFI_PAGES_TO_SIZE ((UINTN)RamdiskPages),
-             DecompressedRamdiskAddress,
-             EFI_PAGES_TO_SIZE (DecompressedRamdiskPages),
-             0,
-             0
-             );
-  if (EFI_ERROR (Status)) {
-    goto Done;
-  }
-
   FdtPages = EFI_SIZE_TO_PAGES (FdtBufferSize);
   MaxAddress = 0xFFFFFFFFULL;
   Status = gBS->AllocatePages (
@@ -1250,6 +1233,22 @@ AndroidStageBootImage (
     FdtBuffer,
     FdtBufferSize
     );
+
+  Status = ValidateFdtReservedMemory (
+             FdtBuffer,
+             FdtBufferSize,
+             KernelAllocationAddress,
+             EFI_PAGES_TO_SIZE ((UINTN)KernelPages),
+             RamdiskAddress,
+             EFI_PAGES_TO_SIZE ((UINTN)RamdiskPages),
+             DecompressedRamdiskAddress,
+             EFI_PAGES_TO_SIZE (DecompressedRamdiskPages),
+             FdtAddress,
+             EFI_PAGES_TO_SIZE (FdtPages)
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
 
   Status = ValidateBootMemoryMap (
              KernelAllocationAddress,
