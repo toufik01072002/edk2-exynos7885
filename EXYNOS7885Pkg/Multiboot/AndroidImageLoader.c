@@ -791,6 +791,9 @@ AndroidStageBootImage (
     goto Done;
   }
 
+  // Determine the Linux-required 1 GiB window before allocating the initrd.
+  KernelWindowBase = KernelAddress & ~0x3FFFFFFFULL;
+
   MaxAddress = 0xFFFFFFFFULL;
   Status = gBS->AllocatePages (
                   AllocateMaxAddress,
