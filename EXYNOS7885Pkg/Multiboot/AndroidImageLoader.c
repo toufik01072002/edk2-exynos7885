@@ -569,6 +569,121 @@ AlignUp (
   return (Value + Alignment - 1) & ~((UINT64)Alignment - 1);
 }
 
+STATIC
+BOOLEAN
+RangeIsLoaderData (
+  IN EFI_MEMORY_DESCRIPTOR *MemoryMap,
+  IN UINTN MemoryMapSize,
+  IN UINTN DescriptorSize,
+  IN EFI_PHYSICAL_ADDRESS Address,
+  IN UINT64 Size
+  )
+{
+  UINTN Offset;
+  EFI_MEMORY_DESCRIPTOR *Descriptor;
+  UINT64 DescriptorStart;
+  UINT64 DescriptorSizeBytes;
+  UINT64 DescriptorEnd;
+  UINT64 RangeEnd;
+
+  if (Size == 0 || Address > MAX_UINT64 - Size) {
+    return FALSE;
+  }
+  RangeEnd = Address + Size;
+
+  for (Offset = 0; Offset + DescriptorSize <= MemoryMapSize;
+       Offset += DescriptorSize) {
+    Descriptor = (EFI_MEMORY_DESCRIPTOR *)((UINT8 *)MemoryMap + Offset);
+    if (Descriptor->Type != EfiLoaderData ||
+        Descriptor->NumberOfPages > MAX_UINT64 / EFI_PAGE_SIZE) {
+      continue;
+    }
+
+    DescriptorStart = Descriptor->PhysicalStart;
+    DescriptorSizeBytes = Descriptor->NumberOfPages * EFI_PAGE_SIZE;
+    if (DescriptorStart > MAX_UINT64 - DescriptorSizeBytes) {
+      continue;
+    }
+    DescriptorEnd = DescriptorStart + DescriptorSizeBytes;
+
+    if (Address >= DescriptorStart && RangeEnd <= DescriptorEnd) {
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+STATIC
+EFI_STATUS
+ValidateBootMemoryMap (
+  IN EFI_PHYSICAL_ADDRESS KernelBase,
+  IN UINT64 KernelSize,
+  IN EFI_PHYSICAL_ADDRESS RamdiskBase,
+  IN UINT64 RamdiskSize,
+  IN EFI_PHYSICAL_ADDRESS InitrdBase,
+  IN UINT64 InitrdSize,
+  IN EFI_PHYSICAL_ADDRESS FdtBase,
+  IN UINT64 FdtSize
+  )
+{
+  EFI_STATUS Status;
+  EFI_MEMORY_DESCRIPTOR *MemoryMap;
+  UINTN MemoryMapSize;
+  UINTN MapKey;
+  UINTN DescriptorSize;
+  UINT32 DescriptorVersion;
+
+  MemoryMap = NULL;
+  MemoryMapSize = 0;
+  DescriptorSize = 0;
+
+  Status = gBS->GetMemoryMap (
+                  &MemoryMapSize,
+                  MemoryMap,
+                  &MapKey,
+                  &DescriptorSize,
+                  &DescriptorVersion
+                  );
+  if (Status != EFI_BUFFER_TOO_SMALL || DescriptorSize < sizeof (EFI_MEMORY_DESCRIPTOR)) {
+    return EFI_DEVICE_ERROR;
+  }
+
+  MemoryMapSize += DescriptorSize * 8;
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  MemoryMapSize,
+                  (VOID **)&MemoryMap
+                  );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Status = gBS->GetMemoryMap (
+                  &MemoryMapSize,
+                  MemoryMap,
+                  &MapKey,
+                  &DescriptorSize,
+                  &DescriptorVersion
+                  );
+  if (EFI_ERROR (Status)) {
+    gBS->FreePool (MemoryMap);
+    return Status;
+  }
+
+  if (!RangeIsLoaderData (MemoryMap, MemoryMapSize, DescriptorSize, KernelBase, KernelSize) ||
+      !RangeIsLoaderData (MemoryMap, MemoryMapSize, DescriptorSize, RamdiskBase, RamdiskSize) ||
+      !RangeIsLoaderData (MemoryMap, MemoryMapSize, DescriptorSize, InitrdBase, InitrdSize) ||
+      !RangeIsLoaderData (MemoryMap, MemoryMapSize, DescriptorSize, FdtBase, FdtSize)) {
+    Status = EFI_SECURITY_VIOLATION;
+  } else {
+    Status = EFI_SUCCESS;
+  }
+
+  gBS->FreePool (MemoryMap);
+  return Status;
+}
+
 EFI_STATUS
 EFIAPI
 AndroidStageBootImage (
@@ -905,7 +1020,22 @@ AndroidStageBootImage (
     FdtBufferSize
     );
 
+  Status = ValidateBootMemoryMap (
+             KernelAllocationAddress,
+             EFI_PAGES_TO_SIZE ((UINTN)KernelPages),
+             RamdiskAddress,
+             EFI_PAGES_TO_SIZE ((UINTN)RamdiskPages),
+             DecompressedRamdiskAddress,
+             EFI_PAGES_TO_SIZE (DecompressedRamdiskPages),
+             FdtAddress,
+             EFI_PAGES_TO_SIZE (FdtPages)
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
   Print (L"\nChargement temporaire reussi.\n");
+  Print (L"Carte memoire UEFI : noyau, ramdisk gzip, initrd et DTB dans EfiLoaderData.\n");
   Print (L"Noyau ARM64 : %u octets, memoire image : 0x%Lx\n",
          KernelSize, KernelImageSize);
   Print (L"Ramdisk gzip : %u octets\n", RamdiskSize);
