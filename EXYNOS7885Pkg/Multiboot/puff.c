@@ -79,7 +79,7 @@
  * 2.3  21 Jan 2013     - Check for invalid code length codes in dynamic blocks
  */
 
-#include <setjmp.h>             /* for setjmp(), longjmp(), and jmp_buf */
+#include <Library/BaseLib.h>
 #include "puff.h"               /* prototype for puff() */
 
 #define local static            /* for local function definitions */
@@ -109,7 +109,7 @@ struct state {
     int bitcnt;                 /* number of bits in bit buffer */
 
     /* input limit error return state for bits() and decode() */
-    jmp_buf env;
+    BASE_LIBRARY_JUMP_BUFFER env;
 };
 
 /*
@@ -131,7 +131,7 @@ local int bits(struct state *s, int need)
     val = s->bitbuf;
     while (s->bitcnt < need) {
         if (s->incnt == s->inlen)
-            longjmp(s->env, 1);         /* out of input */
+            LongJump(&s->env, 1);         /* out of input */
         val |= (long)(s->in[s->incnt++]) << s->bitcnt;  /* load eight bits */
         s->bitcnt += 8;
     }
@@ -812,7 +812,7 @@ int puff(unsigned char *dest,           /* pointer to destination pointer */
     s.bitcnt = 0;
 
     /* return if bits() or decode() tries to read past available input */
-    if (setjmp(s.env) != 0)             /* if came back here via longjmp() */
+    if (SetJump(&s.env) != 0)             /* if came back here via longjmp() */
         err = 2;                        /* then skip do-loop, return error */
     else {
         /* process blocks until last block or error */
