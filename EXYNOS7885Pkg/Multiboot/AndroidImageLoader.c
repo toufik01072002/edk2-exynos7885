@@ -101,6 +101,8 @@ AndroidStageBootImage (
   UINT64 KernelImageSize;
   UINT64 KernelPages;
   UINT64 RamdiskPages;
+  UINTN EventIndex;
+  EFI_INPUT_KEY Key;
   EFI_PHYSICAL_ADDRESS KernelAddress;
   EFI_PHYSICAL_ADDRESS RamdiskAddress;
   BOOLEAN KernelAllocated;
@@ -112,6 +114,8 @@ AndroidStageBootImage (
   RamdiskAddress = 0;
   KernelAllocated = FALSE;
   RamdiskAllocated = FALSE;
+  KernelPages = 0;
+  RamdiskPages = 0;
 
   if (Directory == NULL || FileName == NULL) {
     return EFI_INVALID_PARAMETER;
