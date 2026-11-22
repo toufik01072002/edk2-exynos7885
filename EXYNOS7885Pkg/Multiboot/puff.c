@@ -296,7 +296,7 @@ local int decode(struct state *s, const struct huffman *h)
         if (left == 0)
             break;
         if (s->incnt == s->inlen)
-            longjmp(s->env, 1);         /* out of input */
+            LongJump(&s->env, 1);         /* out of input */
         bitbuf = s->in[s->incnt++];
         if (left > 8)
             left = 8;
