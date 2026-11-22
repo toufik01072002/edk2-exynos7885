@@ -16,3 +16,7 @@
   UefiApplicationEntryPoint
   UefiLib
   UefiBootServicesTableLib
+
+[Protocols]
+  gEfiBlockIoProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid

@@ -1,6 +1,8 @@
 #include <Uefi.h>
 #include <Library/UefiLib.h>
 #include <Library/UefiBootServicesTableLib.h>
+#include <Protocol/BlockIo.h>
+#include <Protocol/SimpleFileSystem.h>
 
 STATIC
 EFI_STATUS
@@ -32,6 +34,98 @@ WaitForKey (
     }
 
     return Status;
+  }
+}
+
+
+STATIC
+VOID
+ShowInternalVolumes (
+  VOID
+  )
+{
+  EFI_STATUS Status;
+  EFI_HANDLE *Handles;
+  UINTN Count;
+  UINTN Index;
+  UINTN InternalCount;
+  EFI_BLOCK_IO_PROTOCOL *BlockIo;
+  EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *SimpleFs;
+  EFI_FILE_PROTOCOL *Root;
+
+  Handles = NULL;
+  Count = 0;
+  InternalCount = 0;
+
+  Print (L"\nDetection du stockage interne...\n\n");
+
+  Status = gBS->LocateHandleBuffer (
+                  ByProtocol,
+                  &gEfiBlockIoProtocolGuid,
+                  NULL,
+                  &Count,
+                  &Handles
+                  );
+
+  if (EFI_ERROR (Status) || Count == 0) {
+    Print (L"Aucun peripherique Block I/O detecte.\n");
+    return;
+  }
+
+  for (Index = 0; Index < Count; Index++) {
+    BlockIo = NULL;
+    SimpleFs = NULL;
+
+    Status = gBS->HandleProtocol (
+                    Handles[Index],
+                    &gEfiBlockIoProtocolGuid,
+                    (VOID **)&BlockIo
+                    );
+
+    if (EFI_ERROR (Status) ||
+        BlockIo == NULL ||
+        BlockIo->Media == NULL ||
+        !BlockIo->Media->MediaPresent ||
+        BlockIo->Media->RemovableMedia) {
+      continue;
+    }
+
+    Status = gBS->HandleProtocol (
+                    Handles[Index],
+                    &gEfiSimpleFileSystemProtocolGuid,
+                    (VOID **)&SimpleFs
+                    );
+
+    if (EFI_ERROR (Status) || SimpleFs == NULL) {
+      continue;
+    }
+
+    Root = NULL;
+
+    Status = SimpleFs->OpenVolume (SimpleFs, &Root);
+
+    if (EFI_ERROR (Status) || Root == NULL) {
+      continue;
+    }
+
+    Root->Close (Root);
+
+    InternalCount++;
+
+    Print (
+      L"Partition interne %u : bloc de %u octets\n",
+      (UINT32)InternalCount,
+      BlockIo->Media->BlockSize
+      );
+  }
+
+  gBS->FreePool (Handles);
+
+  if (InternalCount == 0) {
+    Print (L"Aucune partition interne avec systeme de fichiers detectee.\n");
+  } else {
+    Print (L"\nTotal : %u partition(s) interne(s).\n",
+           (UINT32)InternalCount);
   }
 }
 
@@ -68,7 +162,8 @@ UefiMain (
 
     if (Key.UnicodeChar >= L'1' && Key.UnicodeChar <= L'3') {
       Print (L"\n\nChargeur selectionne : %c\n", Key.UnicodeChar);
-      Print (L"Chargeur en cours de developpement.\n");
+      Print (L"Detection des volumes disponibles.\n");
+      ShowInternalVolumes ();
       Print (L"Appuyez sur une touche pour revenir.\n");
       Status = WaitForKey (&Key);
       if (EFI_ERROR (Status)) {
