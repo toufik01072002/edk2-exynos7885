@@ -1077,91 +1077,126 @@ LaunchAndroidFromVolumes (
   EFI_STATUS Status;
   MULTIBOOT_VOLUME Volumes[MAX_VOLUMES];
   UINTN VolumeCount;
-  UINTN Index;
+  EFI_FILE_PROTOCOL *MediaDirectory;
+  EFI_FILE_PROTOCOL *UserDirectory;
   EFI_FILE_PROTOCOL *AndroidDirectory;
   EFI_FILE_PROTOCOL *Probe;
-  BOOLEAN Found;
   EFI_INPUT_KEY Key;
 
+  MediaDirectory = NULL;
+  UserDirectory = NULL;
+  AndroidDirectory = NULL;
+  Probe = NULL;
+
   VolumeCount = FindInternalVolumes (Volumes);
-  Found = FALSE;
+  if (VolumeCount < 5) {
+    Print (L"Volume 5 indisponible : %u volumes internes detectes.\n",
+           (UINT32)VolumeCount);
+    goto Done;
+  }
 
-  for (Index = 0; Index < VolumeCount; Index++) {
-    AndroidDirectory = NULL;
-    Probe = NULL;
+  Print (L"Recherche Android sur le volume 5 : \\media\\0\\UEFI\\...\n");
 
-    Status = Volumes[Index].Root->Open (
-                                    Volumes[Index].Root,
-                                    &AndroidDirectory,
-                                    L"UEFI",
-                                    EFI_FILE_MODE_READ,
-                                    0
-                                    );
-    if (EFI_ERROR (Status) || AndroidDirectory == NULL) {
-      continue;
-    }
+  Status = Volumes[4].Root->Open (
+                              Volumes[4].Root,
+                              &MediaDirectory,
+                              L"media",
+                              EFI_FILE_MODE_READ,
+                              0
+                              );
+  if (EFI_ERROR (Status) || MediaDirectory == NULL) {
+    Print (L"Le dossier \\media est introuvable sur le volume 5 : %r\n", Status);
+    goto Done;
+  }
 
-    Status = AndroidDirectory->Open (
-                                AndroidDirectory,
-                                &Probe,
-                                L"stock_boot.img",
-                                EFI_FILE_MODE_READ,
-                                0
-                                );
-    if (EFI_ERROR (Status) || Probe == NULL) {
-      AndroidDirectory->Close (AndroidDirectory);
-      continue;
-    }
+  Status = MediaDirectory->Open (
+                             MediaDirectory,
+                             &UserDirectory,
+                             L"0",
+                             EFI_FILE_MODE_READ,
+                             0
+                             );
+  if (EFI_ERROR (Status) || UserDirectory == NULL) {
+    Print (L"Le dossier \\media\\0 est introuvable : %r\n", Status);
+    goto Done;
+  }
+
+  Status = UserDirectory->Open (
+                            UserDirectory,
+                            &AndroidDirectory,
+                            L"UEFI",
+                            EFI_FILE_MODE_READ,
+                            0
+                            );
+  if (EFI_ERROR (Status) || AndroidDirectory == NULL) {
+    Print (L"Le dossier \\media\\0\\UEFI est introuvable : %r\n", Status);
+    goto Done;
+  }
+
+  Status = AndroidDirectory->Open (
+                              AndroidDirectory,
+                              &Probe,
+                              L"stock_boot.img",
+                              EFI_FILE_MODE_READ,
+                              0
+                              );
+  if (EFI_ERROR (Status) || Probe == NULL) {
+    Print (L"stock_boot.img introuvable : %r\n", Status);
+    goto Done;
+  }
+  Probe->Close (Probe);
+  Probe = NULL;
+
+  Status = AndroidDirectory->Open (
+                              AndroidDirectory,
+                              &Probe,
+                              L"running.dtb",
+                              EFI_FILE_MODE_READ,
+                              0
+                              );
+  if (EFI_ERROR (Status) || Probe == NULL) {
+    Print (L"running.dtb introuvable : %r\n", Status);
+    goto Done;
+  }
+  Probe->Close (Probe);
+  Probe = NULL;
+
+  Print (L"Les deux fichiers Android sont presents sur le volume 5.\n");
+  Status = InspectAndroidBootImage (
+             ParentImage,
+             AndroidDirectory,
+             L"stock_boot.img"
+             );
+  if (EFI_ERROR (Status)) {
+    Print (L"Le chargement Android a echoue : %r\n", Status);
+  }
+
+Done:
+  if (Probe != NULL) {
     Probe->Close (Probe);
-    Probe = NULL;
-
-    Status = AndroidDirectory->Open (
-                                AndroidDirectory,
-                                &Probe,
-                                L"running.dtb",
-                                EFI_FILE_MODE_READ,
-                                0
-                                );
-    if (EFI_ERROR (Status) || Probe == NULL) {
-      AndroidDirectory->Close (AndroidDirectory);
-      continue;
-    }
-    Probe->Close (Probe);
-    Probe = NULL;
-
-    Found = TRUE;
-    Print (L"Image Android trouvee sur le volume : %s\n",
-           Volumes[Index].Label);
-    Status = InspectAndroidBootImage (
-               ParentImage,
-               AndroidDirectory,
-               L"stock_boot.img"
-               );
+  }
+  if (AndroidDirectory != NULL) {
     AndroidDirectory->Close (AndroidDirectory);
+  }
+  if (UserDirectory != NULL) {
+    UserDirectory->Close (UserDirectory);
+  }
+  if (MediaDirectory != NULL) {
+    MediaDirectory->Close (MediaDirectory);
+  }
 
-    if (EFI_ERROR (Status)) {
-      Print (L"Le lancement Android a echoue : %r\n", Status);
-      Print (L"Appuyez sur une touche pour revenir au menu.\n");
-      WaitForKey (&Key);
+  {
+    UINTN Index;
+    for (Index = 0; Index < VolumeCount; Index++) {
+      if (Volumes[Index].Root != NULL) {
+        Volumes[Index].Root->Close (Volumes[Index].Root);
+        Volumes[Index].Root = NULL;
+      }
     }
-    break;
   }
 
-  for (Index = 0; Index < VolumeCount; Index++) {
-    if (Volumes[Index].Root != NULL) {
-      Volumes[Index].Root->Close (Volumes[Index].Root);
-      Volumes[Index].Root = NULL;
-    }
-  }
-
-  if (!Found) {
-    Print (L"Fichiers Android introuvables.\n\n");
-    Print (L"Emplacement attendu : \\UEFI\\stock_boot.img\n");
-    Print (L"DTB requis           : \\UEFI\\running.dtb\n");
-    Print (L"Verifiez que ces deux fichiers sont presents sur un volume interne.\n");
-    Print (L"Appuyez sur une touche pour revenir au menu.\n");
-    WaitForKey (&Key);
-  }
+  Print (L"\nAppuyez sur une touche pour revenir au menu.\n");
+  WaitForKey (&Key);
 }
 
 STATIC
