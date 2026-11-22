@@ -55,6 +55,8 @@ EFIAPI
 GzipDecompress (
   IN CONST UINT8 *CompressedData,
   IN UINTN CompressedSize,
+  IN EFI_PHYSICAL_ADDRESS WindowBase,
+  IN EFI_PHYSICAL_ADDRESS WindowEnd,
   OUT EFI_PHYSICAL_ADDRESS *OutputAddress,
   OUT UINTN *OutputSize,
   OUT UINTN *OutputPages
@@ -74,7 +76,8 @@ GzipDecompress (
   UINT8 Flags;
 
   if (CompressedData == NULL || OutputAddress == NULL ||
-      OutputSize == NULL || OutputPages == NULL) {
+      OutputSize == NULL || OutputPages == NULL ||
+      WindowEnd <= WindowBase || WindowEnd > 0x100000000ULL) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -150,7 +153,7 @@ GzipDecompress (
 
   DeflateSize = CompressedSize - HeaderOffset - 8;
   Pages = EFI_SIZE_TO_PAGES (ExpectedSize);
-  MaxAddress = 0xFFFFFFFFULL;
+  MaxAddress = WindowEnd - 1;
   Status = gBS->AllocatePages (
                   AllocateMaxAddress,
                   EfiLoaderData,
@@ -159,6 +162,13 @@ GzipDecompress (
                   );
   if (EFI_ERROR (Status)) {
     return Status;
+  }
+
+  if (MaxAddress < WindowBase ||
+      MaxAddress > WindowEnd ||
+      EFI_PAGES_TO_SIZE (Pages) > WindowEnd - MaxAddress) {
+    gBS->FreePages (MaxAddress, Pages);
+    return EFI_OUT_OF_RESOURCES;
   }
 
   DestLength = ExpectedSize;
