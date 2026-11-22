@@ -5,6 +5,7 @@
 #include <Protocol/SimpleFileSystem.h>
 #include <Guid/FileInfo.h>
 #include <Guid/FileSystemInfo.h>
+#include "AndroidImageLoader.h"
 
 #define MAX_VOLUMES       32
 #define MAX_ENTRIES       128
@@ -702,8 +703,13 @@ InspectAndroidBootImage (
   Print (L"Ramdisk addr* : 0x%08x\n", ReadLe32 (Header + 20));
   Print (L"Second size   : %u octets\n", SecondSize);
   Print (L"\n* Adresses historiques du header : non utilisees comme adresses de chargement.\n");
-  Print (L"\nImage validee. Etape suivante : chargement physique et preparation du DTB.\n");
-  Print (L"\nAppuyez sur une touche pour revenir.\n");
+  Print (L"\\nImage validee. Chargement temporaire des composants...\\n");
+  Status = AndroidStageBootImage (Directory, FileName);
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Print (L"\\nChargement termine. Appuyez sur une touche pour revenir.\\n");
   {
     EFI_INPUT_KEY Key;
     WaitForKey (&Key);
