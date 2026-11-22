@@ -291,11 +291,6 @@ PatchFdtInitrd (
   )
 {
   UINT32 TotalSize;
-  UINT32 ReserveMapOffset;
-  UINT32 ReserveMapPosition;
-  UINT64 ReserveAddress;
-  UINT64 ReserveSize;
-  BOOLEAN ReserveMapTerminated;
   UINT32 StructOffset;
   UINT32 StringsOffset;
   UINT32 StringsSize;
@@ -501,6 +496,11 @@ ValidateFdtReservedMemory (
   )
 {
   UINT32 TotalSize;
+  UINT32 ReserveMapOffset;
+  UINT32 ReserveMapPosition;
+  UINT64 ReserveAddress;
+  UINT64 ReserveSize;
+  BOOLEAN ReserveMapTerminated;
   UINT32 StructOffset;
   UINT32 StringsOffset;
   UINT32 StringsSize;
