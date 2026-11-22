@@ -4,7 +4,19 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Library/UefiLib.h>
 #include <Library/BaseMemoryLib.h>
+#include <Library/BaseLib.h>
 #include <Guid/FileInfo.h>
+
+VOID
+EFIAPI
+Arm64LinuxHandoff (
+  IN UINT64 KernelEntry,
+  IN UINT64 KernelSize,
+  IN UINT64 InitrdBase,
+  IN UINT64 InitrdSize,
+  IN UINT64 FdtBase,
+  IN UINT64 FdtSize
+  );
 
 #define ANDROID_PAGE_SIZE       2048U
 #define ANDROID_HEADER_V0       0U
@@ -950,6 +962,7 @@ ValidateBootMemoryMap (
 EFI_STATUS
 EFIAPI
 AndroidStageBootImage (
+  IN EFI_HANDLE ImageHandle,
   IN EFI_FILE_PROTOCOL *Directory,
   IN CONST CHAR16 *FileName
   )
@@ -977,8 +990,6 @@ AndroidStageBootImage (
   UINT64 KernelAlignedBase;
   UINT64 KernelPages;
   UINT64 RamdiskPages;
-  UINTN EventIndex;
-  EFI_INPUT_KEY Key;
   UINT8 *FdtBuffer;
   UINTN FdtBufferSize;
   UINTN FdtPages;
@@ -999,6 +1010,14 @@ AndroidStageBootImage (
   BOOLEAN DecompressedRamdiskAllocated;
   BOOLEAN FdtAllocated;
   UINT32 CpioEntryCount;
+  EFI_MEMORY_DESCRIPTOR *MemoryMap;
+  UINTN MemoryMapSize;
+  UINTN MemoryMapCapacity;
+  UINTN MapKey;
+  UINTN DescriptorSize;
+  UINTN Attempt;
+  UINT32 DescriptorVersion;
+  UINTN CurrentEl;
 
   File = NULL;
   Info = NULL;
@@ -1021,6 +1040,13 @@ AndroidStageBootImage (
   DecompressedRamdiskAllocated = FALSE;
   FdtAllocated = FALSE;
   CpioEntryCount = 0;
+  MemoryMap = NULL;
+  MemoryMapSize = 0;
+  MemoryMapCapacity = 0;
+  MapKey = 0;
+  DescriptorSize = 0;
+  DescriptorVersion = 0;
+  CurrentEl = 0;
   KernelPages = 0;
   RamdiskPages = 0;
 
@@ -1313,42 +1339,101 @@ AndroidStageBootImage (
     goto Done;
   }
 
-  Print (L"\nChargement temporaire reussi.\n");
-  Print (L"Carte memoire UEFI : noyau, ramdisk gzip, initrd et DTB dans EfiLoaderData.\n");
-  Print (L"Noyau ARM64 : %u octets, memoire image : 0x%Lx\n",
-         KernelSize, KernelImageSize);
-  Print (L"Ramdisk gzip : %u octets\n", RamdiskSize);
-  Print (L"Ramdisk CPIO decompresse : %u octets\n", (UINT32)DecompressedRamdiskSize);
-  Print (L"DTB actif patche : %u octets\n", (UINT32)FdtBufferSize);
-  Print (L"Base alignee 2 Mio : 0x%Lx\n", KernelAlignedBase);
-  Print (L"Adresse Image / entree ARM64 : 0x%Lx\n", KernelAddress);
-  Print (L"Adresse tampon gzip : 0x%Lx\n", RamdiskAddress);
-  Print (L"Adresse ramdisk CPIO : 0x%Lx\n", DecompressedRamdiskAddress);
-  Print (L"Adresse DTB temporaire : 0x%Lx\n", FdtAddress);
-  Print (L"Fenetre physique 1 Gio partagee : 0x%Lx\n", KernelWindowBase);
-  Print (L"DTB aligne sur 8 octets, taille <= 2 Mio.\n");
-  Print (L"DTB : linux,initrd-start/end actualises, bootargs conserves.\n");
-  Print (L"Ces adresses sont temporaires, pas les adresses finales de boot.\n");
-  Print (L"Aucun transfert au noyau n'a ete effectue.\n");
-  Print (L"Appuyez sur une touche pour liberer les tampons.\\n");
-  do {
-    Status = gBS->WaitForEvent (
-                    1,
-                    &gST->ConIn->WaitForKey,
-                    &EventIndex
-                    );
-    if (EFI_ERROR (Status)) {
-      goto Done;
-    }
-    Status = gST->ConIn->ReadKeyStroke (gST->ConIn, &Key);
-  } while (Status == EFI_NOT_READY);
+  Print (L"\nPreparation du transfert direct vers le noyau Android...\n");
+  Print (L"Entree ARM64 : 0x%Lx | DTB : 0x%Lx\n",
+         KernelAddress, FdtAddress);
+
+  __asm__ volatile ("mrs %0, CurrentEL" : "=r" (CurrentEl));
+  if (ImageHandle == NULL || (CurrentEl != 0x4 && CurrentEl != 0x8)) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  // Release temporary buffers and file handles before the final memory map.
+  if (File != NULL) {
+    File->Close (File);
+    File = NULL;
+  }
+  if (Info != NULL) {
+    gBS->FreePool (Info);
+    Info = NULL;
+  }
+  if (FdtBuffer != NULL) {
+    gBS->FreePool (FdtBuffer);
+    FdtBuffer = NULL;
+  }
+  if (RamdiskAllocated) {
+    gBS->FreePages (RamdiskAddress, (UINTN)RamdiskPages);
+    RamdiskAllocated = FALSE;
+  }
+
+  // Allocate a final memory-map buffer with room for descriptor growth.
+  MemoryMapSize = 0;
+  Status = gBS->GetMemoryMap (
+                  &MemoryMapSize,
+                  MemoryMap,
+                  &MapKey,
+                  &DescriptorSize,
+                  &DescriptorVersion
+                  );
+  if (Status != EFI_BUFFER_TOO_SMALL ||
+      DescriptorSize < sizeof (EFI_MEMORY_DESCRIPTOR) ||
+      DescriptorSize > MAX_UINTN / 8 ||
+      MemoryMapSize > MAX_UINTN - DescriptorSize * 8) {
+    Status = EFI_DEVICE_ERROR;
+    goto Done;
+  }
+
+  MemoryMapCapacity = MemoryMapSize + DescriptorSize * 8;
+  Status = gBS->AllocatePool (
+                  EfiLoaderData,
+                  MemoryMapCapacity,
+                  (VOID **)&MemoryMap
+                  );
   if (EFI_ERROR (Status)) {
     goto Done;
   }
 
-  Status = EFI_SUCCESS;
+  // ExitBootServices may require one retry with a refreshed map key.
+  for (Attempt = 0; Attempt < 2; Attempt++) {
+    MemoryMapSize = MemoryMapCapacity;
+    Status = gBS->GetMemoryMap (
+                    &MemoryMapSize,
+                    MemoryMap,
+                    &MapKey,
+                    &DescriptorSize,
+                    &DescriptorVersion
+                    );
+    if (EFI_ERROR (Status)) {
+      break;
+    }
+
+    Status = gBS->ExitBootServices (ImageHandle, MapKey);
+    if (!EFI_ERROR (Status)) {
+      break;
+    }
+  }
+
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  // Boot Services are gone. The assembly trampoline must not return.
+  Arm64LinuxHandoff (
+    KernelAddress,
+    KernelImageSize,
+    DecompressedRamdiskAddress,
+    DecompressedRamdiskSize,
+    FdtAddress,
+    FdtBufferSize
+    );
+  CpuDeadLoop ();
+  Status = EFI_ABORTED;
 
 Done:
+  if (MemoryMap != NULL) {
+    gBS->FreePool (MemoryMap);
+  }
   if (FdtAllocated) {
     gBS->FreePages (FdtAddress, FdtPages);
   }
