@@ -124,6 +124,156 @@ FdtNameEquals (
 
 STATIC
 EFI_STATUS
+ReadCpioHex32 (
+  IN CONST UINT8 *Data,
+  OUT UINT32 *Value
+  )
+{
+  UINT32 Result;
+  UINTN Index;
+  UINT8 Digit;
+
+  Result = 0;
+  for (Index = 0; Index < 8; Index++) {
+    if (Data[Index] >= '0' && Data[Index] <= '9') {
+      Digit = (UINT8)(Data[Index] - '0');
+    } else if (Data[Index] >= 'a' && Data[Index] <= 'f') {
+      Digit = (UINT8)(Data[Index] - 'a' + 10);
+    } else if (Data[Index] >= 'A' && Data[Index] <= 'F') {
+      Digit = (UINT8)(Data[Index] - 'A' + 10);
+    } else {
+      return EFI_COMPROMISED_DATA;
+    }
+    Result = (Result << 4) | Digit;
+  }
+
+  *Value = Result;
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+ValidateNewcCpio (
+  IN CONST UINT8 *Archive,
+  IN UINTN ArchiveSize,
+  OUT UINT32 *EntryCount
+  )
+{
+  UINTN Offset;
+  UINTN NameSize;
+  UINTN FileSize;
+  UINTN NameOffset;
+  UINTN DataOffset;
+  UINTN NextOffset;
+  UINT32 ParsedNameSize;
+  UINT32 ParsedFileSize;
+  UINT32 ExpectedCheck;
+  UINT32 ActualCheck;
+  UINT32 Index;
+  UINT32 Count;
+  UINTN ByteIndex;
+  BOOLEAN IsCrc;
+  BOOLEAN FoundTrailer;
+  EFI_STATUS Status;
+
+  if (Archive == NULL || EntryCount == NULL || ArchiveSize < 110) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  *EntryCount = 0;
+  Offset = 0;
+  Count = 0;
+  FoundTrailer = FALSE;
+
+  while (Offset <= ArchiveSize && ArchiveSize - Offset >= 110) {
+    if (CompareMem (Archive + Offset, "070701", 6) == 0) {
+      IsCrc = FALSE;
+    } else if (CompareMem (Archive + Offset, "070702", 6) == 0) {
+      IsCrc = TRUE;
+    } else {
+      return EFI_COMPROMISED_DATA;
+    }
+
+    Status = ReadCpioHex32 (Archive + Offset + 54, &ParsedFileSize);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+    Status = ReadCpioHex32 (Archive + Offset + 94, &ParsedNameSize);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+    Status = ReadCpioHex32 (Archive + Offset + 102, &ExpectedCheck);
+    if (EFI_ERROR (Status)) {
+      return Status;
+    }
+
+    if (ParsedNameSize == 0) {
+      return EFI_COMPROMISED_DATA;
+    }
+
+    NameSize = (UINTN)ParsedNameSize;
+    FileSize = (UINTN)ParsedFileSize;
+    NameOffset = Offset + 110;
+    if (NameOffset < Offset || NameSize > ArchiveSize - NameOffset) {
+      return EFI_COMPROMISED_DATA;
+    }
+    if (Archive[NameOffset + NameSize - 1] != 0) {
+      return EFI_COMPROMISED_DATA;
+    }
+
+    DataOffset = (NameOffset + NameSize + 3) & ~(UINTN)3;
+    if (DataOffset < NameOffset || DataOffset > ArchiveSize ||
+        FileSize > ArchiveSize - DataOffset) {
+      return EFI_COMPROMISED_DATA;
+    }
+
+    NextOffset = (DataOffset + FileSize + 3) & ~(UINTN)3;
+    if (NextOffset < DataOffset || NextOffset > ArchiveSize) {
+      return EFI_COMPROMISED_DATA;
+    }
+
+    if (IsCrc) {
+      ActualCheck = 0;
+      for (ByteIndex = 0; ByteIndex < FileSize; ByteIndex++) {
+        ActualCheck += Archive[DataOffset + ByteIndex];
+      }
+      if (ActualCheck != ExpectedCheck) {
+        return EFI_CRC_ERROR;
+      }
+    } else if (ExpectedCheck != 0) {
+      return EFI_COMPROMISED_DATA;
+    }
+
+    if (NameSize == sizeof ("TRAILER!!!") &&
+        CompareMem (Archive + NameOffset, "TRAILER!!!", sizeof ("TRAILER!!!")) == 0) {
+      FoundTrailer = TRUE;
+      Offset = NextOffset;
+      break;
+    }
+
+    if (Count == MAX_UINT32) {
+      return EFI_BAD_BUFFER_SIZE;
+    }
+    Count++;
+    Offset = NextOffset;
+  }
+
+  if (!FoundTrailer) {
+    return EFI_COMPROMISED_DATA;
+  }
+
+  for (Index = (UINT32)Offset; (UINTN)Index < ArchiveSize; Index++) {
+    if (Archive[Index] != 0) {
+      return EFI_COMPROMISED_DATA;
+    }
+  }
+
+  *EntryCount = Count;
+  return (Count == 0) ? EFI_COMPROMISED_DATA : EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
 PatchFdtInitrd (
   IN OUT UINT8 *Fdt,
   IN UINTN BufferSize,
@@ -461,6 +611,7 @@ AndroidStageBootImage (
   BOOLEAN RamdiskAllocated;
   BOOLEAN DecompressedRamdiskAllocated;
   BOOLEAN FdtAllocated;
+  UINT32 CpioEntryCount;
 
   File = NULL;
   Info = NULL;
@@ -477,6 +628,7 @@ AndroidStageBootImage (
   RamdiskAllocated = FALSE;
   DecompressedRamdiskAllocated = FALSE;
   FdtAllocated = FALSE;
+  CpioEntryCount = 0;
   KernelPages = 0;
   RamdiskPages = 0;
 
@@ -648,6 +800,15 @@ AndroidStageBootImage (
     goto Done;
   }
   DecompressedRamdiskAllocated = TRUE;
+
+  Status = ValidateNewcCpio (
+             (CONST UINT8 *)(UINTN)DecompressedRamdiskAddress,
+             DecompressedRamdiskSize,
+             &CpioEntryCount
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
 
   Status = LoadAndPatchFdt (
              Directory,
