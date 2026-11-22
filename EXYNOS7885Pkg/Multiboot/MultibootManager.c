@@ -1070,6 +1070,102 @@ FindInternalVolumes (
 
 STATIC
 VOID
+LaunchAndroidFromVolumes (
+  IN EFI_HANDLE ParentImage
+  )
+{
+  EFI_STATUS Status;
+  MULTIBOOT_VOLUME Volumes[MAX_VOLUMES];
+  UINTN VolumeCount;
+  UINTN Index;
+  EFI_FILE_PROTOCOL *AndroidDirectory;
+  EFI_FILE_PROTOCOL *Probe;
+  BOOLEAN Found;
+  EFI_INPUT_KEY Key;
+
+  VolumeCount = FindInternalVolumes (Volumes);
+  Found = FALSE;
+
+  for (Index = 0; Index < VolumeCount; Index++) {
+    AndroidDirectory = NULL;
+    Probe = NULL;
+
+    Status = Volumes[Index].Root->Open (
+                                    Volumes[Index].Root,
+                                    &AndroidDirectory,
+                                    L"UEFI",
+                                    EFI_FILE_MODE_READ,
+                                    0
+                                    );
+    if (EFI_ERROR (Status) || AndroidDirectory == NULL) {
+      continue;
+    }
+
+    Status = AndroidDirectory->Open (
+                                AndroidDirectory,
+                                &Probe,
+                                L"stock_boot.img",
+                                EFI_FILE_MODE_READ,
+                                0
+                                );
+    if (EFI_ERROR (Status) || Probe == NULL) {
+      AndroidDirectory->Close (AndroidDirectory);
+      continue;
+    }
+    Probe->Close (Probe);
+    Probe = NULL;
+
+    Status = AndroidDirectory->Open (
+                                AndroidDirectory,
+                                &Probe,
+                                L"running.dtb",
+                                EFI_FILE_MODE_READ,
+                                0
+                                );
+    if (EFI_ERROR (Status) || Probe == NULL) {
+      AndroidDirectory->Close (AndroidDirectory);
+      continue;
+    }
+    Probe->Close (Probe);
+    Probe = NULL;
+
+    Found = TRUE;
+    Print (L"Image Android trouvee sur le volume : %s\n",
+           Volumes[Index].Label);
+    Status = InspectAndroidBootImage (
+               ParentImage,
+               AndroidDirectory,
+               L"stock_boot.img"
+               );
+    AndroidDirectory->Close (AndroidDirectory);
+
+    if (EFI_ERROR (Status)) {
+      Print (L"Le lancement Android a echoue : %r\n", Status);
+      Print (L"Appuyez sur une touche pour revenir au menu.\n");
+      WaitForKey (&Key);
+    }
+    break;
+  }
+
+  for (Index = 0; Index < VolumeCount; Index++) {
+    if (Volumes[Index].Root != NULL) {
+      Volumes[Index].Root->Close (Volumes[Index].Root);
+      Volumes[Index].Root = NULL;
+    }
+  }
+
+  if (!Found) {
+    Print (L"Fichiers Android introuvables.\n\n");
+    Print (L"Emplacement attendu : \\UEFI\\stock_boot.img\n");
+    Print (L"DTB requis           : \\UEFI\\running.dtb\n");
+    Print (L"Verifiez que ces deux fichiers sont presents sur un volume interne.\n");
+    Print (L"Appuyez sur une touche pour revenir au menu.\n");
+    WaitForKey (&Key);
+  }
+}
+
+STATIC
+VOID
 ShowInternalVolumes (
   IN EFI_HANDLE ParentImage
   )
@@ -1193,6 +1289,17 @@ UefiMain (
       continue;
     }
 
-    ShowInternalVolumes (ImageHandle);
+    if (Selected == 0) {
+      LaunchAndroidFromVolumes (ImageHandle);
+    } else {
+      gST->ConOut->ClearScreen (gST->ConOut);
+      if (Selected == 1) {
+        Print (L"Le demarrage Linux autonome n'est pas encore integre.\\n");
+      } else {
+        Print (L"Le demarrage Windows ARM64 n'est pas encore integre.\\n");
+      }
+      Print (L"Appuyez sur une touche pour revenir au menu.\\n");
+      WaitForKey (&Key);
+    }
   }
 }
