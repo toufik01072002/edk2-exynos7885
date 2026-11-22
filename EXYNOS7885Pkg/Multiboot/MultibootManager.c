@@ -409,6 +409,332 @@ Cleanup:
   return Status;
 }
 
+
+#define ANDROID_BOOT_HEADER_V0_SIZE  1632
+#define ANDROID_BOOT_MAGIC           "ANDROID!"
+#define ARM64_IMAGE_MAGIC            0x644D5241U
+
+STATIC
+UINT32
+ReadLe32 (
+  IN CONST UINT8 *Data
+  )
+{
+  return (UINT32)Data[0] |
+         ((UINT32)Data[1] << 8) |
+         ((UINT32)Data[2] << 16) |
+         ((UINT32)Data[3] << 24);
+}
+
+STATIC
+UINT64
+ReadLe64 (
+  IN CONST UINT8 *Data
+  )
+{
+  return (UINT64)ReadLe32 (Data) |
+         ((UINT64)ReadLe32 (Data + 4) << 32);
+}
+
+STATIC
+EFI_STATUS
+ReadFileExact (
+  IN EFI_FILE_PROTOCOL *File,
+  IN UINT64 Offset,
+  OUT VOID *Buffer,
+  IN UINTN Size
+  )
+{
+  EFI_STATUS Status;
+  UINTN Total;
+  UINTN Chunk;
+
+  Status = File->SetPosition (File, Offset);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Total = 0;
+  while (Total < Size) {
+    Chunk = Size - Total;
+    Status = File->Read (File, &Chunk, (UINT8 *)Buffer + Total);
+    if (EFI_ERROR (Status) || Chunk == 0) {
+      return EFI_DEVICE_ERROR;
+    }
+
+    Total += Chunk;
+  }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+BOOLEAN
+IsAndroidImageFile (
+  IN CONST CHAR16 *Name
+  )
+{
+  UINTN Length;
+  CHAR16 A;
+  CHAR16 B;
+  CHAR16 C;
+  CHAR16 D;
+
+  if (Name == NULL) {
+    return FALSE;
+  }
+
+  Length = 0;
+  while (Name[Length] != L'\0') {
+    Length++;
+  }
+
+  if (Length < 4) {
+    return FALSE;
+  }
+
+  A = Name[Length - 4];
+  B = Name[Length - 3];
+  C = Name[Length - 2];
+  D = Name[Length - 1];
+
+  if (A >= L'A' && A <= L'Z') A += L'a' - L'A';
+  if (B >= L'A' && B <= L'Z') B += L'a' - L'A';
+  if (C >= L'A' && C <= L'Z') C += L'a' - L'A';
+  if (D >= L'A' && D <= L'Z') D += L'a' - L'A';
+
+  return (A == L'.' && B == L'i' && C == L'm' && D == L'g');
+}
+
+STATIC
+EFI_STATUS
+InspectAndroidBootImage (
+  IN EFI_FILE_PROTOCOL *Directory,
+  IN CONST CHAR16 *FileName
+  )
+{
+  EFI_STATUS Status;
+  EFI_FILE_PROTOCOL *File;
+  EFI_FILE_INFO *Info;
+  UINTN InfoSize;
+  UINT8 *Header;
+  UINT8 KernelHeader[64];
+  UINT32 KernelSize;
+  UINT32 RamdiskSize;
+  UINT32 SecondSize;
+  UINT32 PageSize;
+  UINT32 HeaderVersion;
+  UINT64 KernelOffset;
+  UINT64 RamdiskOffset;
+  UINT64 SecondOffset;
+  UINT64 ImageEnd;
+  UINT64 AlignedSize;
+  UINT64 KernelTextOffset;
+  UINT64 KernelImageSize;
+  UINT32 KernelFlags;
+
+  File = NULL;
+  Info = NULL;
+  Header = NULL;
+
+  Status = Directory->Open (
+                        Directory,
+                        &File,
+                        (CHAR16 *)FileName,
+                        EFI_FILE_MODE_READ,
+                        0
+                        );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  InfoSize = 0;
+  Status = File->GetInfo (File, &gEfiFileInfoGuid, &InfoSize, NULL);
+  if (Status != EFI_BUFFER_TOO_SMALL || InfoSize == 0) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  InfoSize,
+                  (VOID **)&Info
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = File->GetInfo (File, &gEfiFileInfoGuid, &InfoSize, Info);
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  if (Info->FileSize < 2048) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  2048,
+                  (VOID **)&Header
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = ReadFileExact (File, 0, Header, 2048);
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  if (Header[0] != 'A' || Header[1] != 'N' ||
+      Header[2] != 'D' || Header[3] != 'R' ||
+      Header[4] != 'O' || Header[5] != 'I' ||
+      Header[6] != 'D' || Header[7] != '!') {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  KernelSize = ReadLe32 (Header + 8);
+  RamdiskSize = ReadLe32 (Header + 16);
+  SecondSize = ReadLe32 (Header + 24);
+  PageSize = ReadLe32 (Header + 36);
+  HeaderVersion = ReadLe32 (Header + 40);
+
+  if (HeaderVersion != 0 ||
+      PageSize < 2048 ||
+      PageSize > 65536 ||
+      (PageSize & (PageSize - 1)) != 0 ||
+      KernelSize == 0 ||
+      RamdiskSize == 0) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  if (KernelSize > ((UINT64)-1) - (PageSize - 1)) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  AlignedSize = ((UINT64)KernelSize + PageSize - 1) &
+                ~((UINT64)PageSize - 1);
+  KernelOffset = PageSize;
+
+  if (KernelOffset > ((UINT64)-1) - AlignedSize) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  RamdiskOffset = KernelOffset + AlignedSize;
+
+  if (RamdiskSize > ((UINT64)-1) - (PageSize - 1)) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  AlignedSize = ((UINT64)RamdiskSize + PageSize - 1) &
+                ~((UINT64)PageSize - 1);
+
+  if (RamdiskOffset > ((UINT64)-1) - AlignedSize) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  SecondOffset = RamdiskOffset + AlignedSize;
+
+  if (SecondSize > ((UINT64)-1) - (PageSize - 1)) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  AlignedSize = ((UINT64)SecondSize + PageSize - 1) &
+                ~((UINT64)PageSize - 1);
+
+  if (SecondOffset > ((UINT64)-1) - AlignedSize) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  ImageEnd = SecondOffset + AlignedSize;
+  if (ImageEnd > Info->FileSize) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  Status = ReadFileExact (File, KernelOffset, KernelHeader, sizeof (KernelHeader));
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  if (ReadLe32 (KernelHeader + 56) != ARM64_IMAGE_MAGIC) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  KernelTextOffset = ReadLe64 (KernelHeader + 8);
+  KernelImageSize = ReadLe64 (KernelHeader + 16);
+  KernelFlags = ReadLe32 (KernelHeader + 24);
+
+  if (KernelImageSize < KernelSize ||
+      KernelImageSize == 0 ||
+      KernelImageSize > 0x40000000) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  gST->ConOut->ClearScreen (gST->ConOut);
+  Print (L"========================================\n");
+  Print (L"       ANDROID BOOT IMAGE - ANALYSE\n");
+  Print (L"========================================\n\n");
+  Print (L"Fichier       : %s\n", FileName);
+  Print (L"Taille        : %Lu octets\n", Info->FileSize);
+  Print (L"Format        : Android boot image v0\n");
+  Print (L"Page size     : %u\n", PageSize);
+  Print (L"Kernel offset : 0x%Lx\n", KernelOffset);
+  Print (L"Kernel size   : %u octets\n", KernelSize);
+  Print (L"Kernel addr*  : 0x%08x\n", ReadLe32 (Header + 12));
+  Print (L"Image size    : 0x%Lx\n", KernelImageSize);
+  Print (L"Text offset   : 0x%Lx\n", KernelTextOffset);
+  Print (L"Kernel flags  : 0x%08x\n", KernelFlags);
+  Print (L"Ramdisk off.  : 0x%Lx\n", RamdiskOffset);
+  Print (L"Ramdisk size  : %u octets\n", RamdiskSize);
+  Print (L"Ramdisk addr* : 0x%08x\n", ReadLe32 (Header + 20));
+  Print (L"Second size   : %u octets\n", SecondSize);
+  Print (L"\n* Adresses historiques du header : non utilisees comme adresses de chargement.\n");
+  Print (L"\nImage validee. Etape suivante : chargement physique et preparation du DTB.\n");
+  Print (L"\nAppuyez sur une touche pour revenir.\n");
+  {
+    EFI_INPUT_KEY Key;
+    WaitForKey (&Key);
+  }
+
+  Status = EFI_SUCCESS;
+
+Done:
+  if (Header != NULL) {
+    gBS->FreePool (Header);
+  }
+
+  if (Info != NULL) {
+    gBS->FreePool (Info);
+  }
+
+  if (File != NULL) {
+    File->Close (File);
+  }
+
+  if (EFI_ERROR (Status)) {
+    Print (L"\nImage Android invalide ou format non supporte : %r\n", Status);
+    {
+      EFI_INPUT_KEY Key;
+      WaitForKey (&Key);
+    }
+  }
+
+  return Status;
+}
+
 STATIC
 VOID
 BrowseVolume (
@@ -577,7 +903,14 @@ BrowseVolume (
     }
 
     if (!Entries[Selected].IsEfi) {
-      Print (L"\nCe fichier n'est pas un executable .efi.\n");
+      if (IsAndroidImageFile (CurrentName)) {
+        InspectAndroidBootImage (
+          DirectoryStack[Depth],
+          CurrentName
+          );
+      } else {
+        Print (L"\nCe fichier n'est pas un executable EFI ou une image Android .img.\n");
+      }
       continue;
     }
 
@@ -849,14 +1182,6 @@ UefiMain (
       Selected = Key.UnicodeChar - L'1';
     } else if (Key.UnicodeChar != L'\r' &&
                Key.UnicodeChar != L'\n') {
-      continue;
-    }
-
-    if (Selected == 0) {
-      Print (L"\nAndroid necessitera un chargeur Android specifique.\n");
-      Print (L"Les images Android ne sont pas des applications EFI.\n");
-      Print (L"\nAppuyez sur une touche pour continuer.\n");
-      WaitForKey (&Key);
       continue;
     }
 
