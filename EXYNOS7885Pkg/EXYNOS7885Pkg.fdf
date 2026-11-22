@@ -196,6 +196,7 @@ READ_LOCK_STATUS   = TRUE
   #
   # UEFI applications
   #
+  INF EXYNOS7885Pkg/Multiboot/MultibootManager.inf
   INF ShellPkg/Application/Shell/Shell.inf
 !ifdef $(INCLUDE_TFTP_COMMAND)
   INF ShellPkg/DynamicCommand/TftpDynamicCommand/TftpDynamicCommand.inf

@@ -35,6 +35,12 @@
 
 #include "PlatformBm.h"
 
+STATIC EFI_GUID mMultibootManagerFileGuid = {
+  0xA205B007, 0x7B00, 0x4D55,
+  { 0x9A, 0x20, 0x7F, 0x4D, 0x55, 0x4C, 0x54, 0x49 }
+};
+
+
 #define DP_NODE_LEN(Type) { (UINT8)sizeof (Type), (UINT8)(sizeof (Type) >> 8) }
 
 #pragma pack (1)
@@ -435,6 +441,12 @@ PlatformRegisterOptionsAndKeys (
   PlatformRegisterFvBootOption(
       &gUefiShellFileGuid, 
       L"UEFI Shell",
+      LOAD_OPTION_ACTIVE
+  );
+
+  PlatformRegisterFvBootOption(
+      &mMultibootManagerFileGuid,
+      L"Multiboot",
       LOAD_OPTION_ACTIVE
   );
 }
