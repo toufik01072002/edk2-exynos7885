@@ -133,19 +133,22 @@ ReadDirectory (
   EFI_FILE_INFO *Info;
   UINT8 *Buffer;
   UINTN BufferSize;
-  UINTN Offset;
+  UINTN AllocatedSize;
   UINTN EntrySize;
+  UINTN NameChars;
+  UINTN Index;
 
   if (Directory == NULL || Entries == NULL || EntryCount == NULL) {
     return EFI_INVALID_PARAMETER;
   }
 
   *EntryCount = 0;
-
   Buffer = NULL;
+  AllocatedSize = DIRECTORY_BUFFER;
+
   Status = gBS->AllocatePool (
                   EfiBootServicesData,
-                  DIRECTORY_BUFFER,
+                  AllocatedSize,
                   (VOID **)&Buffer
                   );
   if (EFI_ERROR (Status)) {
@@ -154,18 +157,39 @@ ReadDirectory (
 
   Status = Directory->SetPosition (Directory, 0);
   if (EFI_ERROR (Status)) {
-    gBS->FreePool (Buffer);
-    return Status;
+    goto Done;
   }
 
   while (*EntryCount < MAX_ENTRIES) {
-    BufferSize = DIRECTORY_BUFFER;
+    BufferSize = AllocatedSize;
 
     Status = Directory->Read (
                           Directory,
                           &BufferSize,
                           Buffer
                           );
+
+    if (Status == EFI_BUFFER_TOO_SMALL) {
+      if (BufferSize <= AllocatedSize) {
+        Status = EFI_COMPROMISED_DATA;
+        break;
+      }
+
+      gBS->FreePool (Buffer);
+      Buffer = NULL;
+      AllocatedSize = BufferSize;
+
+      Status = gBS->AllocatePool (
+                      EfiBootServicesData,
+                      AllocatedSize,
+                      (VOID **)&Buffer
+                      );
+      if (EFI_ERROR (Status)) {
+        break;
+      }
+
+      continue;
+    }
 
     if (EFI_ERROR (Status)) {
       break;
@@ -176,49 +200,63 @@ ReadDirectory (
       break;
     }
 
-    Offset = 0;
-
-    while (Offset < BufferSize && *EntryCount < MAX_ENTRIES) {
-      if (BufferSize - Offset < sizeof (EFI_FILE_INFO)) {
-        Status = EFI_COMPROMISED_DATA;
-        goto Done;
-      }
-
-      Info = (EFI_FILE_INFO *)(Buffer + Offset);
-      EntrySize = (UINTN)Info->Size;
-
-      if (EntrySize < sizeof (EFI_FILE_INFO) ||
-          EntrySize > BufferSize - Offset) {
-        Status = EFI_COMPROMISED_DATA;
-        goto Done;
-      }
-
-      if (!(Info->FileName[0] == L'.' &&
-            (Info->FileName[1] == L'\0' ||
-             (Info->FileName[1] == L'.' &&
-              Info->FileName[2] == L'\0')))) {
-
-        CopyName (
-          Entries[*EntryCount].Name,
-          Info->FileName,
-          MAX_NAME_LENGTH
-          );
-
-        Entries[*EntryCount].Size = Info->FileSize;
-        Entries[*EntryCount].IsDirectory =
-          (Info->Attribute & EFI_FILE_DIRECTORY) != 0;
-        Entries[*EntryCount].IsEfi =
-          IsEfiFile (Info->FileName);
-
-        (*EntryCount)++;
-      }
-
-      Offset += EntrySize;
+    if (BufferSize < OFFSET_OF (EFI_FILE_INFO, FileName) + sizeof (CHAR16)) {
+      Status = EFI_COMPROMISED_DATA;
+      break;
     }
+
+    Info = (EFI_FILE_INFO *)Buffer;
+
+    if (Info->Size > MAX_UINTN ||
+        Info->Size < OFFSET_OF (EFI_FILE_INFO, FileName) + sizeof (CHAR16) ||
+        Info->Size > BufferSize) {
+      Status = EFI_COMPROMISED_DATA;
+      break;
+    }
+
+    EntrySize = (UINTN)Info->Size;
+    NameChars =
+      (EntrySize - OFFSET_OF (EFI_FILE_INFO, FileName)) / sizeof (CHAR16);
+
+    for (Index = 0; Index < NameChars; Index++) {
+      if (Info->FileName[Index] == L'\0') {
+        break;
+      }
+    }
+
+    if (Index == NameChars) {
+      Status = EFI_COMPROMISED_DATA;
+      break;
+    }
+
+    if (!(Info->FileName[0] == L'.' &&
+          (Info->FileName[1] == L'\0' ||
+           (Info->FileName[1] == L'.' &&
+            Info->FileName[2] == L'\0')))) {
+
+      CopyName (
+        Entries[*EntryCount].Name,
+        Info->FileName,
+        MAX_NAME_LENGTH
+        );
+
+      Entries[*EntryCount].Size = Info->FileSize;
+      Entries[*EntryCount].IsDirectory =
+        (Info->Attribute & EFI_FILE_DIRECTORY) != 0;
+      Entries[*EntryCount].IsEfi =
+        IsEfiFile (Info->FileName);
+
+      (*EntryCount)++;
+    }
+
+    Status = EFI_SUCCESS;
   }
 
 Done:
-  gBS->FreePool (Buffer);
+  if (Buffer != NULL) {
+    gBS->FreePool (Buffer);
+  }
+
   return Status;
 }
 
@@ -385,6 +423,7 @@ BrowseVolume (
   UINTN EntryCount;
   UINTN Selected;
   UINTN Index;
+  BOOLEAN DirectoryLoaded;
   EFI_INPUT_KEY Key;
   EFI_FILE_PROTOCOL *Child;
   CHAR16 CurrentName[MAX_NAME_LENGTH];
@@ -408,6 +447,7 @@ BrowseVolume (
   DirectoryStack[0] = Volume->Root;
   Depth = 0;
   Selected = 0;
+  DirectoryLoaded = FALSE;
 
   while (TRUE) {
     gST->ConOut->ClearScreen (gST->ConOut);
@@ -419,15 +459,21 @@ BrowseVolume (
     Print (L"Volume : %s\n", Volume->Label);
     Print (L"Profondeur : %u\n\n", (UINT32)Depth);
 
-    Status = ReadDirectory (
-               DirectoryStack[Depth],
-               Entries,
-               &EntryCount
-               );
+    if (!DirectoryLoaded) {
+      Status = ReadDirectory (
+                 DirectoryStack[Depth],
+                 Entries,
+                 &EntryCount
+                 );
 
-    if (EFI_ERROR (Status)) {
-      Print (L"Erreur de lecture du dossier : %r\n", Status);
-      break;
+      if (EFI_ERROR (Status)) {
+        Print (L"Erreur de lecture du dossier : %r\n", Status);
+        Print (L"Appuyez sur une touche pour revenir.\n");
+        WaitForKey (&Key);
+        break;
+      }
+
+      DirectoryLoaded = TRUE;
     }
 
     if (EntryCount == 0) {
@@ -473,6 +519,7 @@ BrowseVolume (
         DirectoryStack[Depth] = NULL;
         Depth--;
         Selected = 0;
+        DirectoryLoaded = FALSE;
       }
       continue;
     }
@@ -525,6 +572,7 @@ BrowseVolume (
       Depth++;
       DirectoryStack[Depth] = Child;
       Selected = 0;
+      DirectoryLoaded = FALSE;
       continue;
     }
 
