@@ -65,6 +65,349 @@ ReadExact (
   return EFI_SUCCESS;
 }
 
+
+STATIC
+UINT32
+ReadBe32 (
+  IN CONST UINT8 *Data
+  )
+{
+  return ((UINT32)Data[0] << 24) |
+         ((UINT32)Data[1] << 16) |
+         ((UINT32)Data[2] << 8) |
+         (UINT32)Data[3];
+}
+
+STATIC
+VOID
+WriteBe32 (
+  OUT UINT8 *Data,
+  IN UINT32 Value
+  )
+{
+  Data[0] = (UINT8)(Value >> 24);
+  Data[1] = (UINT8)(Value >> 16);
+  Data[2] = (UINT8)(Value >> 8);
+  Data[3] = (UINT8)Value;
+}
+
+STATIC
+VOID
+WriteBe64 (
+  OUT UINT8 *Data,
+  IN UINT64 Value
+  )
+{
+  WriteBe32 (Data, (UINT32)(Value >> 32));
+  WriteBe32 (Data + 4, (UINT32)Value);
+}
+
+STATIC
+BOOLEAN
+FdtNameEquals (
+  IN CONST CHAR8 *Name,
+  IN UINTN NameLimit,
+  IN CONST CHAR8 *Expected
+  )
+{
+  UINTN Index;
+
+  for (Index = 0; Expected[Index] != '\0'; Index++) {
+    if (Index >= NameLimit || Name[Index] != Expected[Index]) {
+      return FALSE;
+    }
+  }
+
+  return (Index < NameLimit && Name[Index] == '\0');
+}
+
+STATIC
+EFI_STATUS
+PatchFdtInitrd (
+  IN OUT UINT8 *Fdt,
+  IN UINTN BufferSize,
+  IN UINT64 InitrdStart,
+  IN UINT64 InitrdEnd
+  )
+{
+  UINT32 TotalSize;
+  UINT32 StructOffset;
+  UINT32 StringsOffset;
+  UINT32 StringsSize;
+  UINT32 StructSize;
+  UINT32 Position;
+  UINT32 StructEnd;
+  UINT32 Token;
+  UINT32 PropertySize;
+  UINT32 NameOffset;
+  UINT32 NameLength;
+  UINT32 NodeLength;
+  UINT32 Depth;
+  UINT32 ChosenDepth;
+  UINT32 Index;
+  UINT8 *PropertyData;
+  CONST CHAR8 *PropertyName;
+  BOOLEAN FoundStart;
+  BOOLEAN FoundEnd;
+  UINT64 Value;
+
+  if (Fdt == NULL || BufferSize < 40 ||
+      ReadBe32 (Fdt) != 0xD00DFEEDU) {
+    return EFI_UNSUPPORTED;
+  }
+
+  TotalSize = ReadBe32 (Fdt + 4);
+  StructOffset = ReadBe32 (Fdt + 8);
+  StringsOffset = ReadBe32 (Fdt + 12);
+  if (ReadBe32 (Fdt + 20) < 17) {
+    return EFI_UNSUPPORTED;
+  }
+  StringsSize = ReadBe32 (Fdt + 32);
+  StructSize = ReadBe32 (Fdt + 36);
+
+  if (TotalSize < 40 || TotalSize > BufferSize ||
+      StructOffset > TotalSize || StructSize > TotalSize - StructOffset ||
+      StringsOffset > TotalSize || StringsSize > TotalSize - StringsOffset ||
+      (StructOffset & 3) != 0) {
+    return EFI_COMPROMISED_DATA;
+  }
+
+  StructEnd = StructOffset + StructSize;
+  Position = StructOffset;
+  Depth = 0;
+  ChosenDepth = 0;
+  FoundStart = FALSE;
+  FoundEnd = FALSE;
+
+  while (Position <= StructEnd && StructEnd - Position >= 4) {
+    Token = ReadBe32 (Fdt + Position);
+    Position += 4;
+
+    if (Token == 1) {
+      Index = Position;
+      while (Index < StructEnd && Fdt[Index] != 0) {
+        Index++;
+      }
+      if (Index >= StructEnd) {
+        return EFI_COMPROMISED_DATA;
+      }
+
+      NodeLength = Index - Position;
+      if (Depth == 1 && NodeLength == 6 &&
+          CompareMem (Fdt + Position, "chosen", 6) == 0) {
+        ChosenDepth = Depth + 1;
+      }
+
+      Position = (Index + 1 + 3) & ~3U;
+      if (Position > StructEnd || Depth == MAX_UINT32) {
+        return EFI_COMPROMISED_DATA;
+      }
+      Depth++;
+    } else if (Token == 2) {
+      if (Depth == 0) {
+        return EFI_COMPROMISED_DATA;
+      }
+      if (Depth == ChosenDepth) {
+        ChosenDepth = 0;
+      }
+      Depth--;
+    } else if (Token == 3) {
+      if (StructEnd - Position < 8) {
+        return EFI_COMPROMISED_DATA;
+      }
+      PropertySize = ReadBe32 (Fdt + Position);
+      NameOffset = ReadBe32 (Fdt + Position + 4);
+      Position += 8;
+
+      if (PropertySize > StructEnd - Position ||
+          NameOffset >= StringsSize) {
+        return EFI_COMPROMISED_DATA;
+      }
+
+      PropertyName = (CONST CHAR8 *)(Fdt + StringsOffset + NameOffset);
+      NameLength = 0;
+      while (NameOffset + NameLength < StringsSize &&
+             PropertyName[NameLength] != '\0') {
+        NameLength++;
+      }
+      if (NameOffset + NameLength >= StringsSize) {
+        return EFI_COMPROMISED_DATA;
+      }
+
+      if (Depth == ChosenDepth && ChosenDepth != 0) {
+        PropertyData = Fdt + Position;
+        if (FdtNameEquals (PropertyName, NameLength, "linux,initrd-start")) {
+          if (PropertySize == 4) {
+            if (InitrdStart > MAX_UINT32) {
+              return EFI_BAD_BUFFER_SIZE;
+            }
+            WriteBe32 (PropertyData, (UINT32)InitrdStart);
+          } else if (PropertySize == 8) {
+            WriteBe64 (PropertyData, InitrdStart);
+          } else {
+            return EFI_UNSUPPORTED;
+          }
+          FoundStart = TRUE;
+        } else if (FdtNameEquals (PropertyName, NameLength, "linux,initrd-end")) {
+          if (PropertySize == 4) {
+            if (InitrdEnd > MAX_UINT32) {
+              return EFI_BAD_BUFFER_SIZE;
+            }
+            WriteBe32 (PropertyData, (UINT32)InitrdEnd);
+          } else if (PropertySize == 8) {
+            WriteBe64 (PropertyData, InitrdEnd);
+          } else {
+            return EFI_UNSUPPORTED;
+          }
+          FoundEnd = TRUE;
+        }
+      }
+
+      Position = (Position + PropertySize + 3) & ~3U;
+      if (Position > StructEnd) {
+        return EFI_COMPROMISED_DATA;
+      }
+    } else if (Token == 4) {
+      continue;
+    } else if (Token == 9) {
+      break;
+    } else {
+      return EFI_COMPROMISED_DATA;
+    }
+  }
+
+  if (!FoundStart || !FoundEnd) {
+    return EFI_NOT_FOUND;
+  }
+
+  Value = InitrdEnd - InitrdStart;
+  if (Value == 0 || InitrdEnd < InitrdStart) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+EFI_STATUS
+LoadAndPatchFdt (
+  IN EFI_FILE_PROTOCOL *Directory,
+  IN UINT64 InitrdStart,
+  IN UINT64 InitrdEnd,
+  OUT UINT8 **FdtBuffer,
+  OUT UINTN *FdtBufferSize
+  )
+{
+  EFI_STATUS Status;
+  EFI_FILE_PROTOCOL *File;
+  EFI_FILE_INFO *Info;
+  UINTN InfoSize;
+  UINT8 Header[40];
+  UINT32 TotalSize;
+  UINT8 *Buffer;
+
+  if (Directory == NULL || FdtBuffer == NULL || FdtBufferSize == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  *FdtBuffer = NULL;
+  *FdtBufferSize = 0;
+  File = NULL;
+  Info = NULL;
+  Buffer = NULL;
+
+  Status = Directory->Open (
+                        Directory,
+                        &File,
+                        L"running.dtb",
+                        EFI_FILE_MODE_READ,
+                        0
+                        );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  InfoSize = 0;
+  Status = File->GetInfo (File, &gEfiFileInfoGuid, &InfoSize, NULL);
+  if (Status != EFI_BUFFER_TOO_SMALL || InfoSize == 0) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  InfoSize,
+                  (VOID **)&Info
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = File->GetInfo (File, &gEfiFileInfoGuid, &InfoSize, Info);
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  if (Info->FileSize < sizeof (Header) ||
+      Info->FileSize > 0x00200000ULL ||
+      Info->FileSize > MAX_UINTN) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  Status = ReadExact (File, 0, Header, sizeof (Header));
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  if (ReadBe32 (Header) != 0xD00DFEEDU) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  TotalSize = ReadBe32 (Header + 4);
+  if (TotalSize < sizeof (Header) || TotalSize > Info->FileSize) {
+    Status = EFI_COMPROMISED_DATA;
+    goto Done;
+  }
+
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  TotalSize,
+                  (VOID **)&Buffer
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = ReadExact (File, 0, Buffer, TotalSize);
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = PatchFdtInitrd (Buffer, TotalSize, InitrdStart, InitrdEnd);
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  *FdtBuffer = Buffer;
+  *FdtBufferSize = TotalSize;
+  Buffer = NULL;
+  Status = EFI_SUCCESS;
+
+Done:
+  if (Buffer != NULL) {
+    gBS->FreePool (Buffer);
+  }
+  if (Info != NULL) {
+    gBS->FreePool (Info);
+  }
+  if (File != NULL) {
+    File->Close (File);
+  }
+  return Status;
+}
+
 STATIC
 UINT64
 AlignUp (
@@ -103,17 +446,28 @@ AndroidStageBootImage (
   UINT64 RamdiskPages;
   UINTN EventIndex;
   EFI_INPUT_KEY Key;
+  UINT8 *FdtBuffer;
+  UINTN FdtBufferSize;
+  UINTN FdtPages;
+  EFI_PHYSICAL_ADDRESS FdtAddress;
+  EFI_PHYSICAL_ADDRESS MaxAddress;
   EFI_PHYSICAL_ADDRESS KernelAddress;
   EFI_PHYSICAL_ADDRESS RamdiskAddress;
   BOOLEAN KernelAllocated;
   BOOLEAN RamdiskAllocated;
+  BOOLEAN FdtAllocated;
 
   File = NULL;
   Info = NULL;
   KernelAddress = 0;
   RamdiskAddress = 0;
+  FdtBuffer = NULL;
+  FdtBufferSize = 0;
+  FdtPages = 0;
+  FdtAddress = 0;
   KernelAllocated = FALSE;
   RamdiskAllocated = FALSE;
+  FdtAllocated = FALSE;
   KernelPages = 0;
   RamdiskPages = 0;
 
@@ -240,12 +594,14 @@ AndroidStageBootImage (
   }
   KernelAllocated = TRUE;
 
+  MaxAddress = 0xFFFFFFFFULL;
   Status = gBS->AllocatePages (
-                  AllocateAnyPages,
+                  AllocateMaxAddress,
                   EfiLoaderData,
                   (UINTN)RamdiskPages,
-                  &RamdiskAddress
+                  &MaxAddress
                   );
+  RamdiskAddress = MaxAddress;
   if (EFI_ERROR (Status)) {
     goto Done;
   }
@@ -272,12 +628,45 @@ AndroidStageBootImage (
     goto Done;
   }
 
+  Status = LoadAndPatchFdt (
+             Directory,
+             RamdiskAddress,
+             RamdiskAddress + RamdiskSize,
+             &FdtBuffer,
+             &FdtBufferSize
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  FdtPages = EFI_SIZE_TO_PAGES (FdtBufferSize);
+  MaxAddress = 0xFFFFFFFFULL;
+  Status = gBS->AllocatePages (
+                  AllocateMaxAddress,
+                  EfiLoaderData,
+                  FdtPages,
+                  &MaxAddress
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+  FdtAddress = MaxAddress;
+  FdtAllocated = TRUE;
+  CopyMem (
+    (VOID *)(UINTN)FdtAddress,
+    FdtBuffer,
+    FdtBufferSize
+    );
+
   Print (L"\nChargement temporaire reussi.\n");
   Print (L"Noyau ARM64 : %u octets, memoire image : 0x%Lx\n",
          KernelSize, KernelImageSize);
   Print (L"Ramdisk gzip : %u octets\n", RamdiskSize);
+  Print (L"DTB actif patche : %u octets\n", (UINT32)FdtBufferSize);
   Print (L"Adresse tampon noyau : 0x%Lx\n", KernelAddress);
   Print (L"Adresse tampon ramdisk : 0x%Lx\n", RamdiskAddress);
+  Print (L"Adresse DTB temporaire : 0x%Lx\n", FdtAddress);
+  Print (L"DTB : linux,initrd-start/end actualises, bootargs conserves.\n");
   Print (L"Ces adresses sont temporaires, pas les adresses finales de boot.\n");
   Print (L"Aucun transfert au noyau n'a ete effectue.\n");
   Print (L"Appuyez sur une touche pour liberer les tampons.\\n");
@@ -299,6 +688,12 @@ AndroidStageBootImage (
   Status = EFI_SUCCESS;
 
 Done:
+  if (FdtAllocated) {
+    gBS->FreePages (FdtAddress, FdtPages);
+  }
+  if (FdtBuffer != NULL) {
+    gBS->FreePool (FdtBuffer);
+  }
   if (RamdiskAllocated) {
     gBS->FreePages (RamdiskAddress, (UINTN)RamdiskPages);
   }
