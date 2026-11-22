@@ -280,11 +280,20 @@ AndroidStageBootImage (
   Print (L"Adresse tampon ramdisk : 0x%Lx\n", RamdiskAddress);
   Print (L"Ces adresses sont temporaires, pas les adresses finales de boot.\n");
   Print (L"Aucun transfert au noyau n'a ete effectue.\n");
-  {
-    EFI_INPUT_KEY Key;
-    Print (L"Appuyez sur une touche pour liberer les tampons.\n");
-    WaitForEvent (1, &gST->ConIn->WaitForKey, &(UINTN){0});
-    gST->ConIn->ReadKeyStroke (gST->ConIn, &Key);
+  Print (L"Appuyez sur une touche pour liberer les tampons.\\n");
+  do {
+    Status = gBS->WaitForEvent (
+                    1,
+                    &gST->ConIn->WaitForKey,
+                    &EventIndex
+                    );
+    if (EFI_ERROR (Status)) {
+      goto Done;
+    }
+    Status = gST->ConIn->ReadKeyStroke (gST->ConIn, &Key);
+  } while (Status == EFI_NOT_READY);
+  if (EFI_ERROR (Status)) {
+    goto Done;
   }
 
   Status = EFI_SUCCESS;
