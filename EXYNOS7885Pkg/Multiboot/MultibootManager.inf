@@ -9,6 +9,8 @@
 [Sources]
   MultibootManager.c
   AndroidImageLoader.c
+  GzipDecompress.c
+  puff.c
 
 [Packages]
   MdePkg/MdePkg.dec
