@@ -176,7 +176,10 @@ CEntryPoint (
   ArmEnableInstructionCache ();
 
   // Wait the Primary core has defined the address of the Global Variable region (event: ARM_CPU_EVENT_DEFAULT)
-  ArmCallWFE ();
+  if (FixedPcdGet32 (PcdCoreCount) > 1) {
+    // Wait for the Primary core's global-variable region initialization event.
+    ArmCallWFE ();
+  }
 
   PrePiMain (UefiMemoryBase, StacksBase, StartTimeStamp);
 
