@@ -440,6 +440,221 @@ PatchFdtInitrd (
 }
 
 STATIC
+UINT64
+FdtReadCells (
+  IN CONST UINT8 *Data,
+  IN UINT32 CellCount
+  )
+{
+  if (CellCount == 1) {
+    return ReadBe32 (Data);
+  }
+  return ((UINT64)ReadBe32 (Data) << 32) | ReadBe32 (Data + 4);
+}
+
+STATIC
+BOOLEAN
+RangesOverlap (
+  IN UINT64 BaseA,
+  IN UINT64 SizeA,
+  IN UINT64 BaseB,
+  IN UINT64 SizeB
+  )
+{
+  if (SizeA == 0 || SizeB == 0 ||
+      BaseA > MAX_UINT64 - SizeA ||
+      BaseB > MAX_UINT64 - SizeB) {
+    return TRUE;
+  }
+  return (BaseA < BaseB + SizeB) && (BaseB < BaseA + SizeA);
+}
+
+STATIC
+EFI_STATUS
+ValidateFdtReservedMemory (
+  IN CONST UINT8 *Fdt,
+  IN UINTN BufferSize,
+  IN EFI_PHYSICAL_ADDRESS KernelBase,
+  IN UINT64 KernelSize,
+  IN EFI_PHYSICAL_ADDRESS RamdiskBase,
+  IN UINT64 RamdiskSize,
+  IN EFI_PHYSICAL_ADDRESS InitrdBase,
+  IN UINT64 InitrdSize,
+  IN EFI_PHYSICAL_ADDRESS FdtBase,
+  IN UINT64 FdtSize
+  )
+{
+  UINT32 TotalSize;
+  UINT32 StructOffset;
+  UINT32 StringsOffset;
+  UINT32 StringsSize;
+  UINT32 StructSize;
+  UINT32 Position;
+  UINT32 StructEnd;
+  UINT32 Token;
+  UINT32 PropertySize;
+  UINT32 NameOffset;
+  UINT32 NameLength;
+  UINT32 NodeLength;
+  UINT32 Depth;
+  UINT32 ReservedDepth;
+  UINT32 AddressCells;
+  UINT32 SizeCells;
+  UINT32 TupleSize;
+  UINT32 Offset;
+  UINT64 RegionBase;
+  UINT64 RegionSize;
+  CONST CHAR8 *PropertyName;
+  BOOLEAN InReserved;
+  BOOLEAN SawReservedRanges;
+
+  if (Fdt == NULL || BufferSize < 40 || ReadBe32 (Fdt) != 0xD00DFEEDU) {
+    return EFI_UNSUPPORTED;
+  }
+
+  TotalSize = ReadBe32 (Fdt + 4);
+  StructOffset = ReadBe32 (Fdt + 8);
+  StringsOffset = ReadBe32 (Fdt + 12);
+  StringsSize = ReadBe32 (Fdt + 32);
+  StructSize = ReadBe32 (Fdt + 36);
+  if (TotalSize < 40 || TotalSize > BufferSize ||
+      StructOffset > TotalSize || StructSize > TotalSize - StructOffset ||
+      StringsOffset > TotalSize || StringsSize > TotalSize - StringsOffset) {
+    return EFI_COMPROMISED_DATA;
+  }
+
+  Position = StructOffset;
+  StructEnd = StructOffset + StructSize;
+  Depth = 0;
+  ReservedDepth = 0;
+  AddressCells = 2;
+  SizeCells = 1;
+  InReserved = FALSE;
+  SawReservedRanges = FALSE;
+
+  while (Position <= StructEnd && StructEnd - Position >= 4) {
+    Token = ReadBe32 (Fdt + Position);
+    Position += 4;
+
+    if (Token == 1) {
+      Offset = Position;
+      while (Offset < StructEnd && Fdt[Offset] != 0) {
+        Offset++;
+      }
+      if (Offset >= StructEnd) {
+        return EFI_COMPROMISED_DATA;
+      }
+      NodeLength = Offset - Position;
+
+      if (Depth == 1 && NodeLength == 14 &&
+          CompareMem (Fdt + Position, "reserved-memory", 14) == 0) {
+        InReserved = TRUE;
+        ReservedDepth = 2;
+      }
+      Position = (Offset + 1 + 3) & ~3U;
+      if (Position > StructEnd || Depth == MAX_UINT32) {
+        return EFI_COMPROMISED_DATA;
+      }
+      Depth++;
+    } else if (Token == 2) {
+      if (Depth == 0) {
+        return EFI_COMPROMISED_DATA;
+      }
+      Depth--;
+      if (InReserved && Depth < ReservedDepth) {
+        InReserved = FALSE;
+        ReservedDepth = 0;
+      }
+    } else if (Token == 3) {
+      if (StructEnd - Position < 8) {
+        return EFI_COMPROMISED_DATA;
+      }
+      PropertySize = ReadBe32 (Fdt + Position);
+      NameOffset = ReadBe32 (Fdt + Position + 4);
+      Position += 8;
+      if (PropertySize > StructEnd - Position || NameOffset >= StringsSize) {
+        return EFI_COMPROMISED_DATA;
+      }
+
+      PropertyName = (CONST CHAR8 *)(Fdt + StringsOffset + NameOffset);
+      NameLength = 0;
+      while (NameOffset + NameLength < StringsSize &&
+             PropertyName[NameLength] != '\0') {
+        NameLength++;
+      }
+      if (NameOffset + NameLength >= StringsSize) {
+        return EFI_COMPROMISED_DATA;
+      }
+
+      if (Depth == 1) {
+        if (FdtNameEquals (PropertyName, NameLength, "#address-cells") &&
+            PropertySize == 4) {
+          AddressCells = ReadBe32 (Fdt + Position);
+        } else if (FdtNameEquals (PropertyName, NameLength, "#size-cells") &&
+                   PropertySize == 4) {
+          SizeCells = ReadBe32 (Fdt + Position);
+        }
+      } else if (InReserved && Depth == ReservedDepth) {
+        if (FdtNameEquals (PropertyName, NameLength, "#address-cells") &&
+            PropertySize == 4) {
+          AddressCells = ReadBe32 (Fdt + Position);
+        } else if (FdtNameEquals (PropertyName, NameLength, "#size-cells") &&
+                   PropertySize == 4) {
+          SizeCells = ReadBe32 (Fdt + Position);
+        } else if (FdtNameEquals (PropertyName, NameLength, "ranges")) {
+          if (PropertySize != 0) {
+            return EFI_UNSUPPORTED;
+          }
+          SawReservedRanges = TRUE;
+        }
+      } else if (InReserved && Depth == ReservedDepth + 1 &&
+                 FdtNameEquals (PropertyName, NameLength, "reg")) {
+        if ((AddressCells != 1 && AddressCells != 2) ||
+            (SizeCells != 1 && SizeCells != 2)) {
+          return EFI_UNSUPPORTED;
+        }
+        TupleSize = (AddressCells + SizeCells) * 4;
+        if (TupleSize == 0 || PropertySize == 0 ||
+            (PropertySize % TupleSize) != 0) {
+          return EFI_COMPROMISED_DATA;
+        }
+
+        for (Offset = 0; Offset < PropertySize; Offset += TupleSize) {
+          RegionBase = FdtReadCells (Fdt + Position + Offset, AddressCells);
+          RegionSize = FdtReadCells (
+                         Fdt + Position + Offset + AddressCells * 4,
+                         SizeCells
+                         );
+          if (RegionSize == 0 || RegionBase > MAX_UINT64 - RegionSize) {
+            return EFI_COMPROMISED_DATA;
+          }
+
+          if (RangesOverlap (KernelBase, KernelSize, RegionBase, RegionSize) ||
+              RangesOverlap (RamdiskBase, RamdiskSize, RegionBase, RegionSize) ||
+              RangesOverlap (InitrdBase, InitrdSize, RegionBase, RegionSize) ||
+              RangesOverlap (FdtBase, FdtSize, RegionBase, RegionSize)) {
+            return EFI_SECURITY_VIOLATION;
+          }
+        }
+      }
+
+      Position = (Position + PropertySize + 3) & ~3U;
+      if (Position > StructEnd) {
+        return EFI_COMPROMISED_DATA;
+      }
+    } else if (Token == 4) {
+      continue;
+    } else if (Token == 9) {
+      break;
+    } else {
+      return EFI_COMPROMISED_DATA;
+    }
+  }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
 EFI_STATUS
 LoadAndPatchFdt (
   IN EFI_FILE_PROTOCOL *Directory,
@@ -990,6 +1205,22 @@ AndroidStageBootImage (
              InitrdEnd,
              &FdtBuffer,
              &FdtBufferSize
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = ValidateFdtReservedMemory (
+             FdtBuffer,
+             FdtBufferSize,
+             KernelAllocationAddress,
+             EFI_PAGES_TO_SIZE ((UINTN)KernelPages),
+             RamdiskAddress,
+             EFI_PAGES_TO_SIZE ((UINTN)RamdiskPages),
+             DecompressedRamdiskAddress,
+             EFI_PAGES_TO_SIZE (DecompressedRamdiskPages),
+             0,
+             0
              );
   if (EFI_ERROR (Status)) {
     goto Done;
