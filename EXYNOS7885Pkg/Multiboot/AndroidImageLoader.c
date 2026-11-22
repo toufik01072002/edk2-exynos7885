@@ -608,6 +608,10 @@ AndroidStageBootImage (
   EFI_PHYSICAL_ADDRESS MaxAddress;
   EFI_PHYSICAL_ADDRESS KernelAddress;
   EFI_PHYSICAL_ADDRESS KernelAllocationAddress;
+  UINT64 KernelImageEnd;
+  UINT64 InitrdEnd;
+  UINT64 KernelWindowBase;
+  UINT64 InitrdWindowBase;
   EFI_PHYSICAL_ADDRESS RamdiskAddress;
   EFI_PHYSICAL_ADDRESS DecompressedRamdiskAddress;
   UINTN DecompressedRamdiskSize;
@@ -622,6 +626,10 @@ AndroidStageBootImage (
   Info = NULL;
   KernelAddress = 0;
   KernelAllocationAddress = 0;
+  KernelImageEnd = 0;
+  InitrdEnd = 0;
+  KernelWindowBase = 0;
+  InitrdWindowBase = 0;
   RamdiskAddress = 0;
   DecompressedRamdiskAddress = 0;
   DecompressedRamdiskSize = 0;
@@ -829,6 +837,24 @@ AndroidStageBootImage (
   }
   DecompressedRamdiskAllocated = TRUE;
 
+  // Linux arm64 requires the complete Image and initrd to share a 1 GiB window.
+  if (DecompressedRamdiskSize == 0 ||
+      DecompressedRamdiskAddress > MAX_UINT64 - DecompressedRamdiskSize ||
+      KernelAddress > MAX_UINT64 - KernelImageSize) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+  KernelImageEnd = KernelAddress + KernelImageSize;
+  InitrdEnd = DecompressedRamdiskAddress + DecompressedRamdiskSize;
+  KernelWindowBase = KernelAddress & ~0x3FFFFFFFULL;
+  InitrdWindowBase = DecompressedRamdiskAddress & ~0x3FFFFFFFULL;
+  if (KernelWindowBase != InitrdWindowBase ||
+      ((KernelImageEnd - 1) & ~0x3FFFFFFFULL) != KernelWindowBase ||
+      ((InitrdEnd - 1) & ~0x3FFFFFFFULL) != KernelWindowBase) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Done;
+  }
+
   Status = ValidateNewcCpio (
              (CONST UINT8 *)(UINTN)DecompressedRamdiskAddress,
              DecompressedRamdiskSize,
@@ -841,7 +867,7 @@ AndroidStageBootImage (
   Status = LoadAndPatchFdt (
              Directory,
              DecompressedRamdiskAddress,
-             DecompressedRamdiskAddress + DecompressedRamdiskSize,
+             InitrdEnd,
              &FdtBuffer,
              &FdtBufferSize
              );
@@ -862,6 +888,12 @@ AndroidStageBootImage (
   }
   FdtAddress = MaxAddress;
   FdtAllocated = TRUE;
+  if ((FdtAddress & 7ULL) != 0 ||
+      FdtBufferSize < 40 || FdtBufferSize > 0x00200000U ||
+      FdtAddress > 0x100000000ULL - FdtBufferSize) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
   CopyMem (
     (VOID *)(UINTN)FdtAddress,
     FdtBuffer,
@@ -879,6 +911,8 @@ AndroidStageBootImage (
   Print (L"Adresse tampon gzip : 0x%Lx\n", RamdiskAddress);
   Print (L"Adresse ramdisk CPIO : 0x%Lx\n", DecompressedRamdiskAddress);
   Print (L"Adresse DTB temporaire : 0x%Lx\n", FdtAddress);
+  Print (L"Fenetre physique 1 Gio partagee : 0x%Lx\n", KernelWindowBase);
+  Print (L"DTB aligne sur 8 octets, taille <= 2 Mio.\n");
   Print (L"DTB : linux,initrd-start/end actualises, bootargs conserves.\n");
   Print (L"Ces adresses sont temporaires, pas les adresses finales de boot.\n");
   Print (L"Aucun transfert au noyau n'a ete effectue.\n");
