@@ -49,6 +49,7 @@ Arm64LinuxHandoff:
 .Lel2:
     mrs     x9, hcr_el2
     orr     x9, x9, #(1 << 31)
+    bic     x9, x9, #1
     msr     hcr_el2, x9
 
     mov     x9, #3
@@ -98,13 +99,15 @@ Arm64LinuxHandoff:
 /* Clean [x0, x0+x1) using the data-cache line size from CTR_EL0. */
 .Lclean_range:
     cbz     x1, .Lclean_done
+    add     x12, x0, x1
     mrs     x9, ctr_el0
     ubfx    x10, x9, #16, #4
     mov     x11, #4
     lsl     x11, x11, x10
-    sub     x12, x11, #1
-    bic     x0, x0, x12
-    add     x12, x0, x1
+    sub     x13, x11, #1
+    add     x12, x12, x13
+    bic     x12, x12, x13
+    bic     x0, x0, x13
 .Lclean_loop:
     dc      cvac, x0
     add     x0, x0, x11
