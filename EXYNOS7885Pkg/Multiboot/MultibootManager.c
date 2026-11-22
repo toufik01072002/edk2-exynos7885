@@ -510,6 +510,7 @@ IsAndroidImageFile (
 STATIC
 EFI_STATUS
 InspectAndroidBootImage (
+  IN EFI_HANDLE ParentImage,
   IN EFI_FILE_PROTOCOL *Directory,
   IN CONST CHAR16 *FileName
   )
@@ -704,7 +705,7 @@ InspectAndroidBootImage (
   Print (L"Second size   : %u octets\n", SecondSize);
   Print (L"\n* Adresses historiques du header : non utilisees comme adresses de chargement.\n");
   Print (L"\\nImage validee. Chargement temporaire des composants...\\n");
-  Status = AndroidStageBootImage (Directory, FileName);
+  Status = AndroidStageBootImage (ParentImage, Directory, FileName);
   if (EFI_ERROR (Status)) {
     goto Done;
   }
@@ -911,6 +912,7 @@ BrowseVolume (
     if (!Entries[Selected].IsEfi) {
       if (IsAndroidImageFile (CurrentName)) {
         InspectAndroidBootImage (
+          ParentImage,
           DirectoryStack[Depth],
           CurrentName
           );
