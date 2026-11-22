@@ -546,8 +546,8 @@ ValidateFdtReservedMemory (
       }
       NodeLength = Offset - Position;
 
-      if (Depth == 1 && NodeLength == 14 &&
-          CompareMem (Fdt + Position, "reserved-memory", 14) == 0) {
+      if (Depth == 1 && NodeLength == 15 &&
+          CompareMem (Fdt + Position, "reserved-memory", 15) == 0) {
         InReserved = TRUE;
         ReservedDepth = 2;
       }
