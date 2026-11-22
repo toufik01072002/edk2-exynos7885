@@ -1,0 +1,306 @@
+#include "AndroidImageLoader.h"
+
+#include <Library/UefiBootServicesTableLib.h>
+#include <Library/UefiLib.h>
+#include <Library/BaseMemoryLib.h>
+#include <Guid/FileInfo.h>
+
+#define ANDROID_PAGE_SIZE       2048U
+#define ANDROID_HEADER_V0       0U
+#define ANDROID_MAX_KERNEL      0x08000000ULL
+#define ANDROID_MAX_KERNEL_MEM  0x10000000ULL
+#define ANDROID_MAX_RAMDISK     0x04000000ULL
+#define ARM64_IMAGE_MAGIC       0x644D5241U
+
+STATIC
+UINT32
+ReadLe32 (
+  IN CONST UINT8 *Data
+  )
+{
+  return (UINT32)Data[0] |
+         ((UINT32)Data[1] << 8) |
+         ((UINT32)Data[2] << 16) |
+         ((UINT32)Data[3] << 24);
+}
+
+STATIC
+UINT64
+ReadLe64 (
+  IN CONST UINT8 *Data
+  )
+{
+  return (UINT64)ReadLe32 (Data) |
+         ((UINT64)ReadLe32 (Data + 4) << 32);
+}
+
+STATIC
+EFI_STATUS
+ReadExact (
+  IN EFI_FILE_PROTOCOL *File,
+  IN UINT64 Offset,
+  OUT VOID *Buffer,
+  IN UINTN Size
+  )
+{
+  EFI_STATUS Status;
+  UINTN Total;
+  UINTN Chunk;
+
+  Status = File->SetPosition (File, Offset);
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  Total = 0;
+  while (Total < Size) {
+    Chunk = Size - Total;
+    Status = File->Read (File, &Chunk, (UINT8 *)Buffer + Total);
+    if (EFI_ERROR (Status) || Chunk == 0) {
+      return EFI_DEVICE_ERROR;
+    }
+    Total += Chunk;
+  }
+
+  return EFI_SUCCESS;
+}
+
+STATIC
+UINT64
+AlignUp (
+  IN UINT64 Value,
+  IN UINT32 Alignment
+  )
+{
+  return (Value + Alignment - 1) & ~((UINT64)Alignment - 1);
+}
+
+EFI_STATUS
+EFIAPI
+AndroidStageBootImage (
+  IN EFI_FILE_PROTOCOL *Directory,
+  IN CONST CHAR16 *FileName
+  )
+{
+  EFI_STATUS Status;
+  EFI_FILE_PROTOCOL *File;
+  EFI_FILE_INFO *Info;
+  UINTN InfoSize;
+  UINT8 Header[ANDROID_PAGE_SIZE];
+  UINT8 KernelHeader[64];
+  UINT32 KernelSize;
+  UINT32 RamdiskSize;
+  UINT32 SecondSize;
+  UINT32 PageSize;
+  UINT32 HeaderVersion;
+  UINT64 KernelOffset;
+  UINT64 RamdiskOffset;
+  UINT64 SecondOffset;
+  UINT64 ImageEnd;
+  UINT64 KernelTextOffset;
+  UINT64 KernelImageSize;
+  UINT64 KernelPages;
+  UINT64 RamdiskPages;
+  EFI_PHYSICAL_ADDRESS KernelAddress;
+  EFI_PHYSICAL_ADDRESS RamdiskAddress;
+  BOOLEAN KernelAllocated;
+  BOOLEAN RamdiskAllocated;
+
+  File = NULL;
+  Info = NULL;
+  KernelAddress = 0;
+  RamdiskAddress = 0;
+  KernelAllocated = FALSE;
+  RamdiskAllocated = FALSE;
+
+  if (Directory == NULL || FileName == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Status = Directory->Open (
+                        Directory,
+                        &File,
+                        (CHAR16 *)FileName,
+                        EFI_FILE_MODE_READ,
+                        0
+                        );
+  if (EFI_ERROR (Status)) {
+    return Status;
+  }
+
+  InfoSize = 0;
+  Status = File->GetInfo (File, &gEfiFileInfoGuid, &InfoSize, NULL);
+  if (Status != EFI_BUFFER_TOO_SMALL || InfoSize == 0) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  InfoSize,
+                  (VOID **)&Info
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = File->GetInfo (File, &gEfiFileInfoGuid, &InfoSize, Info);
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  if (Info->FileSize < ANDROID_PAGE_SIZE ||
+      Info->FileSize > 0x10000000ULL) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  Status = ReadExact (File, 0, Header, sizeof (Header));
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  if (CompareMem (Header, "ANDROID!", 8) != 0) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  KernelSize = ReadLe32 (Header + 8);
+  RamdiskSize = ReadLe32 (Header + 16);
+  SecondSize = ReadLe32 (Header + 24);
+  PageSize = ReadLe32 (Header + 36);
+  HeaderVersion = ReadLe32 (Header + 40);
+
+  if (HeaderVersion != ANDROID_HEADER_V0 ||
+      PageSize < ANDROID_PAGE_SIZE ||
+      PageSize > 65536 ||
+      (PageSize & (PageSize - 1)) != 0 ||
+      KernelSize == 0 || KernelSize > ANDROID_MAX_KERNEL ||
+      RamdiskSize == 0 || RamdiskSize > ANDROID_MAX_RAMDISK) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  KernelOffset = PageSize;
+  RamdiskOffset = KernelOffset + AlignUp (KernelSize, PageSize);
+  SecondOffset = RamdiskOffset + AlignUp (RamdiskSize, PageSize);
+  ImageEnd = SecondOffset + AlignUp (SecondSize, PageSize);
+
+  if (RamdiskOffset < KernelOffset ||
+      SecondOffset < RamdiskOffset ||
+      ImageEnd < SecondOffset ||
+      ImageEnd > Info->FileSize) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  Status = ReadExact (File, KernelOffset, KernelHeader, sizeof (KernelHeader));
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  if (ReadLe32 (KernelHeader + 56) != ARM64_IMAGE_MAGIC) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  KernelTextOffset = ReadLe64 (KernelHeader + 8);
+  KernelImageSize = ReadLe64 (KernelHeader + 16);
+  if (KernelImageSize < KernelSize ||
+      KernelImageSize > ANDROID_MAX_KERNEL_MEM ||
+      KernelTextOffset > 0x200000) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  Status = ReadExact (File, RamdiskOffset, Header, 2);
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+  if (Header[0] != 0x1F || Header[1] != 0x8B) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  KernelPages = EFI_SIZE_TO_PAGES ((UINTN)KernelImageSize);
+  RamdiskPages = EFI_SIZE_TO_PAGES ((UINTN)RamdiskSize);
+
+  Status = gBS->AllocatePages (
+                  AllocateAnyPages,
+                  EfiLoaderData,
+                  (UINTN)KernelPages,
+                  &KernelAddress
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+  KernelAllocated = TRUE;
+
+  Status = gBS->AllocatePages (
+                  AllocateAnyPages,
+                  EfiLoaderData,
+                  (UINTN)RamdiskPages,
+                  &RamdiskAddress
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+  RamdiskAllocated = TRUE;
+
+  SetMem ((VOID *)(UINTN)KernelAddress, (UINTN)EFI_PAGES_TO_SIZE (KernelPages), 0);
+  Status = ReadExact (
+             File,
+             KernelOffset,
+             (VOID *)(UINTN)KernelAddress,
+             KernelSize
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = ReadExact (
+             File,
+             RamdiskOffset,
+             (VOID *)(UINTN)RamdiskAddress,
+             RamdiskSize
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Print (L"\nChargement temporaire reussi.\n");
+  Print (L"Noyau ARM64 : %u octets, memoire image : 0x%Lx\n",
+         KernelSize, KernelImageSize);
+  Print (L"Ramdisk gzip : %u octets\n", RamdiskSize);
+  Print (L"Adresse tampon noyau : 0x%Lx\n", KernelAddress);
+  Print (L"Adresse tampon ramdisk : 0x%Lx\n", RamdiskAddress);
+  Print (L"Ces adresses sont temporaires, pas les adresses finales de boot.\n");
+  Print (L"Aucun transfert au noyau n'a ete effectue.\n");
+  {
+    EFI_INPUT_KEY Key;
+    Print (L"Appuyez sur une touche pour liberer les tampons.\n");
+    WaitForEvent (1, &gST->ConIn->WaitForKey, &(UINTN){0});
+    gST->ConIn->ReadKeyStroke (gST->ConIn, &Key);
+  }
+
+  Status = EFI_SUCCESS;
+
+Done:
+  if (RamdiskAllocated) {
+    gBS->FreePages (RamdiskAddress, (UINTN)RamdiskPages);
+  }
+  if (KernelAllocated) {
+    gBS->FreePages (KernelAddress, (UINTN)KernelPages);
+  }
+  if (Info != NULL) {
+    gBS->FreePool (Info);
+  }
+  if (File != NULL) {
+    File->Close (File);
+  }
+
+  if (EFI_ERROR (Status)) {
+    Print (L"\nEchec du chargement Android : %r\n", Status);
+  }
+  return Status;
+}
