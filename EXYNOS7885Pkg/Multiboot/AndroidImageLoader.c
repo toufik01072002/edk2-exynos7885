@@ -80,6 +80,15 @@ ReadBe32 (
 }
 
 STATIC
+UINT64
+ReadBe64 (
+  IN CONST UINT8 *Data
+  )
+{
+  return ((UINT64)ReadBe32 (Data) << 32) | ReadBe32 (Data + 4);
+}
+
+STATIC
 VOID
 WriteBe32 (
   OUT UINT8 *Data,
@@ -282,6 +291,11 @@ PatchFdtInitrd (
   )
 {
   UINT32 TotalSize;
+  UINT32 ReserveMapOffset;
+  UINT32 ReserveMapPosition;
+  UINT64 ReserveAddress;
+  UINT64 ReserveSize;
+  BOOLEAN ReserveMapTerminated;
   UINT32 StructOffset;
   UINT32 StringsOffset;
   UINT32 StringsSize;
@@ -516,11 +530,46 @@ ValidateFdtReservedMemory (
   TotalSize = ReadBe32 (Fdt + 4);
   StructOffset = ReadBe32 (Fdt + 8);
   StringsOffset = ReadBe32 (Fdt + 12);
+  ReserveMapOffset = ReadBe32 (Fdt + 16);
   StringsSize = ReadBe32 (Fdt + 32);
   StructSize = ReadBe32 (Fdt + 36);
   if (TotalSize < 40 || TotalSize > BufferSize ||
       StructOffset > TotalSize || StructSize > TotalSize - StructOffset ||
-      StringsOffset > TotalSize || StringsSize > TotalSize - StringsOffset) {
+      StringsOffset > TotalSize || StringsSize > TotalSize - StringsOffset ||
+      ReserveMapOffset < 40 || (ReserveMapOffset & 7U) != 0 ||
+      ReserveMapOffset > TotalSize || TotalSize - ReserveMapOffset < 16) {
+    return EFI_COMPROMISED_DATA;
+  }
+
+  //
+  // Check the FDT memory-reservation block in addition to /reserved-memory.
+  // Entries are big-endian 64-bit address/size pairs, terminated by 0, 0.
+  //
+  ReserveMapPosition = ReserveMapOffset;
+  ReserveMapTerminated = FALSE;
+  while (TotalSize - ReserveMapPosition >= 16) {
+    ReserveAddress = ReadBe64 (Fdt + ReserveMapPosition);
+    ReserveSize = ReadBe64 (Fdt + ReserveMapPosition + 8);
+    ReserveMapPosition += 16;
+
+    if (ReserveAddress == 0 && ReserveSize == 0) {
+      ReserveMapTerminated = TRUE;
+      break;
+    }
+    if (ReserveSize == 0 ||
+        ReserveAddress > MAX_UINT64 - ReserveSize) {
+      return EFI_COMPROMISED_DATA;
+    }
+
+    if (RangesOverlap (KernelBase, KernelSize, ReserveAddress, ReserveSize) ||
+        RangesOverlap (RamdiskBase, RamdiskSize, ReserveAddress, ReserveSize) ||
+        RangesOverlap (InitrdBase, InitrdSize, ReserveAddress, ReserveSize) ||
+        RangesOverlap (FdtBase, FdtSize, ReserveAddress, ReserveSize)) {
+      return EFI_SECURITY_VIOLATION;
+    }
+  }
+
+  if (!ReserveMapTerminated) {
     return EFI_COMPROMISED_DATA;
   }
 
