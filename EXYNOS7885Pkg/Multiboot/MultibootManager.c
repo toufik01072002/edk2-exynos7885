@@ -1089,32 +1089,6 @@ typedef struct {
 
 STATIC
 BOOLEAN
-LinuxFileExists (
-  IN EFI_FILE_PROTOCOL *Directory,
-  IN CONST CHAR16 *Name
-  )
-{
-  EFI_STATUS Status;
-  EFI_FILE_PROTOCOL *File;
-
-  File = NULL;
-  Status = Directory->Open (
-                        Directory,
-                        &File,
-                        (CHAR16 *)Name,
-                        EFI_FILE_MODE_READ,
-                        0
-                        );
-  if (EFI_ERROR (Status) || File == NULL) {
-    return FALSE;
-  }
-
-  File->Close (File);
-  return TRUE;
-}
-
-STATIC
-BOOLEAN
 InspectLinuxComponent (
   IN EFI_FILE_PROTOCOL *Directory,
   IN CONST CHAR16 *Name,
