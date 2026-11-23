@@ -1195,6 +1195,11 @@ LaunchLinuxManager (
   EFI_FILE_PROTOCOL *MultibootDirectory;
   EFI_FILE_PROTOCOL *LinuxDirectory;
   EFI_FILE_PROTOCOL *DistroDirectory;
+  EFI_FILE_PROTOCOL *MediaDirectory;
+  EFI_FILE_PROTOCOL *UserDirectory;
+  EFI_FILE_PROTOCOL *UefiDirectory;
+  EFI_FILE_PROTOCOL *AlpineDirectory;
+  EFI_FILE_PROTOCOL *VirtualBootDirectory;
   EFI_INPUT_KEY Key;
   BOOLEAN Found;
 
@@ -1202,6 +1207,11 @@ LaunchLinuxManager (
   Entries = NULL;
   DistroCount = 0;
   Selected = 0;
+  MediaDirectory = NULL;
+  UserDirectory = NULL;
+  UefiDirectory = NULL;
+  AlpineDirectory = NULL;
+  VirtualBootDirectory = NULL;
 
   Status = gBS->AllocatePool (
                   EfiBootServicesData,
@@ -1338,6 +1348,136 @@ LaunchLinuxManager (
 
     LinuxDirectory->Close (LinuxDirectory);
     MultibootDirectory->Close (MultibootDirectory);
+  }
+
+  //
+  // Discover the Alpine installation stored on internal eMMC volume 5.
+  // This is the same \media\0\UEFI tree already used by Android launch.
+  //
+  if (VolumeCount >= 5 && DistroCount < MAX_LINUX_DISTROS) {
+    MediaDirectory = NULL;
+    UserDirectory = NULL;
+    UefiDirectory = NULL;
+    AlpineDirectory = NULL;
+    VirtualBootDirectory = NULL;
+
+    Status = Volumes[4].Root->Open (
+                                Volumes[4].Root,
+                                &MediaDirectory,
+                                L"media",
+                                EFI_FILE_MODE_READ,
+                                0
+                                );
+    if (!EFI_ERROR (Status) && MediaDirectory != NULL) {
+      Status = MediaDirectory->Open (
+                                 MediaDirectory,
+                                 &UserDirectory,
+                                 L"0",
+                                 EFI_FILE_MODE_READ,
+                                 0
+                                 );
+    }
+
+    if (!EFI_ERROR (Status) && UserDirectory != NULL) {
+      Status = UserDirectory->Open (
+                                UserDirectory,
+                                &UefiDirectory,
+                                L"UEFI",
+                                EFI_FILE_MODE_READ,
+                                0
+                                );
+    }
+
+    if (!EFI_ERROR (Status) && UefiDirectory != NULL) {
+      Status = UefiDirectory->Open (
+                                UefiDirectory,
+                                &AlpineDirectory,
+                                L"Alpine",
+                                EFI_FILE_MODE_READ,
+                                0
+                                );
+    }
+
+    if (!EFI_ERROR (Status) && AlpineDirectory != NULL) {
+      Status = AlpineDirectory->Open (
+                                AlpineDirectory,
+                                &VirtualBootDirectory,
+                                L"virtual-boot",
+                                EFI_FILE_MODE_READ,
+                                0
+                                );
+    }
+
+    if (!EFI_ERROR (Status) && VirtualBootDirectory != NULL) {
+      Distros[DistroCount].KernelValid =
+        InspectLinuxComponent (
+          VirtualBootDirectory, L"Image", 1,
+          &Distros[DistroCount].KernelSize
+          );
+      Distros[DistroCount].HasKernel =
+        Distros[DistroCount].KernelValid;
+
+      Distros[DistroCount].InitrdValid =
+        InspectLinuxComponent (
+          VirtualBootDirectory, L"initramfs-alpine.cpio.gz", 0,
+          &Distros[DistroCount].InitrdSize
+          );
+      Distros[DistroCount].HasInitrd =
+        Distros[DistroCount].InitrdValid;
+      if (Distros[DistroCount].HasInitrd) {
+        CopyName (
+          Distros[DistroCount].InitrdFileName,
+          L"initramfs-alpine.cpio.gz",
+          64
+          );
+      }
+
+      Distros[DistroCount].DtbValid =
+        InspectLinuxComponent (
+          VirtualBootDirectory, L"exynos7885-a205w-virtual.dtb", 2,
+          &Distros[DistroCount].DtbSize
+          );
+      Distros[DistroCount].HasDtb =
+        Distros[DistroCount].DtbValid;
+      if (Distros[DistroCount].HasDtb) {
+        CopyName (
+          Distros[DistroCount].DtbFileName,
+          L"exynos7885-a205w-virtual.dtb",
+          64
+          );
+      }
+
+      CopyName (Distros[DistroCount].Name, L"Alpine", 64);
+      CopyName (
+        Distros[DistroCount].VolumeLabel,
+        Volumes[4].Label,
+        64
+        );
+      Distros[DistroCount].Directory = VirtualBootDirectory;
+      VirtualBootDirectory = NULL;
+      DistroCount++;
+    }
+
+    if (VirtualBootDirectory != NULL) {
+      VirtualBootDirectory->Close (VirtualBootDirectory);
+      VirtualBootDirectory = NULL;
+    }
+    if (AlpineDirectory != NULL) {
+      AlpineDirectory->Close (AlpineDirectory);
+      AlpineDirectory = NULL;
+    }
+    if (UefiDirectory != NULL) {
+      UefiDirectory->Close (UefiDirectory);
+      UefiDirectory = NULL;
+    }
+    if (UserDirectory != NULL) {
+      UserDirectory->Close (UserDirectory);
+      UserDirectory = NULL;
+    }
+    if (MediaDirectory != NULL) {
+      MediaDirectory->Close (MediaDirectory);
+      MediaDirectory = NULL;
+    }
   }
 
   if (DistroCount == 0) {
