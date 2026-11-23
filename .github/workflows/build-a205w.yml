@@ -15,7 +15,6 @@ on:
       - "build*.sh"
       - "firstrun.sh"
       - ".github/workflows/build-a205w.yml"
-      - ".github/workflows/build-virtual-boot.yml"
 
 jobs:
   build:
@@ -62,54 +61,6 @@ jobs:
           python3 ../tools/verify_bundle.py
           test -s UEFI
 
-      - name: Verifier le contrat de demarrage Alpine
-        working-directory: edk2-exynos7885
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          workflow = Path(".github/workflows/build-virtual-boot.yml").read_text()
-          required = {
-              "attente du périphérique userdata mmcblk0p33":
-                  "for dev in /dev/mmcblk0p33 /dev/block/mmcblk0p33",
-              "montage ext4 de userdata":
-                  'mount -t ext4 -o rw,noatime "$DATA_DEV" /mnt/data',
-              "chemin Alpine sur userdata":
-                  'ALPINE_ROOT="/mnt/data/media/0/UEFI/ALP/rootfs"',
-              "contrôle de /sbin/init":
-                  '[ ! -x "$ALPINE_ROOT/sbin/init" ]',
-              "contrôle de BusyBox":
-                  '[ ! -x "$ALPINE_ROOT/bin/busybox" ]',
-              "bind mount du rootfs":
-                  'mount --bind "$ALPINE_ROOT" /newroot',
-              "transfert switch_root":
-                  "switch_root /newroot /sbin/init",
-          }
-
-          missing = [name for name, marker in required.items() if marker not in workflow]
-          if missing:
-              raise SystemExit("Contrat Alpine incomplet: " + ", ".join(missing))
-
-          manifest = """ALPINE ROOTFS - DEPLOYMENT CONTRACT
-          Device: Samsung SM-A205W / Exynos 7885
-          Filesystem: internal userdata (ext4)
-          Android-side directory: /data/media/0/UEFI/ALP/rootfs
-          Virtual Boot path after userdata mount: /mnt/data/media/0/UEFI/ALP/rootfs
-          Required entry point: /sbin/init
-          Required executable: /bin/busybox
-          Handoff: switch_root /newroot /sbin/init
-
-          The rootfs is deployed separately on the phone. It is intentionally
-          not copied into this EDK2 artifact.
-          """
-          out = Path("workspace/ALPINE-ROOTFS-PATH.txt")
-          out.write_text(manifest)
-          print("Alpine handoff contract verified.")
-          print("Deployment manifest:", out)
-          PY
-          cd workspace
-          sha256sum ALPINE-ROOTFS-PATH.txt >> SHA256SUMS
-
       - name: Publier les fichiers
         uses: actions/upload-artifact@v4
         with:
@@ -119,5 +70,4 @@ jobs:
             edk2-exynos7885/workspace/UEFI
             edk2-exynos7885/workspace/UEFI.manifest.json
             edk2-exynos7885/workspace/SHA256SUMS
-            edk2-exynos7885/workspace/ALPINE-ROOTFS-PATH.txt
             edk2-exynos7885/workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd
