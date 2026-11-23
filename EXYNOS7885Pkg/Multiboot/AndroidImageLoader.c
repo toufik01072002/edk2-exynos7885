@@ -718,6 +718,7 @@ STATIC
 EFI_STATUS
 LoadAndPatchFdt (
   IN EFI_FILE_PROTOCOL *Directory,
+  IN CONST CHAR16 *FileName,
   IN UINT64 InitrdStart,
   IN UINT64 InitrdEnd,
   OUT UINT8 **FdtBuffer,
@@ -732,7 +733,7 @@ LoadAndPatchFdt (
   UINT32 TotalSize;
   UINT8 *Buffer;
 
-  if (Directory == NULL || FdtBuffer == NULL || FdtBufferSize == NULL) {
+  if (Directory == NULL || FileName == NULL || FdtBuffer == NULL || FdtBufferSize == NULL) {
     return EFI_INVALID_PARAMETER;
   }
 
@@ -745,7 +746,7 @@ LoadAndPatchFdt (
   Status = Directory->Open (
                         Directory,
                         &File,
-                        L"running.dtb",
+                        (CHAR16 *)FileName,
                         EFI_FILE_MODE_READ,
                         0
                         );
@@ -958,6 +959,546 @@ ValidateBootMemoryMap (
   gBS->FreePool (MemoryMap);
   return Status;
 }
+
+
+EFI_STATUS
+EFIAPI
+LinuxStageComponents (
+  IN EFI_HANDLE ImageHandle,
+  IN EFI_FILE_PROTOCOL *Directory,
+  IN CONST CHAR16 *InitrdFileName,
+  IN CONST CHAR16 *DtbFileName
+  )
+{
+  EFI_STATUS Status;
+  EFI_FILE_PROTOCOL *KernelFile;
+  EFI_FILE_PROTOCOL *InitrdFile;
+  EFI_FILE_INFO *KernelInfo;
+  EFI_FILE_INFO *InitrdInfo;
+  UINTN InfoSize;
+  UINT8 KernelHeader[64];
+  UINT8 InitrdHeader[2];
+  UINT64 KernelSize;
+  UINT64 InitrdSize;
+  UINT64 KernelTextOffset;
+  UINT64 KernelImageSize;
+  UINT64 KernelFlags;
+  UINT64 KernelAllocationSize;
+  UINT64 KernelAllocationEnd;
+  UINT64 KernelAlignedBase;
+  UINT64 KernelWindowBase;
+  UINT64 InitrdWindowBase;
+  UINT64 KernelImageEnd;
+  UINT64 InitrdEnd;
+  UINT64 KernelPages;
+  UINT64 RamdiskPages;
+  EFI_PHYSICAL_ADDRESS MaxAddress;
+  EFI_PHYSICAL_ADDRESS KernelAddress;
+  EFI_PHYSICAL_ADDRESS KernelAllocationAddress;
+  EFI_PHYSICAL_ADDRESS RamdiskAddress;
+  EFI_PHYSICAL_ADDRESS DecompressedRamdiskAddress;
+  EFI_PHYSICAL_ADDRESS FdtAddress;
+  UINTN DecompressedRamdiskSize;
+  UINTN DecompressedRamdiskPages;
+  UINT8 *FdtBuffer;
+  UINTN FdtBufferSize;
+  UINTN FdtPages;
+  UINT32 CpioEntryCount;
+  EFI_MEMORY_DESCRIPTOR *MemoryMap;
+  UINTN MemoryMapSize;
+  UINTN MemoryMapCapacity;
+  UINTN MapKey;
+  UINTN DescriptorSize;
+  UINT32 DescriptorVersion;
+  UINTN Attempt;
+  UINTN CurrentEl;
+  BOOLEAN KernelAllocated;
+  BOOLEAN RamdiskAllocated;
+  BOOLEAN DecompressedRamdiskAllocated;
+  BOOLEAN FdtAllocated;
+
+  KernelFile = NULL;
+  InitrdFile = NULL;
+  KernelInfo = NULL;
+  InitrdInfo = NULL;
+  KernelSize = 0;
+  InitrdSize = 0;
+  KernelAddress = 0;
+  KernelAllocationAddress = 0;
+  RamdiskAddress = 0;
+  DecompressedRamdiskAddress = 0;
+  DecompressedRamdiskSize = 0;
+  DecompressedRamdiskPages = 0;
+  FdtAddress = 0;
+  FdtBuffer = NULL;
+  FdtBufferSize = 0;
+  FdtPages = 0;
+  CpioEntryCount = 0;
+  MemoryMap = NULL;
+  MemoryMapSize = 0;
+  MemoryMapCapacity = 0;
+  MapKey = 0;
+  DescriptorSize = 0;
+  DescriptorVersion = 0;
+  CurrentEl = 0;
+  KernelPages = 0;
+  RamdiskPages = 0;
+  KernelAllocated = FALSE;
+  RamdiskAllocated = FALSE;
+  DecompressedRamdiskAllocated = FALSE;
+  FdtAllocated = FALSE;
+
+  if (ImageHandle == NULL || Directory == NULL ||
+      InitrdFileName == NULL || DtbFileName == NULL) {
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Print (L"\nPreparation du demarrage Linux ARM64...\n");
+
+  Status = Directory->Open (
+                        Directory,
+                        &KernelFile,
+                        L"Image",
+                        EFI_FILE_MODE_READ,
+                        0
+                        );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  InfoSize = 0;
+  Status = KernelFile->GetInfo (
+                         KernelFile,
+                         &gEfiFileInfoGuid,
+                         &InfoSize,
+                         NULL
+                         );
+  if (Status != EFI_BUFFER_TOO_SMALL || InfoSize == 0) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  InfoSize,
+                  (VOID **)&KernelInfo
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = KernelFile->GetInfo (
+                         KernelFile,
+                         &gEfiFileInfoGuid,
+                         &InfoSize,
+                         KernelInfo
+                         );
+  if (EFI_ERROR (Status) ||
+      (KernelInfo->Attribute & EFI_FILE_DIRECTORY) != 0 ||
+      KernelInfo->FileSize < sizeof (KernelHeader) ||
+      KernelInfo->FileSize > 0x10000000ULL ||
+      KernelInfo->FileSize > MAX_UINTN) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  KernelSize = KernelInfo->FileSize;
+  Status = ReadExact (KernelFile, 0, KernelHeader, sizeof (KernelHeader));
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  if (ReadLe32 (KernelHeader + 56) != ARM64_IMAGE_MAGIC) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  KernelTextOffset = ReadLe64 (KernelHeader + 8);
+  KernelImageSize = ReadLe64 (KernelHeader + 16);
+  KernelFlags = ReadLe64 (KernelHeader + 24);
+
+  if (KernelImageSize == 0 ||
+      KernelImageSize < KernelSize ||
+      KernelImageSize > 0x20000000ULL ||
+      KernelTextOffset > 0x200000ULL ||
+      (KernelFlags & 0xFFFFFFFFFFFFFFF1ULL) != 0 ||
+      ((KernelFlags >> 1) & 3) != 1) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  if (KernelTextOffset > MAX_UINT64 - KernelImageSize - 0x1FFFFFULL) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  KernelAllocationSize = KernelTextOffset + KernelImageSize + 0x1FFFFFULL;
+  KernelPages = EFI_SIZE_TO_PAGES ((UINTN)KernelAllocationSize);
+  MaxAddress = 0xFFFFFFFFULL;
+
+  Status = gBS->AllocatePages (
+                  AllocateMaxAddress,
+                  EfiLoaderData,
+                  (UINTN)KernelPages,
+                  &MaxAddress
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  KernelAllocationAddress = MaxAddress;
+  KernelAllocated = TRUE;
+  KernelAlignedBase = AlignUp (KernelAllocationAddress, 0x200000);
+  KernelAddress = KernelAlignedBase + KernelTextOffset;
+  KernelAllocationEnd =
+    KernelAllocationAddress + EFI_PAGES_TO_SIZE ((UINTN)KernelPages);
+
+  if (KernelAlignedBase < KernelAllocationAddress ||
+      KernelAddress < KernelAlignedBase ||
+      KernelAddress > MAX_UINT64 - KernelImageSize ||
+      KernelAddress + KernelImageSize > KernelAllocationEnd ||
+      KernelAllocationEnd > 0x100000000ULL) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Done;
+  }
+
+  SetMem ((VOID *)(UINTN)KernelAddress, (UINTN)KernelImageSize, 0);
+  Status = ReadExact (
+             KernelFile,
+             0,
+             (VOID *)(UINTN)KernelAddress,
+             (UINTN)KernelSize
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  KernelWindowBase = KernelAddress & ~0x3FFFFFFFULL;
+
+  Status = Directory->Open (
+                        Directory,
+                        &InitrdFile,
+                        (CHAR16 *)InitrdFileName,
+                        EFI_FILE_MODE_READ,
+                        0
+                        );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  InfoSize = 0;
+  Status = InitrdFile->GetInfo (
+                         InitrdFile,
+                         &gEfiFileInfoGuid,
+                         &InfoSize,
+                         NULL
+                         );
+  if (Status != EFI_BUFFER_TOO_SMALL || InfoSize == 0) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  InfoSize,
+                  (VOID **)&InitrdInfo
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = InitrdFile->GetInfo (
+                         InitrdFile,
+                         &gEfiFileInfoGuid,
+                         &InfoSize,
+                         InitrdInfo
+                         );
+  if (EFI_ERROR (Status) ||
+      (InitrdInfo->Attribute & EFI_FILE_DIRECTORY) != 0 ||
+      InitrdInfo->FileSize < sizeof (InitrdHeader) ||
+      InitrdInfo->FileSize > 0x04000000ULL ||
+      InitrdInfo->FileSize > MAX_UINTN) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  InitrdSize = InitrdInfo->FileSize;
+  Status = ReadExact (InitrdFile, 0, InitrdHeader, sizeof (InitrdHeader));
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+  if (InitrdHeader[0] != 0x1F || InitrdHeader[1] != 0x8B) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  RamdiskPages = EFI_SIZE_TO_PAGES ((UINTN)InitrdSize);
+  MaxAddress = 0xFFFFFFFFULL;
+  Status = gBS->AllocatePages (
+                  AllocateMaxAddress,
+                  EfiLoaderData,
+                  (UINTN)RamdiskPages,
+                  &MaxAddress
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+  RamdiskAddress = MaxAddress;
+  RamdiskAllocated = TRUE;
+
+  Status = ReadExact (
+             InitrdFile,
+             0,
+             (VOID *)(UINTN)RamdiskAddress,
+             (UINTN)InitrdSize
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = GzipDecompress (
+             (CONST UINT8 *)(UINTN)RamdiskAddress,
+             (UINTN)InitrdSize,
+             KernelWindowBase,
+             KernelWindowBase + 0x40000000ULL,
+             &DecompressedRamdiskAddress,
+             &DecompressedRamdiskSize,
+             &DecompressedRamdiskPages
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+  DecompressedRamdiskAllocated = TRUE;
+
+  if (DecompressedRamdiskSize == 0 ||
+      DecompressedRamdiskAddress > MAX_UINT64 - DecompressedRamdiskSize ||
+      KernelAddress > MAX_UINT64 - KernelImageSize) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  KernelImageEnd = KernelAddress + KernelImageSize;
+  InitrdEnd = DecompressedRamdiskAddress + DecompressedRamdiskSize;
+  InitrdWindowBase = DecompressedRamdiskAddress & ~0x3FFFFFFFULL;
+
+  if (KernelWindowBase != InitrdWindowBase ||
+      ((KernelImageEnd - 1) & ~0x3FFFFFFFULL) != KernelWindowBase ||
+      ((InitrdEnd - 1) & ~0x3FFFFFFFULL) != KernelWindowBase) {
+    Status = EFI_OUT_OF_RESOURCES;
+    goto Done;
+  }
+
+  Status = ValidateNewcCpio (
+             (CONST UINT8 *)(UINTN)DecompressedRamdiskAddress,
+             DecompressedRamdiskSize,
+             &CpioEntryCount
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = LoadAndPatchFdt (
+             Directory,
+             DtbFileName,
+             DecompressedRamdiskAddress,
+             InitrdEnd,
+             &FdtBuffer,
+             &FdtBufferSize
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  FdtPages = EFI_SIZE_TO_PAGES (FdtBufferSize);
+  MaxAddress = 0xFFFFFFFFULL;
+  Status = gBS->AllocatePages (
+                  AllocateMaxAddress,
+                  EfiLoaderData,
+                  FdtPages,
+                  &MaxAddress
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  FdtAddress = MaxAddress;
+  FdtAllocated = TRUE;
+
+  if ((FdtAddress & 7ULL) != 0 ||
+      FdtBufferSize < 40 ||
+      FdtBufferSize > 0x00200000U ||
+      FdtAddress > 0x100000000ULL - FdtBufferSize) {
+    Status = EFI_BAD_BUFFER_SIZE;
+    goto Done;
+  }
+
+  CopyMem ((VOID *)(UINTN)FdtAddress, FdtBuffer, FdtBufferSize);
+
+  Status = ValidateFdtReservedMemory (
+             FdtBuffer,
+             FdtBufferSize,
+             KernelAllocationAddress,
+             EFI_PAGES_TO_SIZE ((UINTN)KernelPages),
+             RamdiskAddress,
+             EFI_PAGES_TO_SIZE ((UINTN)RamdiskPages),
+             DecompressedRamdiskAddress,
+             EFI_PAGES_TO_SIZE (DecompressedRamdiskPages),
+             FdtAddress,
+             EFI_PAGES_TO_SIZE (FdtPages)
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = ValidateBootMemoryMap (
+             KernelAllocationAddress,
+             EFI_PAGES_TO_SIZE ((UINTN)KernelPages),
+             RamdiskAddress,
+             EFI_PAGES_TO_SIZE ((UINTN)RamdiskPages),
+             DecompressedRamdiskAddress,
+             EFI_PAGES_TO_SIZE (DecompressedRamdiskPages),
+             FdtAddress,
+             EFI_PAGES_TO_SIZE (FdtPages)
+             );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  __asm__ volatile ("mrs %0, CurrentEL" : "=r" (CurrentEl));
+  if (CurrentEl != 0x4 && CurrentEl != 0x8) {
+    Status = EFI_UNSUPPORTED;
+    goto Done;
+  }
+
+  Print (L"Noyau ARM64 : 0x%Lx (%Lu octets)\n", KernelAddress, KernelSize);
+  Print (L"Initramfs   : 0x%Lx (%u entrees CPIO)\n",
+         DecompressedRamdiskAddress, CpioEntryCount);
+  Print (L"DTB         : 0x%Lx (%u octets)\n", FdtAddress, FdtBufferSize);
+  Print (L"Validation memoire terminee. Transfert Linux...\n");
+
+  if (KernelFile != NULL) {
+    KernelFile->Close (KernelFile);
+    KernelFile = NULL;
+  }
+  if (InitrdFile != NULL) {
+    InitrdFile->Close (InitrdFile);
+    InitrdFile = NULL;
+  }
+  if (KernelInfo != NULL) {
+    gBS->FreePool (KernelInfo);
+    KernelInfo = NULL;
+  }
+  if (InitrdInfo != NULL) {
+    gBS->FreePool (InitrdInfo);
+    InitrdInfo = NULL;
+  }
+  if (FdtBuffer != NULL) {
+    gBS->FreePool (FdtBuffer);
+    FdtBuffer = NULL;
+  }
+  if (RamdiskAllocated) {
+    gBS->FreePages (RamdiskAddress, (UINTN)RamdiskPages);
+    RamdiskAllocated = FALSE;
+  }
+
+  MemoryMapSize = 0;
+  Status = gBS->GetMemoryMap (
+                  &MemoryMapSize,
+                  MemoryMap,
+                  &MapKey,
+                  &DescriptorSize,
+                  &DescriptorVersion
+                  );
+  if (Status != EFI_BUFFER_TOO_SMALL ||
+      DescriptorSize < sizeof (EFI_MEMORY_DESCRIPTOR) ||
+      DescriptorSize > MAX_UINTN / 8 ||
+      MemoryMapSize > MAX_UINTN - DescriptorSize * 8) {
+    Status = EFI_DEVICE_ERROR;
+    goto Done;
+  }
+
+  MemoryMapCapacity = MemoryMapSize + DescriptorSize * 8;
+  Status = gBS->AllocatePool (
+                  EfiLoaderData,
+                  MemoryMapCapacity,
+                  (VOID **)&MemoryMap
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  for (Attempt = 0; Attempt < 2; Attempt++) {
+    MemoryMapSize = MemoryMapCapacity;
+    Status = gBS->GetMemoryMap (
+                    &MemoryMapSize,
+                    MemoryMap,
+                    &MapKey,
+                    &DescriptorSize,
+                    &DescriptorVersion
+                    );
+    if (EFI_ERROR (Status)) {
+      break;
+    }
+
+    Status = gBS->ExitBootServices (ImageHandle, MapKey);
+    if (!EFI_ERROR (Status)) {
+      break;
+    }
+  }
+
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Arm64LinuxHandoff (
+    KernelAddress,
+    KernelImageSize,
+    DecompressedRamdiskAddress,
+    DecompressedRamdiskSize,
+    FdtAddress,
+    FdtBufferSize
+    );
+  CpuDeadLoop ();
+  return EFI_ABORTED;
+
+Done:
+  if (KernelFile != NULL) {
+    KernelFile->Close (KernelFile);
+  }
+  if (InitrdFile != NULL) {
+    InitrdFile->Close (InitrdFile);
+  }
+  if (KernelInfo != NULL) {
+    gBS->FreePool (KernelInfo);
+  }
+  if (InitrdInfo != NULL) {
+    gBS->FreePool (InitrdInfo);
+  }
+  if (MemoryMap != NULL) {
+    gBS->FreePool (MemoryMap);
+  }
+  if (FdtBuffer != NULL) {
+    gBS->FreePool (FdtBuffer);
+  }
+  if (FdtAllocated) {
+    gBS->FreePages (FdtAddress, FdtPages);
+  }
+  if (DecompressedRamdiskAllocated) {
+    gBS->FreePages (
+           DecompressedRamdiskAddress,
+           DecompressedRamdiskPages
+           );
+  }
+  if (RamdiskAllocated) {
+    gBS->FreePages (RamdiskAddress, (UINTN)RamdiskPages);
+  }
+  if (KernelAllocated) {
+    gBS->FreePages (KernelAllocationAddress, (UINTN)KernelPages);
+  }
+
+  return Status;
+}
+
 
 EFI_STATUS
 EFIAPI
@@ -1275,6 +1816,7 @@ AndroidStageBootImage (
 
   Status = LoadAndPatchFdt (
              Directory,
+             L"running.dtb",
              DecompressedRamdiskAddress,
              InitrdEnd,
              &FdtBuffer,
