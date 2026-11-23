@@ -1079,6 +1079,12 @@ typedef struct {
   BOOLEAN HasKernel;
   BOOLEAN HasInitrd;
   BOOLEAN HasDtb;
+  BOOLEAN KernelValid;
+  BOOLEAN InitrdValid;
+  BOOLEAN DtbValid;
+  UINT64 KernelSize;
+  UINT64 InitrdSize;
+  UINT64 DtbSize;
 } LINUX_DISTRO_ENTRY;
 
 STATIC
@@ -1105,6 +1111,92 @@ LinuxFileExists (
 
   File->Close (File);
   return TRUE;
+}
+
+STATIC
+BOOLEAN
+InspectLinuxComponent (
+  IN EFI_FILE_PROTOCOL *Directory,
+  IN CONST CHAR16 *Name,
+  IN UINTN ComponentType,
+  OUT UINT64 *FileSize
+  )
+{
+  EFI_STATUS Status;
+  EFI_FILE_PROTOCOL *File;
+  EFI_FILE_INFO *Info;
+  UINTN InfoSize;
+  UINT8 Header[64];
+  BOOLEAN Valid;
+
+  if (FileSize != NULL) {
+    *FileSize = 0;
+  }
+
+  File = NULL;
+  Info = NULL;
+  Valid = FALSE;
+
+  Status = Directory->Open (
+                        Directory,
+                        &File,
+                        (CHAR16 *)Name,
+                        EFI_FILE_MODE_READ,
+                        0
+                        );
+  if (EFI_ERROR (Status) || File == NULL) {
+    return FALSE;
+  }
+
+  InfoSize = 0;
+  Status = File->GetInfo (File, &gEfiFileInfoGuid, &InfoSize, NULL);
+  if (Status != EFI_BUFFER_TOO_SMALL || InfoSize == 0) {
+    goto Done;
+  }
+
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  InfoSize,
+                  (VOID **)&Info
+                  );
+  if (EFI_ERROR (Status)) {
+    goto Done;
+  }
+
+  Status = File->GetInfo (File, &gEfiFileInfoGuid, &InfoSize, Info);
+  if (EFI_ERROR (Status) ||
+      (Info->Attribute & EFI_FILE_DIRECTORY) != 0 ||
+      Info->FileSize == 0) {
+    goto Done;
+  }
+
+  if (FileSize != NULL) {
+    *FileSize = Info->FileSize;
+  }
+
+  if (ComponentType == 0) {
+    Valid = TRUE;
+  } else if (ComponentType == 1 && Info->FileSize >= sizeof (Header)) {
+    Status = ReadFileExact (File, 0, Header, sizeof (Header));
+    if (!EFI_ERROR (Status) &&
+        ReadLe32 (Header + 56) == ARM64_IMAGE_MAGIC) {
+      Valid = TRUE;
+    }
+  } else if (ComponentType == 2 && Info->FileSize >= 4) {
+    Status = ReadFileExact (File, 0, Header, 4);
+    if (!EFI_ERROR (Status) &&
+        Header[0] == 0xD0 && Header[1] == 0x0D &&
+        Header[2] == 0xFE && Header[3] == 0xED) {
+      Valid = TRUE;
+    }
+  }
+
+Done:
+  if (Info != NULL) {
+    gBS->FreePool (Info);
+  }
+  File->Close (File);
+  return Valid;
 }
 
 STATIC
@@ -1197,24 +1289,50 @@ LaunchLinuxManager (
           continue;
         }
 
+        Distros[DistroCount].KernelValid =
+          InspectLinuxComponent (
+            DistroDirectory, L"Image", 1,
+            &Distros[DistroCount].KernelSize
+            );
         Distros[DistroCount].HasKernel =
-          LinuxFileExists (DistroDirectory, L"Image");
-        Distros[DistroCount].HasInitrd =
-          LinuxFileExists (DistroDirectory, L"initramfs");
-        Distros[DistroCount].HasDtb =
-          LinuxFileExists (DistroDirectory, L"running.dtb");
-
+          Distros[DistroCount].KernelValid;
         if (!Distros[DistroCount].HasKernel) {
           Distros[DistroCount].HasKernel =
-            LinuxFileExists (DistroDirectory, L"Image.gz");
+            InspectLinuxComponent (
+              DistroDirectory, L"Image.gz", 0,
+              &Distros[DistroCount].KernelSize
+              );
+          Distros[DistroCount].KernelValid = FALSE;
         }
+
+        Distros[DistroCount].InitrdValid =
+          InspectLinuxComponent (
+            DistroDirectory, L"initramfs", 0,
+            &Distros[DistroCount].InitrdSize
+            );
+        Distros[DistroCount].HasInitrd = Distros[DistroCount].InitrdValid;
         if (!Distros[DistroCount].HasInitrd) {
           Distros[DistroCount].HasInitrd =
-            LinuxFileExists (DistroDirectory, L"initrd.img");
+            InspectLinuxComponent (
+              DistroDirectory, L"initrd.img", 0,
+              &Distros[DistroCount].InitrdSize
+              );
+          Distros[DistroCount].InitrdValid = Distros[DistroCount].HasInitrd;
         }
+
+        Distros[DistroCount].DtbValid =
+          InspectLinuxComponent (
+            DistroDirectory, L"running.dtb", 2,
+            &Distros[DistroCount].DtbSize
+            );
+        Distros[DistroCount].HasDtb = Distros[DistroCount].DtbValid;
         if (!Distros[DistroCount].HasDtb) {
-          Distros[DistroCount].HasDtb =
-            LinuxFileExists (DistroDirectory, L"exynos7885-a205w.dtb");
+          Distros[DistroCount].DtbValid =
+            InspectLinuxComponent (
+              DistroDirectory, L"exynos7885-a205w.dtb", 2,
+              &Distros[DistroCount].DtbSize
+              );
+          Distros[DistroCount].HasDtb = Distros[DistroCount].DtbValid;
         }
 
         CopyName (
@@ -1258,13 +1376,23 @@ LaunchLinuxManager (
 
     for (Index = 0; Index < DistroCount; Index++) {
       Print (
-        L"%c %s  [Noyau:%s Initramfs:%s DTB:%s]\n",
+        L"%c %s  [Image:%s Initramfs:%s DTB:%s]\n",
         Index == Selected ? L'>' : L' ',
         Distros[Index].Name,
-        Distros[Index].HasKernel ? L"OK" : L"--",
-        Distros[Index].HasInitrd ? L"OK" : L"--",
-        Distros[Index].HasDtb ? L"OK" : L"--"
+        Distros[Index].KernelValid ? L"ARM64" :
+          (Distros[Index].HasKernel ? L"COMPRESSE" : L"--"),
+        Distros[Index].InitrdValid ? L"OK" : L"--",
+        Distros[Index].DtbValid ? L"FDT" : L"--"
         );
+      if (Distros[Index].HasKernel) {
+        Print (L"    Noyau : %Lu octets\n", Distros[Index].KernelSize);
+      }
+      if (Distros[Index].HasInitrd) {
+        Print (L"    Initramfs : %Lu octets\n", Distros[Index].InitrdSize);
+      }
+      if (Distros[Index].HasDtb) {
+        Print (L"    DTB : %Lu octets\n", Distros[Index].DtbSize);
+      }
       Print (L"    Volume : %s\n", Distros[Index].VolumeLabel);
     }
 
@@ -1289,18 +1417,22 @@ LaunchLinuxManager (
     gST->ConOut->ClearScreen (gST->ConOut);
     Print (L"Distribution : %s\n\n", Distros[Selected].Name);
 
-    Found = Distros[Selected].HasKernel &&
-            Distros[Selected].HasInitrd &&
-            Distros[Selected].HasDtb;
+    Found = Distros[Selected].KernelValid &&
+            Distros[Selected].InitrdValid &&
+            Distros[Selected].DtbValid;
     if (!Found) {
       Print (L"Configuration incomplete :\n");
-      if (!Distros[Selected].HasKernel) Print (L" - Image ou Image.gz manquant\n");
-      if (!Distros[Selected].HasInitrd) Print (L" - initramfs ou initrd.img manquant\n");
-      if (!Distros[Selected].HasDtb) Print (L" - running.dtb ou exynos7885-a205w.dtb manquant\n");
+      if (!Distros[Selected].HasKernel) Print (L" - Image ARM64 ou Image.gz manquant/invalide\n");
+      else if (!Distros[Selected].KernelValid) Print (L" - Image.gz detecte : compression non prise en charge par cette validation\n");
+      if (!Distros[Selected].HasInitrd) Print (L" - initramfs ou initrd.img absent/invalide\n");
+      if (!Distros[Selected].HasDtb) Print (L" - DTB absent ou signature FDT invalide\n");
     } else {
-      Print (L"Noyau, initramfs et DTB detectes.\n");
-      Print (L"Le profil Linux est reconnu.\n\n");
-      Print (L"Le chargeur de noyau Linux autonome sera raccorde a cette entree.\n");
+      Print (L"Validation des formats :\n");
+      Print (L" - Noyau ARM64 : signature validee\n");
+      Print (L" - Initramfs : fichier non vide\n");
+      Print (L" - DTB : signature FDT validee\n\n");
+      Print (L"Profil pret pour l'etape de preparation du lancement.\n");
+      Print (L"Aucun noyau n'est execute a ce stade.\n");
     }
 
     Print (L"\nAppuyez sur une touche pour revenir a la liste.\n");
