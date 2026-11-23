@@ -103,7 +103,12 @@ jobs:
             olddefconfig
 
           echo "=== Resolved Virtual Boot kernel configuration ==="
-          grep -E '^(CONFIG_KEXEC=|CONFIG_ECT=|# CONFIG_ECT is not set|CONFIG_NR_CPUS=)' out/.config || true
+          grep -E '^(CONFIG_KEXEC=|CONFIG_ECT=|# CONFIG_ECT is not set|CONFIG_NR_CPUS=|CONFIG_DEVTMPFS=)' out/.config || true
+
+          grep -qx 'CONFIG_DEVTMPFS=y' out/.config || {
+            echo "ERROR: CONFIG_DEVTMPFS is required for initramfs /dev"
+            exit 1
+          }
 
           grep -qx 'CONFIG_KEXEC=y' out/.config || {
             echo "ERROR: CONFIG_KEXEC is not enabled"
