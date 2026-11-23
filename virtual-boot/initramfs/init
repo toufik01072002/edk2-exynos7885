@@ -1,0 +1,113 @@
+#!/bin/busybox sh
+# Alpine handoff initramfs - Samsung SM-A205W / Exynos 7885
+# Standalone source. It is not wired to a build workflow.
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export HOME=/root
+
+LOG=""
+say() {
+    echo "$*"
+    if [ -n "$LOG" ]; then
+        echo "$*" >> "$LOG"
+    fi
+}
+
+rescue_shell() {
+    reason="$1"
+    say ""
+    say "[RESCUE] $reason"
+    say "[RESCUE] Diagnostics follow."
+    say "=== kernel command line ==="
+    cat /proc/cmdline 2>/dev/null
+    say "=== mounts ==="
+    cat /proc/mounts 2>/dev/null
+    say "=== block devices ==="
+    ls -l /dev/mmc* /dev/block 2>/dev/null
+    say "=== memory ==="
+    head -20 /proc/meminfo 2>/dev/null
+    say "=== recent kernel log ==="
+    dmesg 2>/dev/null | tail -80
+    say "[RESCUE] Interactive shell (exit will return to this rescue loop)."
+    while :; do
+        /bin/sh
+        say "[RESCUE] Shell exited; reopening in 2 seconds."
+        sleep 2
+    done
+}
+
+# Prepare a usable console before any essential mount can fail.
+mkdir -p /dev /proc /sys /run /tmp /mnt/data /newroot
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+if [ ! -c /dev/console ]; then
+    mknod -m 600 /dev/console c 5 1 2>/dev/null || true
+fi
+if [ ! -c /dev/kmsg ]; then
+    mknod -m 600 /dev/kmsg c 1 11 2>/dev/null || true
+fi
+
+if [ -c /dev/console ]; then
+    exec </dev/console >/dev/console 2>&1
+else
+    echo "[FATAL] /dev/console is unavailable" >/dev/kmsg 2>/dev/null
+    # Do not return to the bootloader or silently exit.
+    while :; do sleep 3600; done
+fi
+
+say "=============================================="
+say " Virtual Boot - Samsung SM-A205W / Exynos 7885"
+say " Alpine Linux handoff"
+say "=============================================="
+say "[INFO] initramfs init started."
+say "[INFO] Kernel command line:"
+cat /proc/cmdline 2>/dev/null
+
+mount -t proc proc /proc || rescue_shell "cannot mount /proc"
+mount -t sysfs sysfs /sys || rescue_shell "cannot mount /sys"
+mount -t tmpfs tmpfs /run || rescue_shell "cannot mount /run"
+mount -t tmpfs tmpfs /tmp || rescue_shell "cannot mount /tmp"
+
+DATA_DEV=""
+attempt=0
+while [ "$attempt" -lt 15 ] && [ -z "$DATA_DEV" ]; do
+    for dev in /dev/mmcblk0p33 /dev/block/mmcblk0p33; do
+        if [ -b "$dev" ]; then
+            DATA_DEV="$dev"
+            break
+        fi
+    done
+    [ -n "$DATA_DEV" ] || sleep 1
+    attempt=$((attempt + 1))
+done
+
+[ -n "$DATA_DEV" ] || rescue_shell "userdata block device mmcblk0p33 not found"
+
+say "[INFO] Mounting userdata from $DATA_DEV..."
+mount -t ext4 -o rw,noatime "$DATA_DEV" /mnt/data ||
+    rescue_shell "failed to mount userdata as ext4"
+
+ALPINE_ROOT="/mnt/data/media/0/UEFI/ALP/rootfs"
+LOG="/mnt/data/media/0/UEFI/ALP/virtual-boot-init.log"
+say "[INFO] Diagnostic log: $LOG"
+say "[INFO] Expected Alpine rootfs: $ALPINE_ROOT"
+dmesg > "$LOG" 2>/dev/null
+
+if [ ! -x "$ALPINE_ROOT/sbin/init" ] || [ ! -x "$ALPINE_ROOT/bin/busybox" ]; then
+    rescue_shell "Alpine rootfs missing or incomplete"
+fi
+
+say "[OK] Alpine rootfs found."
+mkdir -p "$ALPINE_ROOT/dev" "$ALPINE_ROOT/proc" "$ALPINE_ROOT/sys" "$ALPINE_ROOT/run"
+
+mount --bind "$ALPINE_ROOT" /newroot ||
+    rescue_shell "cannot bind-mount Alpine rootfs"
+
+mount -o move /dev /newroot/dev || rescue_shell "cannot move /dev"
+mount -o move /proc /newroot/proc || rescue_shell "cannot move /proc"
+mount -o move /sys /newroot/sys || rescue_shell "cannot move /sys"
+mount -o move /run /newroot/run || rescue_shell "cannot move /run"
+
+say "[OK] Transferring execution to Alpine /sbin/init..."
+exec switch_root /newroot /sbin/init
+
+rescue_shell "switch_root failed or returned unexpectedly"
