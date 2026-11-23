@@ -27,7 +27,9 @@
 
     chosen {
         stdout-path = "serial2:115200n8";
-        bootargs = "console=ttySAC2,115200 earlycon=exynos4210_serial,0x13820000 rootwait ro clk_ignore_unused";
+        bootargs = "console=ttySAC2,115200 earlycon=exynos4210_serial,0x13820000 rdinit=/init rootwait ro clk_ignore_unused";
+        linux,initrd-start = /bits/ 64 <0x0>;
+        linux,initrd-end = /bits/ 64 <0x0>;
         linux,initrd-start = <0x84000000>;
         linux,initrd-end = <0x85FFFFFF>;
     };
