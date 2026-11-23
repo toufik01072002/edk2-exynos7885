@@ -1085,6 +1085,8 @@ typedef struct {
   UINT64 KernelSize;
   UINT64 InitrdSize;
   UINT64 DtbSize;
+  CHAR16 InitrdFileName[64];
+  CHAR16 DtbFileName[64];
 } LINUX_DISTRO_ENTRY;
 
 STATIC
@@ -1176,7 +1178,7 @@ Done:
 STATIC
 VOID
 LaunchLinuxManager (
-  VOID
+  IN EFI_HANDLE ImageHandle
   )
 {
   EFI_STATUS Status;
@@ -1285,13 +1287,18 @@ LaunchLinuxManager (
             &Distros[DistroCount].InitrdSize
             );
         Distros[DistroCount].HasInitrd = Distros[DistroCount].InitrdValid;
-        if (!Distros[DistroCount].HasInitrd) {
+        if (Distros[DistroCount].HasInitrd) {
+          CopyName (Distros[DistroCount].InitrdFileName, L"initramfs", 64);
+        } else {
           Distros[DistroCount].HasInitrd =
             InspectLinuxComponent (
               DistroDirectory, L"initrd.img", 0,
               &Distros[DistroCount].InitrdSize
               );
           Distros[DistroCount].InitrdValid = Distros[DistroCount].HasInitrd;
+          if (Distros[DistroCount].HasInitrd) {
+            CopyName (Distros[DistroCount].InitrdFileName, L"initrd.img", 64);
+          }
         }
 
         Distros[DistroCount].DtbValid =
@@ -1300,13 +1307,18 @@ LaunchLinuxManager (
             &Distros[DistroCount].DtbSize
             );
         Distros[DistroCount].HasDtb = Distros[DistroCount].DtbValid;
-        if (!Distros[DistroCount].HasDtb) {
+        if (Distros[DistroCount].HasDtb) {
+          CopyName (Distros[DistroCount].DtbFileName, L"running.dtb", 64);
+        } else {
           Distros[DistroCount].DtbValid =
             InspectLinuxComponent (
               DistroDirectory, L"exynos7885-a205w.dtb", 2,
               &Distros[DistroCount].DtbSize
               );
           Distros[DistroCount].HasDtb = Distros[DistroCount].DtbValid;
+          if (Distros[DistroCount].HasDtb) {
+            CopyName (Distros[DistroCount].DtbFileName, L"exynos7885-a205w.dtb", 64);
+          }
         }
 
         CopyName (
@@ -1405,8 +1417,14 @@ LaunchLinuxManager (
       Print (L" - Noyau ARM64 : signature validee\n");
       Print (L" - Initramfs : fichier non vide\n");
       Print (L" - DTB : signature FDT validee\n\n");
-      Print (L"Profil pret pour l'etape de preparation du lancement.\n");
-      Print (L"Aucun noyau n'est execute a ce stade.\n");
+      Print (L"Demarrage de la distribution Linux...\n");
+      Status = LinuxStageComponents (
+                 ImageHandle,
+                 Distros[Selected].Directory,
+                 Distros[Selected].InitrdFileName,
+                 Distros[Selected].DtbFileName
+                 );
+      Print (L"Le transfert Linux a echoue : %r\n", Status);
     }
 
     Print (L"\nAppuyez sur une touche pour revenir a la liste.\n");
@@ -1622,7 +1640,7 @@ UefiMain (
     if (Selected == 0) {
       LaunchAndroidFromVolumes (ImageHandle);
     } else if (Selected == 1) {
-      LaunchLinuxManager ();
+      LaunchLinuxManager (ImageHandle);
     } else {
       gST->ConOut->ClearScreen (gST->ConOut);
       Print (L"Le demarrage Windows ARM64 n'est pas encore integre.\\n");
