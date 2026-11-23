@@ -38,7 +38,11 @@ rescue_shell() {
 
 # Prepare a usable console before any essential mount can fail.
 mkdir -p /dev /proc /sys /run /tmp /mnt/data /newroot
-mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+if ! mount -t devtmpfs devtmpfs /dev 2>/dev/null; then
+    # The current A20 kernel may not have CONFIG_DEVTMPFS.
+    # Keep /dev writable so required nodes can be created manually.
+    mount -t tmpfs -o mode=0755 tmpfs /dev 2>/dev/null || true
+fi
 if [ ! -c /dev/console ]; then
     mknod -m 600 /dev/console c 5 1 2>/dev/null || true
 fi
@@ -69,14 +73,33 @@ mount -t tmpfs tmpfs /tmp || rescue_shell "cannot mount /tmp"
 
 DATA_DEV=""
 attempt=0
+mkdir -p /dev/block
 while [ "$attempt" -lt 15 ] && [ -z "$DATA_DEV" ]; do
-    for dev in /dev/mmcblk0p33 /dev/block/mmcblk0p33; do
-        if [ -b "$dev" ]; then
-            DATA_DEV="$dev"
-            break
-        fi
-    done
-    [ -n "$DATA_DEV" ] || sleep 1
+    # Without devtmpfs, create the userdata node from the kernel's sysfs
+    # major:minor value. This avoids hard-coding a device number.
+    if [ ! -b /dev/mmcblk0p33 ] && [ -r /sys/class/block/mmcblk0p33/dev ]; then
+        DEVNUM="$(cat /sys/class/block/mmcblk0p33/dev 2>/dev/null)"
+        case "$DEVNUM" in
+            *:*)
+                DEV_MAJOR="${DEVNUM%%:*}"
+                DEV_MINOR="${DEVNUM##*:}"
+                case "$DEV_MAJOR$DEV_MINOR" in
+                    ""|*[!0-9]*) ;;
+                    *)
+                        mknod -m 600 /dev/mmcblk0p33 b "$DEV_MAJOR" "$DEV_MINOR" 2>/dev/null || true
+                        ;;
+                esac
+                ;;
+        esac
+    fi
+
+    if [ -b /dev/mmcblk0p33 ]; then
+        DATA_DEV="/dev/mmcblk0p33"
+    elif [ -b /dev/block/mmcblk0p33 ]; then
+        DATA_DEV="/dev/block/mmcblk0p33"
+    else
+        sleep 1
+    fi
     attempt=$((attempt + 1))
 done
 
