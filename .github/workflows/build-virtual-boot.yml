@@ -497,11 +497,16 @@ jobs:
           echo ""
 
           DATA_DEV=""
-          for dev in /dev/mmcblk0p33 /dev/block/mmcblk0p33; do
-            if [ -b "$dev" ]; then
-              DATA_DEV="$dev"
-              break
-            fi
+          attempt=0
+          while [ "$attempt" -lt 10 ] && [ -z "$DATA_DEV" ]; do
+            for dev in /dev/mmcblk0p33 /dev/block/mmcblk0p33; do
+              if [ -b "$dev" ]; then
+                DATA_DEV="$dev"
+                break
+              fi
+            done
+            [ -n "$DATA_DEV" ] || sleep 1
+            attempt=$((attempt + 1))
           done
 
           if [ -z "$DATA_DEV" ]; then
@@ -535,9 +540,9 @@ jobs:
           mount -o move /run /newroot/run || rescue_shell "cannot move /run"
 
           echo "[OK] Transferring execution to Alpine /sbin/init..."
-          exec switch_root /newroot /sbin/init
+          switch_root /newroot /sbin/init
 
-          rescue_shell "switch_root returned unexpectedly"
+          rescue_shell "switch_root failed or returned unexpectedly"
           INITEOF
           chmod +x initramfs/init
 
