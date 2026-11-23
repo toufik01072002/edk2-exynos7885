@@ -12,6 +12,7 @@ on:
     paths:
       - "EXYNOS7885Pkg/**"
       - "BootShim/**"
+      - "virtual-boot/**"
       - "build*.sh"
       - "firstrun.sh"
       - ".github/workflows/build-a205w.yml"
