@@ -1068,6 +1068,263 @@ FindInternalVolumes (
   return VolumeCount;
 }
 
+
+#define MAX_LINUX_DISTROS  32
+
+typedef struct {
+  CHAR16 Name[64];
+  CHAR16 VolumeLabel[64];
+  EFI_FILE_PROTOCOL *Directory;
+  BOOLEAN HasKernel;
+  BOOLEAN HasInitrd;
+  BOOLEAN HasDtb;
+} LINUX_DISTRO_ENTRY;
+
+STATIC
+BOOLEAN
+LinuxFileExists (
+  IN EFI_FILE_PROTOCOL *Directory,
+  IN CONST CHAR16 *Name
+  )
+{
+  EFI_STATUS Status;
+  EFI_FILE_PROTOCOL *File;
+
+  File = NULL;
+  Status = Directory->Open (
+                        Directory,
+                        &File,
+                        (CHAR16 *)Name,
+                        EFI_FILE_MODE_READ,
+                        0
+                        );
+  if (EFI_ERROR (Status) || File == NULL) {
+    return FALSE;
+  }
+
+  File->Close (File);
+  return TRUE;
+}
+
+STATIC
+VOID
+LaunchLinuxManager (
+  VOID
+  )
+{
+  EFI_STATUS Status;
+  MULTIBOOT_VOLUME Volumes[MAX_VOLUMES];
+  LINUX_DISTRO_ENTRY Distros[MAX_LINUX_DISTROS];
+  FILE_ENTRY *Entries;
+  UINTN VolumeCount;
+  UINTN DistroCount;
+  UINTN EntryCount;
+  UINTN VolumeIndex;
+  UINTN EntryIndex;
+  UINTN Selected;
+  UINTN Index;
+  EFI_FILE_PROTOCOL *MultibootDirectory;
+  EFI_FILE_PROTOCOL *LinuxDirectory;
+  EFI_FILE_PROTOCOL *DistroDirectory;
+  EFI_INPUT_KEY Key;
+  BOOLEAN Found;
+
+  SetMem (Distros, sizeof (Distros), 0);
+  Entries = NULL;
+  DistroCount = 0;
+  Selected = 0;
+
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  sizeof (FILE_ENTRY) * MAX_ENTRIES,
+                  (VOID **)&Entries
+                  );
+  if (EFI_ERROR (Status)) {
+    Print (L"Memoire insuffisante pour rechercher Linux.\n");
+    return;
+  }
+
+  VolumeCount = FindInternalVolumes (Volumes);
+
+  for (VolumeIndex = 0;
+       VolumeIndex < VolumeCount && DistroCount < MAX_LINUX_DISTROS;
+       VolumeIndex++) {
+    MultibootDirectory = NULL;
+    LinuxDirectory = NULL;
+
+    Status = Volumes[VolumeIndex].Root->Open (
+                                         Volumes[VolumeIndex].Root,
+                                         &MultibootDirectory,
+                                         L"Multiboot",
+                                         EFI_FILE_MODE_READ,
+                                         0
+                                         );
+    if (EFI_ERROR (Status) || MultibootDirectory == NULL) {
+      continue;
+    }
+
+    Status = MultibootDirectory->Open (
+                                  MultibootDirectory,
+                                  &LinuxDirectory,
+                                  L"Linux",
+                                  EFI_FILE_MODE_READ,
+                                  0
+                                  );
+    if (EFI_ERROR (Status) || LinuxDirectory == NULL) {
+      MultibootDirectory->Close (MultibootDirectory);
+      continue;
+    }
+
+    Status = ReadDirectory (LinuxDirectory, Entries, &EntryCount);
+    if (!EFI_ERROR (Status)) {
+      for (EntryIndex = 0;
+           EntryIndex < EntryCount && DistroCount < MAX_LINUX_DISTROS;
+           EntryIndex++) {
+        if (!Entries[EntryIndex].IsDirectory) {
+          continue;
+        }
+
+        DistroDirectory = NULL;
+        Status = LinuxDirectory->Open (
+                                  LinuxDirectory,
+                                  &DistroDirectory,
+                                  Entries[EntryIndex].Name,
+                                  EFI_FILE_MODE_READ,
+                                  0
+                                  );
+        if (EFI_ERROR (Status) || DistroDirectory == NULL) {
+          continue;
+        }
+
+        Distros[DistroCount].HasKernel =
+          LinuxFileExists (DistroDirectory, L"Image");
+        Distros[DistroCount].HasInitrd =
+          LinuxFileExists (DistroDirectory, L"initramfs");
+        Distros[DistroCount].HasDtb =
+          LinuxFileExists (DistroDirectory, L"running.dtb");
+
+        if (!Distros[DistroCount].HasKernel) {
+          Distros[DistroCount].HasKernel =
+            LinuxFileExists (DistroDirectory, L"Image.gz");
+        }
+        if (!Distros[DistroCount].HasInitrd) {
+          Distros[DistroCount].HasInitrd =
+            LinuxFileExists (DistroDirectory, L"initrd.img");
+        }
+        if (!Distros[DistroCount].HasDtb) {
+          Distros[DistroCount].HasDtb =
+            LinuxFileExists (DistroDirectory, L"exynos7885-a205w.dtb");
+        }
+
+        CopyName (
+          Distros[DistroCount].Name,
+          Entries[EntryIndex].Name,
+          64
+          );
+        CopyName (
+          Distros[DistroCount].VolumeLabel,
+          Volumes[VolumeIndex].Label,
+          64
+          );
+        Distros[DistroCount].Directory = DistroDirectory;
+        DistroCount++;
+      }
+    }
+
+    LinuxDirectory->Close (LinuxDirectory);
+    MultibootDirectory->Close (MultibootDirectory);
+  }
+
+  if (DistroCount == 0) {
+    gST->ConOut->ClearScreen (gST->ConOut);
+    Print (L"========================================\n");
+    Print (L"        GESTIONNAIRE LINUX ARM64\n");
+    Print (L"========================================\n\n");
+    Print (L"Aucune distribution detectee.\n\n");
+    Print (L"Emplacement recherche sur les volumes internes :\n");
+    Print (L"\\Multiboot\\Linux\\<Distribution>\\\n\n");
+    Print (L"Fichiers attendus : Image, initramfs, running.dtb\n");
+    Print (L"Appuyez sur une touche pour revenir.\n");
+    WaitForKey (&Key);
+    goto Cleanup;
+  }
+
+  while (TRUE) {
+    gST->ConOut->ClearScreen (gST->ConOut);
+    Print (L"========================================\n");
+    Print (L"        GESTIONNAIRE LINUX ARM64\n");
+    Print (L"========================================\n\n");
+
+    for (Index = 0; Index < DistroCount; Index++) {
+      Print (
+        L"%c %s  [Noyau:%s Initramfs:%s DTB:%s]\n",
+        Index == Selected ? L'>' : L' ',
+        Distros[Index].Name,
+        Distros[Index].HasKernel ? L"OK" : L"--",
+        Distros[Index].HasInitrd ? L"OK" : L"--",
+        Distros[Index].HasDtb ? L"OK" : L"--"
+        );
+      Print (L"    Volume : %s\n", Distros[Index].VolumeLabel);
+    }
+
+    Print (L"\nHaut/Bas : Navigation | Entree : Selection | ESC : Retour\n");
+    Status = WaitForKey (&Key);
+    if (EFI_ERROR (Status) || Key.ScanCode == SCAN_ESC) {
+      break;
+    }
+
+    if (Key.ScanCode == SCAN_UP) {
+      Selected = (Selected == 0) ? DistroCount - 1 : Selected - 1;
+      continue;
+    }
+    if (Key.ScanCode == SCAN_DOWN) {
+      Selected = (Selected + 1) % DistroCount;
+      continue;
+    }
+    if (Key.UnicodeChar != L'\r' && Key.UnicodeChar != L'\n') {
+      continue;
+    }
+
+    gST->ConOut->ClearScreen (gST->ConOut);
+    Print (L"Distribution : %s\n\n", Distros[Selected].Name);
+
+    Found = Distros[Selected].HasKernel &&
+            Distros[Selected].HasInitrd &&
+            Distros[Selected].HasDtb;
+    if (!Found) {
+      Print (L"Configuration incomplete :\n");
+      if (!Distros[Selected].HasKernel) Print (L" - Image ou Image.gz manquant\n");
+      if (!Distros[Selected].HasInitrd) Print (L" - initramfs ou initrd.img manquant\n");
+      if (!Distros[Selected].HasDtb) Print (L" - running.dtb ou exynos7885-a205w.dtb manquant\n");
+    } else {
+      Print (L"Noyau, initramfs et DTB detectes.\n");
+      Print (L"Le profil Linux est reconnu.\n\n");
+      Print (L"Le chargeur de noyau Linux autonome sera raccorde a cette entree.\n");
+    }
+
+    Print (L"\nAppuyez sur une touche pour revenir a la liste.\n");
+    WaitForKey (&Key);
+  }
+
+Cleanup:
+  for (Index = 0; Index < DistroCount; Index++) {
+    if (Distros[Index].Directory != NULL) {
+      Distros[Index].Directory->Close (Distros[Index].Directory);
+    }
+  }
+
+  for (Index = 0; Index < VolumeCount; Index++) {
+    if (Volumes[Index].Root != NULL) {
+      Volumes[Index].Root->Close (Volumes[Index].Root);
+    }
+  }
+
+  if (Entries != NULL) {
+    gBS->FreePool (Entries);
+  }
+}
+
+
 STATIC
 VOID
 LaunchAndroidFromVolumes (
@@ -1257,13 +1514,11 @@ UefiMain (
 
     if (Selected == 0) {
       LaunchAndroidFromVolumes (ImageHandle);
+    } else if (Selected == 1) {
+      LaunchLinuxManager ();
     } else {
       gST->ConOut->ClearScreen (gST->ConOut);
-      if (Selected == 1) {
-        Print (L"Le demarrage Linux autonome n'est pas encore integre.\\n");
-      } else {
-        Print (L"Le demarrage Windows ARM64 n'est pas encore integre.\\n");
-      }
+      Print (L"Le demarrage Windows ARM64 n'est pas encore integre.\\n");
       Print (L"Appuyez sur une touche pour revenir au menu.\\n");
       WaitForKey (&Key);
     }
