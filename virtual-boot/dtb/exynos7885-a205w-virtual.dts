@@ -18,6 +18,7 @@
 #include <dt-bindings/sysmmu/sysmmu.h>
 #include <dt-bindings/thermal/thermal.h>
 #include "exynos7885-pm-domains.dtsi"
+#include "exynos7885-pinctrl.dtsi"
 
 
 
@@ -440,14 +441,37 @@
         ranges;
     };
 
-    /* DECON (display) */
-    decon_f: decon_f@0x14860000 {
+    /*
+     * A20 display path, ported from Kernel_SM-A205W:
+     * DECON_F -> DSIM_0 -> S6E8FC0 panel.
+     */
+    mipi_phy_dsim: phy_m4s4_dsi@11c80000 {
+        compatible = "samsung,mipi-phy-dsim";
+        samsung,pmu-syscon = <&pmu_system_controller>;
+        isolation = <0x678>;
+        owner = <0>;
+        #phy-cells = <1>;
+    };
+
+    dsim_0: dsim@14870000 {
+        compatible = "samsung,exynos7885-dsim";
+        reg = <0x0 0x14870000 0x100>;
+        interrupts = <0 125 0>;
+        phys = <&mipi_phy_dsim 0>;
+        phy-names = "dsim_dphy";
+        samsung,power-domain = <&pd_dispaud>;
+    };
+
+    decon_f: decon_f@14860000 {
         compatible = "samsung,exynos7885-decon";
         #pb-id-cells = <4>;
         reg = <0x0 0x14860000 0x10000>;
         interrupts = <0 115 0>, <0 114 0>, <0 113 0>, <0 112 0>;
         clock-names = "aclk";
         clocks = <&clock GATE_DPU_DECON0>;
+        pinctrl-names = "hw_te_on", "hw_te_off";
+        pinctrl-0 = <&decon_f_te_on>;
+        pinctrl-1 = <&decon_f_te_off>;
         samsung,power-domain = <&pd_dispaud>;
         max_win = <4>;
         default_win = <3>;
@@ -458,6 +482,65 @@
         #address-cells = <2>;
         #size-cells = <1>;
         ranges;
+        gpios = <&gpc0 3 0xf>;
+        te_eint {
+            reg = <0x0 0x139B0A38 0x4>;
+        };
+        cam-stat {
+            reg = <0x0 0x11c84064 0x4>;
+        };
+    };
+
+    decon_board_s6e8fc0: decon_board_s6e8fc0 {
+        gpio_det = <&gpa2 5 0x1>;
+        gpio_err = <&gpa1 1 0x1>;
+        gpio_con = <&gpg3 0 0x0>;
+        gpio_lcd_1p8 = <&gpg1 4 0>;
+        gpio_lcd_3p0 = <&gpg1 2 0>;
+        gpio_lcd_rst = <&gpg2 0 0>;
+
+        dsim_set_panel_power_enable {
+            type = "gpio,high", "gpio_lcd_1p8",
+                   "delay,usleep", "1000",
+                   "gpio,high", "gpio_lcd_3p0",
+                   "delay,usleep", "10000";
+        };
+        dsim_set_panel_power_disable {
+            type = "gpio,low", "gpio_lcd_rst",
+                   "gpio,low", "gpio_lcd_3p0",
+                   "gpio,low", "gpio_lcd_1p8";
+        };
+        dsim_reset_panel {
+            type = "gpio,high", "gpio_lcd_rst",
+                   "delay,usleep", "1000",
+                   "gpio,low", "gpio_lcd_rst",
+                   "delay,usleep", "1000",
+                   "gpio,high", "gpio_lcd_rst",
+                   "delay,usleep", "5000";
+        };
+    };
+
+    s6e8fc0: s6e8fc0 {
+        mode = <0>;
+        resolution = <720 1560>;
+        size = <68 147>;
+        timing,refresh = <60>;
+        timing,h-porch = <48 26 4>;
+        timing,v-porch = <5 17 2>;
+        timing,dsi-hs-clk = <552>;
+        timing,pms = <2 85 1>;
+        timing,dsi-escape-clk = <16>;
+        mic_en = <0>;
+        mic_ratio = <0>;
+        mic_ver = <0>;
+        type_of_ddi = <0>;
+        dsc_en = <0>;
+        dsc_cnt = <0>;
+        dsc_slice_num = <0>;
+        data_lane = <4>;
+        vt_compensation = <654>;
+        clklane_onoff = <1>;
+        decon_board = <&decon_board_s6e8fc0>;
     };
 
     /* PMU system controller */
@@ -699,4 +782,14 @@
         dump-base = <0x02052000>;
         dump-size = <0x1B000>;
     };
+};
+
+&dsim_0 {
+    lcd_info = <&s6e8fc0>;
+};
+
+&decon_f {
+    psr_mode = <0>;
+    trig_mode = <1>;
+    dsi_mode = <0>;
 };
