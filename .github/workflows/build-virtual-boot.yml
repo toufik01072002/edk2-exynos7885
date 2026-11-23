@@ -446,80 +446,98 @@ jobs:
           done
           cd ../..
 
-      - name: Create init script (diagnostic only - Phase 1)
+      - name: Create Alpine-aware init script with diagnostic fallback
         run: |
           cat > initramfs/init << 'INITEOF'
           #!/bin/busybox sh
-          # Virtual Boot init - SM-A205W Exynos 7885 (Phase 1)
-          # Diagnostic environment only - no UEFI handoff yet
+          # Virtual Boot init - Samsung SM-A205W / Exynos 7885
+          # Alpine rootfs on the internal userdata filesystem.
 
           export PATH=/bin:/sbin:/usr/bin:/usr/sbin
           export HOME=/root
 
-          # Mount essential filesystems
-          mount -t proc none /proc
-          mount -t sysfs none /sys
-          mount -t devtmpfs none /dev
-          mount -t tmpfs none /run
-          mount -t tmpfs none /tmp
+          rescue_shell() {
+            echo ""
+            echo "[RESCUE] Alpine handoff unavailable: $1"
+            echo "[RESCUE] Keeping the BusyBox diagnostic shell."
+            echo ""
+            echo "=== CPU ==="
+            cat /proc/cpuinfo 2>/dev/null | head -24
+            echo ""
+            echo "=== MEMORY ==="
+            cat /proc/meminfo 2>/dev/null | head -12
+            echo ""
+            echo "=== KERNEL CMDLINE ==="
+            cat /proc/cmdline 2>/dev/null
+            echo ""
+            echo "=== BLOCK DEVICES ==="
+            ls -l /dev/mmc* /dev/block 2>/dev/null
+            echo ""
+            echo "=== MOUNTS ==="
+            cat /proc/mounts 2>/dev/null
+            exec /bin/sh
+          }
 
-          # Set up console
+          mount -t proc proc /proc || rescue_shell "cannot mount /proc"
+          mount -t sysfs sysfs /sys || rescue_shell "cannot mount /sys"
+          mount -t devtmpfs devtmpfs /dev || rescue_shell "cannot mount /dev"
+          mount -t tmpfs tmpfs /run || rescue_shell "cannot mount /run"
+          mount -t tmpfs tmpfs /tmp || rescue_shell "cannot mount /tmp"
+
           exec 0</dev/console
           exec 1>/dev/console
           exec 2>/dev/console
 
-          echo "=========================================="
-          echo "Virtual Boot ARM64 - Samsung SM-A205W"
-          echo "Exynos 7885 - Phase 1: Diagnostic Environment"
-          echo "=========================================="
-          echo ""
-
-          # Diagnostic information
-          echo "[INFO] CPU info:"
-          cat /proc/cpuinfo | head -30
-          echo ""
-
-          echo "[INFO] Memory info:"
-          cat /proc/meminfo | head -20
-          echo ""
-
-          echo "[INFO] Memory map (iomem):"
-          cat /proc/iomem | grep -E "(System RAM|reserved|uefi|tima|seclog|cma|framebuffer|modem|gnss|wifi|abox)" | head -40
-          echo ""
-
+          echo "=============================================="
+          echo " Virtual Boot - Samsung SM-A205W / Exynos 7885"
+          echo " Alpine Linux handoff"
+          echo "=============================================="
           echo "[INFO] Kernel command line:"
           cat /proc/cmdline
           echo ""
 
-          echo "[INFO] DTB info:"
-          if [ -f /proc/device-tree/model ]; then
-            echo "Model: $(cat /proc/device-tree/model)"
-          fi
-          if [ -f /proc/device-tree/compatible ]; then
-            echo "Compatible: $(cat /proc/device-tree/compatible)"
-          fi
-          echo ""
-
-          # Check for UEFI FD at expected location
-          echo "[INFO] Checking for UEFI FD at 0x90020000..."
-          if [ -c /dev/mem ]; then
-            dd if=/dev/mem of=/tmp/uefi_check.bin bs=1 count=8 skip=$((0x90020030)) 2>/dev/null
-            if hexdump -C /tmp/uefi_check.bin 2>/dev/null | grep -q "41 52 4d 36"; then
-              echo "[OK] ARM64 magic found at 0x90020030 - UEFI FD present"
-            else
-              echo "[WARN] ARM64 magic NOT found at 0x90020030"
+          DATA_DEV=""
+          for dev in /dev/mmcblk0p33 /dev/block/mmcblk0p33; do
+            if [ -b "$dev" ]; then
+              DATA_DEV="$dev"
+              break
             fi
-          else
-            echo "[WARN] /dev/mem not available"
-          fi
-          echo ""
+          done
 
-          # Interactive shell for diagnostics
-          echo "[INFO] Entering diagnostic shell."
-          echo "[INFO] Available: hwinfo, dmesg, cat /proc/*, ls /sys/*, etc."
-          echo "[INFO] Phase 2 will add automated UEFI handoff."
-          echo ""
-          exec /bin/sh
+          if [ -z "$DATA_DEV" ]; then
+            rescue_shell "userdata block device mmcblk0p33 not found"
+          fi
+
+          mkdir -p /mnt/data /newroot
+          echo "[INFO] Mounting userdata from $DATA_DEV..."
+          if ! mount -t ext4 -o rw,noatime "$DATA_DEV" /mnt/data; then
+            rescue_shell "failed to mount userdata as ext4"
+          fi
+
+          ALPINE_ROOT="/mnt/data/media/0/UEFI/ALP/rootfs"
+          if [ ! -x "$ALPINE_ROOT/sbin/init" ] || [ ! -x "$ALPINE_ROOT/bin/busybox" ]; then
+            echo "[INFO] Expected Alpine rootfs: $ALPINE_ROOT"
+            rescue_shell "Alpine rootfs missing or incomplete; place the extracted rootfs at UEFI/ALP/rootfs"
+          fi
+
+          echo "[OK] Alpine rootfs found."
+          mkdir -p "$ALPINE_ROOT/dev" "$ALPINE_ROOT/proc" "$ALPINE_ROOT/sys" "$ALPINE_ROOT/run"
+
+          # switch_root requires the new root to be a mount point.
+          if ! mount --bind "$ALPINE_ROOT" /newroot; then
+            rescue_shell "cannot bind-mount Alpine rootfs"
+          fi
+
+          # Move kernel-managed filesystems into the new root before handoff.
+          mount -o move /dev /newroot/dev || rescue_shell "cannot move /dev"
+          mount -o move /proc /newroot/proc || rescue_shell "cannot move /proc"
+          mount -o move /sys /newroot/sys || rescue_shell "cannot move /sys"
+          mount -o move /run /newroot/run || rescue_shell "cannot move /run"
+
+          echo "[OK] Transferring execution to Alpine /sbin/init..."
+          exec switch_root /newroot /sbin/init
+
+          rescue_shell "switch_root returned unexpectedly"
           INITEOF
           chmod +x initramfs/init
 
