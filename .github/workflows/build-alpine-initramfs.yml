@@ -21,7 +21,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu wget bzip2 cpio gzip
+          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu qemu-user wget bzip2 cpio gzip
 
       - name: Build static ARM64 BusyBox
         env:
@@ -81,7 +81,7 @@ jobs:
           cd "$GITHUB_WORKSPACE"
 
           for app in switch_root mount sh ls cat umount dmesg head tail sleep mkdir mknod test echo; do
-            out/bin/busybox --list | grep -qx "$app" || {
+            qemu-aarch64 out/bin/busybox --list | grep -qx "$app" || {
               echo "ERROR: required BusyBox applet missing: $app"
               exit 1
             }
@@ -114,7 +114,7 @@ jobs:
           test -x sbin/switch_root
           grep -q 'ROOTFS FOUND' init
           grep -q '/mnt/data/media/0/UEFI/ALP/rootfs' init
-          ./bin/busybox --list | grep -qx switch_root
+          qemu-aarch64 ./bin/busybox --list | grep -qx switch_root
           cd ..
           echo "Initramfs archive validation: OK"
           cat initramfs-alpine.sha256
