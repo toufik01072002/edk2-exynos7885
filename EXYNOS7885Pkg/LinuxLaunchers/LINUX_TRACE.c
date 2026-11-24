@@ -17,9 +17,9 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
 
   Print(L"\n=== A205W LINUX TRACE LAUNCHER ===\n");
   Print(L"Mode: lanceur autonome; handoff ARM64 existant instrumente.\n");
-  S=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocol,(VOID **)&Loaded);
+  S=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocolGuid,(VOID **)&Loaded);
   if(EFI_ERROR(S) || Loaded==NULL) return S;
-  S=gBS->HandleProtocol(Loaded->DeviceHandle,&gEfiSimpleFileSystemProtocol,(VOID **)&Fs);
+  S=gBS->HandleProtocol(Loaded->DeviceHandle,&gEfiSimpleFileSystemProtocolGuid,(VOID **)&Fs);
   if(EFI_ERROR(S) || Fs==NULL) return S;
   S=Fs->OpenVolume(Fs,&Root);
   if(EFI_ERROR(S) || Root==NULL) return S;
