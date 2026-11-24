@@ -91,10 +91,12 @@ Arm64LinuxHandoff:
     dsb     sy
     msr     sctlr_el2, x9
     isb
+    HANDOFF_DIAG 0xA005
     tlbi    alle2
     tlbi    alle1
     dsb     sy
     isb
+    HANDOFF_DIAG 0xA006
     b       .Lbranch
 
 .Lel1:
@@ -106,16 +108,20 @@ Arm64LinuxHandoff:
     dsb     sy
     msr     sctlr_el1, x9
     isb
+    HANDOFF_DIAG 0xA005
     tlbi    vmalle1
     dsb     sy
     isb
+    HANDOFF_DIAG 0xA006
 
 .Lbranch:
+    HANDOFF_DIAG 0xA007
     /* Linux arm64 boot protocol: x0 = DTB, x1-x3 = 0. */
     mov     x0, x23
     mov     x1, xzr
     mov     x2, xzr
     mov     x3, xzr
+    HANDOFF_DIAG 0xA008
     br      x19
 
 .Lhalt:
