@@ -6,10 +6,14 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export HOME=/root
 
 LOG=""
+EARLY_LOG="/tmp/diag.txt"
 say() {
     echo "$*"
+    if [ -n "$EARLY_LOG" ]; then
+        echo "$*" >> "$EARLY_LOG" 2>/dev/null || true
+    fi
     if [ -n "$LOG" ]; then
-        echo "$*" >> "$LOG"
+        echo "$*" >> "$LOG" 2>/dev/null || true
     fi
 }
 
@@ -58,6 +62,11 @@ else
     while :; do sleep 3600; done
 fi
 
+# Start a temporary trace immediately; it is copied to persistent storage
+# as soon as Android userdata becomes available.
+: > "$EARLY_LOG" 2>/dev/null || true
+say "[DIAG] initramfs entry reached"
+say "[DIAG] Linux /init is executing"
 say "=============================================="
 say " Virtual Boot - Samsung SM-A205W / Exynos 7885"
 say " Alpine Linux handoff"
@@ -109,6 +118,23 @@ say "[INFO] Mounting userdata from $DATA_DEV..."
 mount -t ext4 -o rw,noatime "$DATA_DEV" /mnt/data ||
     rescue_shell "failed to mount userdata as ext4"
 say "[OK] Userdata mounted at /mnt/data."
+
+DIAG_DIR="/mnt/data/media/0/UEFI"
+mkdir -p "$DIAG_DIR" 2>/dev/null || true
+LOG="$DIAG_DIR/diag.txt"
+DIAG_DATE="$(date '+%Y-%m-%d %H:%M:%S %z' 2>/dev/null)"
+[ -n "$DIAG_DATE" ] || DIAG_DATE="unknown"
+{
+    echo "A205W LINUX BOOT DIAGNOSTICS"
+    echo "Date: $DIAG_DATE"
+    echo "Entry: Linux selected in EDK2; initramfs reached"
+    echo "----------------------------------------------"
+    cat "$EARLY_LOG" 2>/dev/null
+} > "$LOG" 2>/dev/null || LOG=""
+if [ -n "$LOG" ]; then
+    say "[DIAG] Persistent diagnostic file: $LOG"
+    say "[DIAG] Kernel command line: $(cat /proc/cmdline 2>/dev/null)"
+fi
 
 ALPINE_ROOT="/mnt/data/media/0/UEFI/ALP/rootfs"
 LOG="/mnt/data/media/0/UEFI/ALP/virtual-boot-init.log"
