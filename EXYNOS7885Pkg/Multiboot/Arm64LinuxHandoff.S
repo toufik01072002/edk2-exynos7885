@@ -68,9 +68,8 @@ Arm64LinuxHandoff:
     b       .Lhalt
 
 .Lel2:
-    mrs     x9, hcr_el2
-    orr     x9, x9, #(1 << 31)
-    bic     x9, x9, #1
+    /* Enter Linux as non-VHE AArch64 EL2: RW=1, all other HCR controls clear. */
+    movz    x9, #0x8000, lsl #16
     msr     hcr_el2, x9
 
     mov     x9, #3
