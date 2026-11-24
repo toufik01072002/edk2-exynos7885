@@ -4,6 +4,24 @@
 .type Arm64LinuxHandoff, %function
 
 /*
+ * Store a stage code in the diagnostic mailbox without calling firmware.
+ * Layout: magic, version, stage, inverse, payload addresses, counter.
+ */
+.macro HANDOFF_DIAG stage
+    ldr     x10, =0x8d2ff000
+    movz    w9, #\\stage
+    str     w9, [x10, #8]
+    mvn     w11, w9
+    str     w11, [x10, #12]
+    ldr     w11, [x10, #40]
+    add     w11, w11, #1
+    str     w11, [x10, #40]
+    dc      cvac, x10
+    dsb     sy
+.endm
+
+
+/*
  * x0 = kernel entry
  * x1 = kernel image size
  * x2 = initrd physical address
@@ -21,6 +39,7 @@ Arm64LinuxHandoff:
     mov     x23, x4
     mov     x24, x5
 
+    HANDOFF_DIAG 0xA001
     msr     daifset, #0xf
 
     /* Clean all payload ranges to the point of coherency. */
@@ -37,9 +56,11 @@ Arm64LinuxHandoff:
     bl      .Lclean_range
 
     dsb     sy
+    HANDOFF_DIAG 0xA002
 
     /* Disable the MMU and caches at the current exception level. */
     mrs     x9, CurrentEL
+    HANDOFF_DIAG 0xA003
     cmp     x9, #0x8
     b.eq    .Lel2
     cmp     x9, #0x4
@@ -67,6 +88,7 @@ Arm64LinuxHandoff:
     tlbi    alle1
     dsb     sy
     isb
+    HANDOFF_DIAG 0xA004
     b       .Lbranch
 
 .Lel1:
@@ -79,20 +101,25 @@ Arm64LinuxHandoff:
     tlbi    vmalle1
     dsb     sy
     isb
+    HANDOFF_DIAG 0xA004
 
 .Lbranch:
+    HANDOFF_DIAG 0xA005
     ic      iallu
     dsb     sy
     isb
+    HANDOFF_DIAG 0xA006
 
     /* Linux arm64 boot protocol: x0 = DTB, x1-x3 = 0. */
     mov     x0, x23
     mov     x1, xzr
     mov     x2, xzr
     mov     x3, xzr
+    HANDOFF_DIAG 0xA007
     br      x19
 
 .Lhalt:
+    HANDOFF_DIAG 0xA0FF
     wfe
     b       .Lhalt
 
