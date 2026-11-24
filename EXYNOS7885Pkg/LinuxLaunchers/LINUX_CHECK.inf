@@ -17,3 +17,10 @@
   UefiLib
   UefiBootServicesTableLib
   BaseMemoryLib
+
+[Protocols]
+  gEfiLoadedImageProtocolGuid
+  gEfiSimpleFileSystemProtocolGuid
+
+[Guids]
+  gEfiFileInfoGuid
