@@ -81,7 +81,7 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
       //
       PeOffset=ReadLe32(H+60);
       Print(L"     res5/PE offset=0x%08x\n",PeOffset);
-      if(ReadLe32(H)==0x91005A4DU && PeOffset>=64 &&
+      if(ReadLe16(H)==0x5A4DU && PeOffset>=64 &&
          (UINT64)PeOffset+sizeof(Pe)<=KernelSize) {
         N=sizeof(Pe);
         S=F->SetPosition(F,PeOffset);
