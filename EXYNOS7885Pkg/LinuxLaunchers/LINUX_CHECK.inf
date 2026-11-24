@@ -1,0 +1,19 @@
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = LINUX_CHECK
+  FILE_GUID                      = A205C001-7B00-4D55-9A20-7F4D4C43484B
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+  LINUX_CHECK.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiLib
+  UefiBootServicesTableLib
+  BaseMemoryLib
