@@ -108,18 +108,51 @@ done
 say "[INFO] Mounting userdata from $DATA_DEV..."
 mount -t ext4 -o rw,noatime "$DATA_DEV" /mnt/data ||
     rescue_shell "failed to mount userdata as ext4"
+say "[OK] Userdata mounted at /mnt/data."
 
 ALPINE_ROOT="/mnt/data/media/0/UEFI/ALP/rootfs"
 LOG="/mnt/data/media/0/UEFI/ALP/virtual-boot-init.log"
+: > "$LOG" 2>/dev/null || true
 say "[INFO] Diagnostic log: $LOG"
-say "[INFO] Expected Alpine rootfs: $ALPINE_ROOT"
-dmesg > "$LOG" 2>/dev/null
+say "[CHECK] Alpine rootfs location:"
+say "[PATH] $ALPINE_ROOT"
+dmesg >> "$LOG" 2>/dev/null
 
-if [ ! -x "$ALPINE_ROOT/sbin/init" ] || [ ! -x "$ALPINE_ROOT/bin/busybox" ]; then
-    rescue_shell "Alpine rootfs missing or incomplete"
+say "[CHECK] Looking for rootfs directory..."
+if [ -d "$ALPINE_ROOT" ]; then
+    say "[OK] Rootfs directory exists."
+    ls -ld "$ALPINE_ROOT" 2>/dev/null
+else
+    say "[FAIL] Rootfs directory not found."
+    say "[FAIL] Expected directory: $ALPINE_ROOT"
+    say "[INFO] Parent directory listing:"
+    ls -la /mnt/data/media/0/UEFI/ALP 2>/dev/null
+    rescue_shell "Alpine rootfs directory missing"
 fi
 
-say "[OK] Alpine rootfs found."
+say "[CHECK] Required Alpine init files:"
+if [ -x "$ALPINE_ROOT/sbin/init" ]; then
+    say "[OK] $ALPINE_ROOT/sbin/init"
+else
+    say "[FAIL] Missing or non-executable: $ALPINE_ROOT/sbin/init"
+fi
+if [ -x "$ALPINE_ROOT/bin/busybox" ]; then
+    say "[OK] $ALPINE_ROOT/bin/busybox"
+else
+    say "[FAIL] Missing or non-executable: $ALPINE_ROOT/bin/busybox"
+fi
+
+if [ ! -x "$ALPINE_ROOT/sbin/init" ] || [ ! -x "$ALPINE_ROOT/bin/busybox" ]; then
+    rescue_shell "Alpine rootfs incomplete (see checks above)"
+fi
+
+say "----------------------------------------------"
+say "[OK] ROOTFS FOUND"
+say "[PATH] $ALPINE_ROOT"
+say "[OK] sbin/init is executable"
+say "[OK] bin/busybox is executable"
+say "----------------------------------------------"
+
 mkdir -p "$ALPINE_ROOT/dev" "$ALPINE_ROOT/proc" "$ALPINE_ROOT/sys" "$ALPINE_ROOT/run"
 
 mount --bind "$ALPINE_ROOT" /newroot ||
