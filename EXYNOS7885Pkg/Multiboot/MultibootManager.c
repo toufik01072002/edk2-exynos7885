@@ -1176,6 +1176,71 @@ Done:
 }
 
 STATIC
+BOOLEAN
+IsAlpineRootfsAccessible (
+  IN EFI_FILE_PROTOCOL *VolumeRoot
+  )
+{
+  EFI_STATUS Status;
+  EFI_FILE_PROTOCOL *Rootfs;
+  EFI_FILE_INFO *Info;
+  UINTN InfoSize;
+  BOOLEAN Accessible;
+
+  if (VolumeRoot == NULL) {
+    return FALSE;
+  }
+
+  Rootfs = NULL;
+  Info = NULL;
+  Accessible = FALSE;
+
+  Status = VolumeRoot->Open (
+                        VolumeRoot,
+                        &Rootfs,
+                        L"media\\0\\UEFI\\ALP\\rootfs",
+                        EFI_FILE_MODE_READ,
+                        0
+                        );
+  if (EFI_ERROR (Status) || Rootfs == NULL) {
+    return FALSE;
+  }
+
+  InfoSize = 0;
+  Status = Rootfs->GetInfo (
+                     Rootfs,
+                     &gEfiFileInfoGuid,
+                     &InfoSize,
+                     NULL
+                     );
+  if (Status == EFI_BUFFER_TOO_SMALL && InfoSize != 0) {
+    Status = gBS->AllocatePool (
+                    EfiBootServicesData,
+                    InfoSize,
+                    (VOID **)&Info
+                    );
+    if (!EFI_ERROR (Status)) {
+      Status = Rootfs->GetInfo (
+                         Rootfs,
+                         &gEfiFileInfoGuid,
+                         &InfoSize,
+                         Info
+                         );
+      if (!EFI_ERROR (Status) &&
+          (Info->Attribute & EFI_FILE_DIRECTORY) != 0) {
+        Accessible = TRUE;
+      }
+    }
+  }
+
+  if (Info != NULL) {
+    gBS->FreePool (Info);
+  }
+  Rootfs->Close (Rootfs);
+  return Accessible;
+}
+
+STATIC
 VOID
 LaunchLinuxManager (
   IN EFI_HANDLE ImageHandle
@@ -1557,10 +1622,12 @@ LaunchLinuxManager (
       Print (L" - Noyau ARM64 : signature validee\n");
       Print (L" - Initramfs : fichier non vide\n");
       Print (L" - DTB : signature FDT validee\n");
-      if (Distros[Selected].Directory != NULL) {
-        Print (L" - Chemin ALP \\media\\0\\UEFI\\Alpine\\virtual-boot : accessible (OK)\n");
+      Print (L" - Rootfs ALP \\media\\0\\UEFI\\ALP\\rootfs : ");
+      if (VolumeCount >= 5 &&
+          IsAlpineRootfsAccessible (Volumes[4].Root)) {
+        Print (L"accessible (OK)\n");
       } else {
-        Print (L" - Chemin ALP : indisponible\n");
+        Print (L"INTROUVABLE ou inaccessible\n");
         Status = EFI_NOT_FOUND;
         goto LinuxSelectionDone;
       }
