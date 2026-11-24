@@ -46,7 +46,7 @@ jobs:
 
           for key in CONFIG_STATIC CONFIG_ASH CONFIG_MOUNT CONFIG_SWITCH_ROOT \
             CONFIG_MKNOD CONFIG_SLEEP CONFIG_MKDIR CONFIG_LS CONFIG_CAT \
-            CONFIG_DMESG CONFIG_HEAD CONFIG_TAIL CONFIG_TEST CONFIG_DATE; do
+            CONFIG_DMESG CONFIG_HEAD CONFIG_TAIL CONFIG_TEST CONFIG_DATE CONFIG_GREP; do
             set_config "$key"
           done
 
@@ -75,12 +75,12 @@ jobs:
           install -D -m 0755 out/bin/busybox "$ROOT/bin/busybox"
 
           cd "$ROOT/bin"
-          for app in sh ash ls cat mount umount dmesg head tail sleep mkdir mknod test echo date; do
+          for app in sh ash ls cat mount umount dmesg head tail sleep mkdir mknod test echo date grep; do
             ln -sf busybox "$app"
           done
           cd "$GITHUB_WORKSPACE"
 
-          for app in switch_root mount sh ls cat umount dmesg head tail sleep mkdir mknod test echo date; do
+          for app in switch_root mount sh ls cat umount dmesg head tail sleep mkdir mknod test echo date grep; do
             qemu-aarch64 out/bin/busybox --list | grep -qx "$app" || {
               echo "ERROR: required BusyBox applet missing: $app"
               exit 1
