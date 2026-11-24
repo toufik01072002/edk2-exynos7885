@@ -1,0 +1,30 @@
+[Defines]
+  INF_VERSION                    = 0x0001001B
+  BASE_NAME                      = LINUX_TRACE
+  FILE_GUID                      = A205C002-7B00-4D55-9A20-7F4D4C545243
+  MODULE_TYPE                    = UEFI_APPLICATION
+  VERSION_STRING                 = 1.0
+  ENTRY_POINT                    = UefiMain
+
+[Sources]
+  LINUX_TRACE.c
+  ../Multiboot/AndroidImageLoader.c
+  ../Multiboot/Arm64LinuxHandoff.S
+  ../Multiboot/GzipDecompress.c
+  ../Multiboot/puff.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+
+[LibraryClasses]
+  UefiApplicationEntryPoint
+  UefiLib
+  UefiBootServicesTableLib
+  BaseMemoryLib
+  BaseLib
+
+[Protocols]
+  gEfiSimpleFileSystemProtocolGuid
+
+[Guids]
+  gEfiFileInfoGuid
