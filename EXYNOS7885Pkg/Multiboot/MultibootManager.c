@@ -1556,8 +1556,15 @@ LaunchLinuxManager (
       Print (L"Validation des formats :\n");
       Print (L" - Noyau ARM64 : signature validee\n");
       Print (L" - Initramfs : fichier non vide\n");
-      Print (L" - DTB : signature FDT validee\n\n");
-      Print (L"Demarrage de la distribution Linux...\n");
+      Print (L" - DTB : signature FDT validee\n");
+      if (Distros[Selected].Directory != NULL) {
+        Print (L" - Chemin ALP \\\\media\\\\0\\\\UEFI\\\\Alpine\\\\virtual-boot : accessible (OK)\n");
+      } else {
+        Print (L" - Chemin ALP : indisponible\n");
+        Status = EFI_NOT_FOUND;
+        goto LinuxSelectionDone;
+      }
+      Print (L"\nDemarrage de la distribution Linux...\n");
       Status = LinuxStageComponents (
                  ImageHandle,
                  Distros[Selected].Directory,
@@ -1567,6 +1574,7 @@ LaunchLinuxManager (
       Print (L"Le transfert Linux a echoue : %r\n", Status);
     }
 
+LinuxSelectionDone:
     Print (L"\nAppuyez sur une touche pour revenir a la liste.\n");
     WaitForKey (&Key);
   }
