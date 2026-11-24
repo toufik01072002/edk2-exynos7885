@@ -33,7 +33,6 @@ jobs:
           cd "busybox-${BUSYBOX_VERSION}"
           make defconfig
 
-          # Force the applets required by the initramfs handoff.
           set_config() {
             key="$1"
             if grep -q "^# ${key} is not set$" .config; then
@@ -44,89 +43,21 @@ jobs:
               echo "${key}=y" >> .config
             fi
           }
+
           for key in CONFIG_STATIC CONFIG_ASH CONFIG_MOUNT CONFIG_SWITCH_ROOT \
             CONFIG_MKNOD CONFIG_SLEEP CONFIG_MKDIR CONFIG_LS CONFIG_CAT \
             CONFIG_DMESG CONFIG_HEAD CONFIG_TAIL CONFIG_TEST; do
             set_config "$key"
           done
 
-          # BusyBox 1.36.1's legacy 'tc' applet does not compile against
-          # Ubuntu 24.04's modern Linux UAPI headers (removed CBQ definitions).
-          # Traffic control is not needed in this initramfs, so disable it.
-          if grep -q '^CONFIG_TC=y          make -j"$(nproc)" CROSS_COMPILE=aarch64-linux-gnu-
-          aarch64-linux-gnu-readelf -h busybox | grep -q 'Class:.*ELF64'
-          aarch64-linux-gnu-readelf -h busybox | grep -q 'Machine:.*AArch64'
-          if aarch64-linux-gnu-readelf -l busybox | grep -q 'INTERP'; then
-            echo "ERROR: BusyBox is not fully static"
-            exit 1
-          fi
-          install -D -m 0755 busybox "$GITHUB_WORKSPACE/out/bin/busybox"
-
-      - name: Assemble initramfs tree
-        run: |
-          set -eu
-          ROOT="$GITHUB_WORKSPACE/initramfs-root"
-          mkdir -p "$ROOT"/{bin,sbin,etc,proc,sys,dev,run,tmp,mnt/data,newroot}
-          install -D -m 0755 virtual-boot/initramfs/init "$ROOT/init"
-          install -D -m 0755 out/bin/busybox "$ROOT/bin/busybox"
-
-          cd "$ROOT/bin"
-          for app in sh ash ls cat mount umount dmesg head tail sleep mkdir mknod test echo; do
-            ln -sf busybox "$app"
-          done
-          cd "$GITHUB_WORKSPACE"
-
-          out/bin/busybox --list | grep -qx switch_root
-          out/bin/busybox --list | grep -qx mount
-          out/bin/busybox --list | grep -qx sh
-          ln -sf ../bin/busybox "$ROOT/sbin/switch_root"
-
-          chmod 0755 "$ROOT/init"
-          test -x "$ROOT/bin/busybox"
-          test -x "$ROOT/sbin/switch_root"
-
-      - name: Build reproducible initramfs archive
-        run: |
-          set -eu
-          cd initramfs-root
-          find . -print0 | sort -z | cpio --null --create --format=newc --owner=0:0 2>../cpio-build.log | gzip -n -9 > ../initramfs-alpine.cpio.gz
-          cd ..
-          test -s initramfs-alpine.cpio.gz
-          sha256sum initramfs-alpine.cpio.gz | tee initramfs-alpine.sha256
-
-      - name: Verify archive and embedded init script
-        run: |
-          set -eu
-          mkdir verify
-          cd verify
-          gzip -t ../initramfs-alpine.cpio.gz
-          gzip -dc ../initramfs-alpine.cpio.gz | cpio -itv > ../initramfs-file-list.txt
-          gzip -dc ../initramfs-alpine.cpio.gz | cpio -idm --no-absolute-filenames
-          test -x init
-          test -x bin/busybox
-          test -x sbin/switch_root
-          grep -q 'ROOTFS FOUND' init
-          grep -q '/mnt/data/media/0/UEFI/ALP/rootfs' init
-          ./bin/busybox --list | grep -qx switch_root
-          cd ..
-          echo "Initramfs archive validation: OK"
-          cat initramfs-alpine.sha256
-
-      - name: Upload Alpine initramfs artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: a205w-alpine-initramfs
-          if-no-files-found: error
-          path: |
-            initramfs-alpine.cpio.gz
-            initramfs-alpine.sha256
-            initramfs-file-list.txt
- .config; then
+          # The legacy tc applet is unused and incompatible with Ubuntu 24.04 UAPI headers.
+          if grep -q '^CONFIG_TC=y$' .config; then
             sed -i 's/^CONFIG_TC=y$/# CONFIG_TC is not set/' .config
           fi
 
           make oldconfig </dev/null
           make -j"$(nproc)" CROSS_COMPILE=aarch64-linux-gnu-
+
           aarch64-linux-gnu-readelf -h busybox | grep -q 'Class:.*ELF64'
           aarch64-linux-gnu-readelf -h busybox | grep -q 'Machine:.*AArch64'
           if aarch64-linux-gnu-readelf -l busybox | grep -q 'INTERP'; then
@@ -149,9 +80,12 @@ jobs:
           done
           cd "$GITHUB_WORKSPACE"
 
-          out/bin/busybox --list | grep -qx switch_root
-          out/bin/busybox --list | grep -qx mount
-          out/bin/busybox --list | grep -qx sh
+          for app in switch_root mount sh ls cat umount dmesg head tail sleep mkdir mknod test echo; do
+            out/bin/busybox --list | grep -qx "$app" || {
+              echo "ERROR: required BusyBox applet missing: $app"
+              exit 1
+            }
+          done
           ln -sf ../bin/busybox "$ROOT/sbin/switch_root"
 
           chmod 0755 "$ROOT/init"
