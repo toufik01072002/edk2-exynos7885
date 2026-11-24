@@ -6,11 +6,15 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 export HOME=/root
 
 LOG=""
+DIAG_LOG=""
 EARLY_LOG="/tmp/diag.txt"
 say() {
     echo "$*"
     if [ -n "$EARLY_LOG" ]; then
         echo "$*" >> "$EARLY_LOG" 2>/dev/null || true
+    fi
+    if [ -n "$DIAG_LOG" ]; then
+        echo "$*" >> "$DIAG_LOG" 2>/dev/null || true
     fi
     if [ -n "$LOG" ]; then
         echo "$*" >> "$LOG" 2>/dev/null || true
@@ -121,7 +125,7 @@ say "[OK] Userdata mounted at /mnt/data."
 
 DIAG_DIR="/mnt/data/media/0/UEFI"
 mkdir -p "$DIAG_DIR" 2>/dev/null || true
-LOG="$DIAG_DIR/diag.txt"
+DIAG_LOG="$DIAG_DIR/diag.txt"
 DIAG_DATE="$(date '+%Y-%m-%d %H:%M:%S %z' 2>/dev/null)"
 [ -n "$DIAG_DATE" ] || DIAG_DATE="unknown"
 {
@@ -130,9 +134,9 @@ DIAG_DATE="$(date '+%Y-%m-%d %H:%M:%S %z' 2>/dev/null)"
     echo "Entry: Linux selected in EDK2; initramfs reached"
     echo "----------------------------------------------"
     cat "$EARLY_LOG" 2>/dev/null
-} > "$LOG" 2>/dev/null || LOG=""
-if [ -n "$LOG" ]; then
-    say "[DIAG] Persistent diagnostic file: $LOG"
+} > "$DIAG_LOG" 2>/dev/null || DIAG_LOG=""
+if [ -n "$DIAG_LOG" ]; then
+    say "[DIAG] Persistent diagnostic file: $DIAG_LOG"
     say "[DIAG] Kernel command line: $(cat /proc/cmdline 2>/dev/null)"
 fi
 
