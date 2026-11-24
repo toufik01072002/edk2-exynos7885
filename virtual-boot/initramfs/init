@@ -208,8 +208,16 @@ say "----------------------------------------------"
 
 mkdir -p "$ALPINE_ROOT/dev" "$ALPINE_ROOT/proc" "$ALPINE_ROOT/sys" "$ALPINE_ROOT/run"
 
+say "[MOUNT] Mounting ALP/rootfs on /newroot..."
 mount --bind "$ALPINE_ROOT" /newroot ||
     rescue_shell "cannot bind-mount Alpine rootfs"
+
+if grep -q " /newroot " /proc/mounts; then
+    say "[OK] Linux mount confirmed: $ALPINE_ROOT -> /newroot"
+else
+    say "[ERROR] Linux mount NOT confirmed: $ALPINE_ROOT -> /newroot"
+    rescue_shell "bind mount returned success but /newroot is absent from /proc/mounts"
+fi
 
 mount -o move /dev /newroot/dev || rescue_shell "cannot move /dev"
 mount -o move /proc /newroot/proc || rescue_shell "cannot move /proc"
