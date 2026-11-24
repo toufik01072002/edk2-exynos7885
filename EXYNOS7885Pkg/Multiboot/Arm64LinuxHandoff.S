@@ -9,7 +9,7 @@
  */
 .macro HANDOFF_DIAG stage
     ldr     x10, =0x8d2ff000
-    movz    w9, #\\stage
+    movz    w9, #\stage
     str     w9, [x10, #8]
     mvn     w11, w9
     str     w11, [x10, #12]
