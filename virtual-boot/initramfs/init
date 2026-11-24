@@ -62,8 +62,13 @@ else
     while :; do sleep 3600; done
 fi
 
-# Start a temporary trace immediately; it is copied to persistent storage
-# as soon as Android userdata becomes available.
+mount -t proc proc /proc || rescue_shell "cannot mount /proc"
+mount -t sysfs sysfs /sys || rescue_shell "cannot mount /sys"
+mount -t tmpfs tmpfs /run || rescue_shell "cannot mount /run"
+mount -t tmpfs tmpfs /tmp || rescue_shell "cannot mount /tmp"
+
+# Start the trace only after /tmp is writable. It is copied to userdata
+# as soon as the Android data partition becomes available.
 : > "$EARLY_LOG" 2>/dev/null || true
 say "[DIAG] initramfs entry reached"
 say "[DIAG] Linux /init is executing"
@@ -74,11 +79,6 @@ say "=============================================="
 say "[INFO] initramfs init started."
 say "[INFO] Kernel command line:"
 cat /proc/cmdline 2>/dev/null
-
-mount -t proc proc /proc || rescue_shell "cannot mount /proc"
-mount -t sysfs sysfs /sys || rescue_shell "cannot mount /sys"
-mount -t tmpfs tmpfs /run || rescue_shell "cannot mount /run"
-mount -t tmpfs tmpfs /tmp || rescue_shell "cannot mount /tmp"
 
 DATA_DEV=""
 attempt=0
