@@ -25,6 +25,44 @@ Arm64LinuxHandoff (
 #define ANDROID_MAX_RAMDISK     0x04000000ULL
 #define ARM64_IMAGE_MAGIC       0x644D5241U
 
+/*
+ * A205W handoff diagnostic mailbox.
+ * InMemorySerialPortLib uses 0x8D100000..0x8D2FFFFF.
+ * The final page is reserved here for post-ExitBootServices breadcrumbs.
+ */
+#define A205W_HANDOFF_DIAG_BASE  0x8D2FF000ULL
+#define A205W_HANDOFF_DIAG_MAGIC 0x41323044U
+
+STATIC
+VOID
+WriteHandoffDiagnostic (
+  IN UINT32 Stage,
+  IN UINT64 KernelEntry,
+  IN UINT64 InitrdBase,
+  IN UINT64 FdtBase
+  )
+{
+  volatile UINT32 *Mailbox;
+
+  Mailbox = (volatile UINT32 *)(UINTN)A205W_HANDOFF_DIAG_BASE;
+  Mailbox[0] = A205W_HANDOFF_DIAG_MAGIC;
+  Mailbox[1] = 1;
+  Mailbox[2] = Stage;
+  Mailbox[3] = ~Stage;
+  Mailbox[4] = (UINT32)KernelEntry;
+  Mailbox[5] = (UINT32)(KernelEntry >> 32);
+  Mailbox[6] = (UINT32)InitrdBase;
+  Mailbox[7] = (UINT32)(InitrdBase >> 32);
+  Mailbox[8] = (UINT32)FdtBase;
+  Mailbox[9] = (UINT32)(FdtBase >> 32);
+  Mailbox[10] = 0;
+  Mailbox[11] = ~A205W_HANDOFF_DIAG_MAGIC;
+
+  __asm__ volatile ("dc cvac, %0" : : "r" (Mailbox) : "memory");
+  __asm__ volatile ("dsb sy" : : : "memory");
+}
+
+
 STATIC
 UINT32
 ReadLe32 (
@@ -1427,6 +1465,10 @@ LinuxStageComponents (
     goto Done;
   }
 
+  // Save the state before ExitBootServices; no firmware calls are needed.
+  WriteHandoffDiagnostic (0xE000U, KernelAddress,
+                         DecompressedRamdiskAddress, FdtAddress);
+
   for (Attempt = 0; Attempt < 2; Attempt++) {
     MemoryMapSize = MemoryMapCapacity;
     Status = gBS->GetMemoryMap (
@@ -1449,6 +1491,10 @@ LinuxStageComponents (
   if (EFI_ERROR (Status)) {
     goto Done;
   }
+
+  // This marker is written after ExitBootServices using direct RAM access.
+  WriteHandoffDiagnostic (0xE001U, KernelAddress,
+                         DecompressedRamdiskAddress, FdtAddress);
 
   Arm64LinuxHandoff (
     KernelAddress,
