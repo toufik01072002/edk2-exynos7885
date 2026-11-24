@@ -27,19 +27,37 @@ jobs:
         env:
           BUSYBOX_VERSION: "1.36.1"
         run: |
+          set -eu
           wget -q "https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2"
           tar -xjf "busybox-${BUSYBOX_VERSION}.tar.bz2"
           cd "busybox-${BUSYBOX_VERSION}"
           make defconfig
-          sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
-          grep -q '^CONFIG_STATIC=y$' .config
+
+          # Force the applets required by the initramfs handoff.
+          set_config() {
+            key="$1"
+            if grep -q "^# ${key} is not set$" .config; then
+              sed -i "s/^# ${key} is not set$/${key}=y/" .config
+            elif grep -q "^${key}=" .config; then
+              sed -i "s/^${key}=.*/${key}=y/" .config
+            else
+              echo "${key}=y" >> .config
+            fi
+          }
+          for key in CONFIG_STATIC CONFIG_ASH CONFIG_MOUNT CONFIG_SWITCH_ROOT \
+            CONFIG_MKNOD CONFIG_SLEEP CONFIG_MKDIR CONFIG_LS CONFIG_CAT \
+            CONFIG_DMESG CONFIG_HEAD CONFIG_TAIL CONFIG_TEST; do
+            set_config "$key"
+          done
+
+          make oldconfig </dev/null
           make -j"$(nproc)" CROSS_COMPILE=aarch64-linux-gnu-
-          file busybox
-          aarch64-linux-gnu-readelf -h busybox | grep -E 'Class:.*ELF64|Machine:.*AArch64'
-          aarch64-linux-gnu-readelf -l busybox | grep -q 'INTERP' && {
+          aarch64-linux-gnu-readelf -h busybox | grep -q 'Class:.*ELF64'
+          aarch64-linux-gnu-readelf -h busybox | grep -q 'Machine:.*AArch64'
+          if aarch64-linux-gnu-readelf -l busybox | grep -q 'INTERP'; then
             echo "ERROR: BusyBox is not fully static"
             exit 1
-          } || true
+          fi
           install -D -m 0755 busybox "$GITHUB_WORKSPACE/out/bin/busybox"
 
       - name: Assemble initramfs tree
@@ -51,13 +69,11 @@ jobs:
           install -D -m 0755 out/bin/busybox "$ROOT/bin/busybox"
 
           cd "$ROOT/bin"
-          for app in sh ash ls cat mount umount dmesg head tail sleep mkdir mknod             test echo; do
+          for app in sh ash ls cat mount umount dmesg head tail sleep mkdir mknod test echo; do
             ln -sf busybox "$app"
           done
           cd "$GITHUB_WORKSPACE"
 
-          # switch_root is required by the final handoff; fail the build if
-          # the selected BusyBox configuration does not provide it.
           out/bin/busybox --list | grep -qx switch_root
           out/bin/busybox --list | grep -qx mount
           out/bin/busybox --list | grep -qx sh
