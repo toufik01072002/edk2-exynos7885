@@ -24,7 +24,9 @@
   BaseLib
 
 [Protocols]
+  gEfiLoadedImageProtocolGuid
   gEfiSimpleFileSystemProtocolGuid
 
 [Guids]
   gEfiFileInfoGuid
+  gEfiFileSystemInfoGuid
