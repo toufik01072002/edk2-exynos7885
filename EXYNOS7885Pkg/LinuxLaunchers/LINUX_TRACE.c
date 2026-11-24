@@ -3,7 +3,7 @@
 #include <Protocol/SimpleFileSystem.h>
 #include <Library/UefiLib.h>
 #include <Library/UefiBootServicesTableLib.h>
-#include "AndroidImageLoader.h"
+#include "../Multiboot/AndroidImageLoader.h"
 
 #define ALPINE_DIR L"media\\0\\UEFI\\Alpine\\virtual-boot"
 #define INITRD_NAME L"initramfs-alpine.cpio.gz"
