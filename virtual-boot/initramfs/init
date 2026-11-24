@@ -58,12 +58,14 @@ if [ ! -c /dev/kmsg ]; then
     mknod -m 600 /dev/kmsg c 1 11 2>/dev/null || true
 fi
 
+# A missing UART console must never prevent Linux diagnostics from running.
+# Keep inherited descriptors when /dev/console is absent or cannot be opened.
 if [ -c /dev/console ]; then
-    exec </dev/console >/dev/console 2>&1
+    exec </dev/console >/dev/console 2>&1 || {
+        echo "[WARN] /dev/console could not be opened; continuing without console" >/dev/kmsg 2>/dev/null || true
+    }
 else
-    echo "[FATAL] /dev/console is unavailable" >/dev/kmsg 2>/dev/null
-    # Do not return to the bootloader or silently exit.
-    while :; do sleep 3600; done
+    echo "[WARN] /dev/console is unavailable; continuing without console" >/dev/kmsg 2>/dev/null || true
 fi
 
 mount -t proc proc /proc || rescue_shell "cannot mount /proc"
@@ -87,10 +89,38 @@ cat /proc/cmdline 2>/dev/null
 DATA_DEV=""
 attempt=0
 mkdir -p /dev/block
-while [ "$attempt" -lt 15 ] && [ -z "$DATA_DEV" ]; do
-    # Without devtmpfs, create the userdata node from the kernel's sysfs
-    # major:minor value. This avoids hard-coding a device number.
-    if [ ! -b /dev/mmcblk0p33 ] && [ -r /sys/class/block/mmcblk0p33/dev ]; then
+while [ "$attempt" -lt 20 ] && [ -z "$DATA_DEV" ]; do
+    # Discover userdata by GPT partition name first; fall back to the known A20
+    # layout (mmcblk0p33). This avoids assuming the eMMC is always mmcblk0.
+    for UEVENT in /sys/class/block/*/uevent; do
+        [ -r "$UEVENT" ] || continue
+        PART=""
+        while IFS= read -r LINE; do
+            case "$LINE" in
+                PARTNAME=USERDATA|PARTNAME=userdata|PARTNAME=USER_DATA|PARTNAME=user_data)
+                    PART="${UEVENT%/uevent}"
+                    ;;
+            esac
+        done < "$UEVENT"
+        if [ -n "$PART" ]; then
+            DEVNAME="${PART##*/}"
+            DEVNUM="$(cat "$PART/dev" 2>/dev/null)"
+            case "$DEVNUM" in
+                *:*)
+                    DEV_MAJOR="${DEVNUM%%:*}"
+                    DEV_MINOR="${DEVNUM##*:}"
+                    case "$DEV_MAJOR$DEV_MINOR" in
+                        ""|*[!0-9]*) ;;
+                        *) mknod -m 600 "/dev/$DEVNAME" b "$DEV_MAJOR" "$DEV_MINOR" 2>/dev/null || true ;;
+                    esac
+                    ;;
+            esac
+            [ -b "/dev/$DEVNAME" ] && DATA_DEV="/dev/$DEVNAME"
+            break
+        fi
+    done
+
+    if [ -z "$DATA_DEV" ] && [ -r /sys/class/block/mmcblk0p33/dev ]; then
         DEVNUM="$(cat /sys/class/block/mmcblk0p33/dev 2>/dev/null)"
         case "$DEVNUM" in
             *:*)
@@ -98,21 +128,14 @@ while [ "$attempt" -lt 15 ] && [ -z "$DATA_DEV" ]; do
                 DEV_MINOR="${DEVNUM##*:}"
                 case "$DEV_MAJOR$DEV_MINOR" in
                     ""|*[!0-9]*) ;;
-                    *)
-                        mknod -m 600 /dev/mmcblk0p33 b "$DEV_MAJOR" "$DEV_MINOR" 2>/dev/null || true
-                        ;;
+                    *) mknod -m 600 /dev/mmcblk0p33 b "$DEV_MAJOR" "$DEV_MINOR" 2>/dev/null || true ;;
                 esac
                 ;;
         esac
+        [ -b /dev/mmcblk0p33 ] && DATA_DEV="/dev/mmcblk0p33"
     fi
 
-    if [ -b /dev/mmcblk0p33 ]; then
-        DATA_DEV="/dev/mmcblk0p33"
-    elif [ -b /dev/block/mmcblk0p33 ]; then
-        DATA_DEV="/dev/block/mmcblk0p33"
-    else
-        sleep 1
-    fi
+    [ -n "$DATA_DEV" ] || sleep 1
     attempt=$((attempt + 1))
 done
 
