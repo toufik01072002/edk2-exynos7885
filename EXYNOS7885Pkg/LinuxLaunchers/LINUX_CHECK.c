@@ -47,9 +47,9 @@ EFI_STATUS EFIAPI UefiMain(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable
   BOOLEAN Failed=FALSE;
 
   Print(L"\n=== A205W LINUX CHECK / READ-ONLY ===\n");
-  S=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocol,(VOID **)&Loaded);
+  S=gBS->HandleProtocol(ImageHandle,&gEfiLoadedImageProtocolGuid,(VOID **)&Loaded);
   if(EFI_ERROR(S) || Loaded==NULL) { Print(L"[FAIL] LoadedImage: %r\n",S); return S; }
-  S=gBS->HandleProtocol(Loaded->DeviceHandle,&gEfiSimpleFileSystemProtocol,(VOID **)&Fs);
+  S=gBS->HandleProtocol(Loaded->DeviceHandle,&gEfiSimpleFileSystemProtocolGuid,(VOID **)&Fs);
   if(EFI_ERROR(S) || Fs==NULL) { Print(L"[FAIL] SimpleFS: %r\n",S); return S; }
   S=Fs->OpenVolume(Fs,&Root);
   if(EFI_ERROR(S) || Root==NULL) { Print(L"[FAIL] OpenVolume: %r\n",S); return S; }
