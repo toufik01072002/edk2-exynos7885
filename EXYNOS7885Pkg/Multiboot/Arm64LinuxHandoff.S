@@ -58,6 +58,11 @@ Arm64LinuxHandoff:
     dsb     sy
     HANDOFF_DIAG 0xA002
 
+    /* Invalidate stale instructions while firmware mappings are active. */
+    ic      iallu
+    dsb     sy
+    isb
+
     /* Disable the MMU and caches at the current exception level. */
     mrs     x9, CurrentEL
     HANDOFF_DIAG 0xA003
@@ -71,50 +76,46 @@ Arm64LinuxHandoff:
     /* Enter Linux as non-VHE AArch64 EL2: RW=1, all other HCR controls clear. */
     movz    x9, #0x8000, lsl #16
     msr     hcr_el2, x9
+    isb
 
     mov     x9, #3
     msr     cnthctl_el2, x9
     msr     cntvoff_el2, xzr
     msr     cptr_el2, xzr
 
+    HANDOFF_DIAG 0xA004
     mrs     x9, sctlr_el2
     bic     x9, x9, #1
     bic     x9, x9, #4
     bic     x9, x9, #0x1000
-    msr     sctlr_el2, x9
     dsb     sy
+    msr     sctlr_el2, x9
+    isb
     tlbi    alle2
     tlbi    alle1
     dsb     sy
     isb
-    HANDOFF_DIAG 0xA004
     b       .Lbranch
 
 .Lel1:
+    HANDOFF_DIAG 0xA004
     mrs     x9, sctlr_el1
     bic     x9, x9, #1
     bic     x9, x9, #4
     bic     x9, x9, #0x1000
-    msr     sctlr_el1, x9
     dsb     sy
+    msr     sctlr_el1, x9
+    isb
     tlbi    vmalle1
     dsb     sy
     isb
-    HANDOFF_DIAG 0xA004
 
 .Lbranch:
-    HANDOFF_DIAG 0xA005
-    ic      iallu
-    dsb     sy
-    isb
-    HANDOFF_DIAG 0xA006
-
     /* Linux arm64 boot protocol: x0 = DTB, x1-x3 = 0. */
     mov     x0, x23
     mov     x1, xzr
     mov     x2, xzr
     mov     x3, xzr
-    HANDOFF_DIAG 0xA007
     br      x19
 
 .Lhalt:
