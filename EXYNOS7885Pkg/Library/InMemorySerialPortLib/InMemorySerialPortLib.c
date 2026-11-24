@@ -35,7 +35,7 @@ SerialPortInitialize (
   )
 {
   UINT8* base = (UINT8*)0x8d100000ull;
-  for (UINTN i = 0; i < 0x200000; i++) {
+  for (UINTN i = 0; i < 0x1FF000; i++) {
     base[i] = 0;
   }
   return RETURN_SUCCESS;
