@@ -284,6 +284,8 @@
       PcdLib|MdePkg/Library/DxePcdLib/DxePcdLib.inf
   }
   EXYNOS7885Pkg/Multiboot/MultibootManager.inf
+  EXYNOS7885Pkg/LinuxLaunchers/LINUX_CHECK.inf
+  EXYNOS7885Pkg/LinuxLaunchers/LINUX_TRACE.inf
   ShellPkg/Application/Shell/Shell.inf {
     <LibraryClasses>
       ShellCommandLib|ShellPkg/Library/UefiShellCommandLib/UefiShellCommandLib.inf
