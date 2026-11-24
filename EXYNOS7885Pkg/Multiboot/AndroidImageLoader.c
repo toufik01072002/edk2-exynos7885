@@ -39,14 +39,23 @@ WriteHandoffDiagnostic (
   IN UINT32 Stage,
   IN UINT64 KernelEntry,
   IN UINT64 InitrdBase,
-  IN UINT64 FdtBase
+  IN UINT64 FdtBase,
+  IN EFI_STATUS Status
   )
 {
   volatile UINT32 *Mailbox;
 
   Mailbox = (volatile UINT32 *)(UINTN)A205W_HANDOFF_DIAG_BASE;
-  Mailbox[0] = A205W_HANDOFF_DIAG_MAGIC;
-  Mailbox[1] = 1;
+  if (Mailbox[0] != A205W_HANDOFF_DIAG_MAGIC ||
+      Mailbox[11] != ~A205W_HANDOFF_DIAG_MAGIC) {
+    for (UINTN Index = 0; Index < 16; Index++) {
+      Mailbox[Index] = 0;
+    }
+    Mailbox[0] = A205W_HANDOFF_DIAG_MAGIC;
+    Mailbox[1] = 1;
+    Mailbox[11] = ~A205W_HANDOFF_DIAG_MAGIC;
+  }
+
   Mailbox[2] = Stage;
   Mailbox[3] = ~Stage;
   Mailbox[4] = (UINT32)KernelEntry;
@@ -55,8 +64,8 @@ WriteHandoffDiagnostic (
   Mailbox[7] = (UINT32)(InitrdBase >> 32);
   Mailbox[8] = (UINT32)FdtBase;
   Mailbox[9] = (UINT32)(FdtBase >> 32);
-  Mailbox[10] = 0;
-  Mailbox[11] = ~A205W_HANDOFF_DIAG_MAGIC;
+  Mailbox[10]++;
+  Mailbox[12] = (UINT32)Status;
 
   __asm__ volatile ("dc cvac, %0" : : "r" (Mailbox) : "memory");
   __asm__ volatile ("dsb sy" : : : "memory");
@@ -1091,6 +1100,7 @@ LinuxStageComponents (
     return EFI_INVALID_PARAMETER;
   }
 
+  WriteHandoffDiagnostic (0x1001U, 0, 0, 0, EFI_SUCCESS);
   Print (L"\nPreparation du demarrage Linux ARM64...\n");
 
   Status = Directory->Open (
@@ -1211,6 +1221,7 @@ LinuxStageComponents (
     goto Done;
   }
 
+  WriteHandoffDiagnostic (0x1002U, KernelAddress, 0, 0, EFI_SUCCESS);
   KernelWindowBase = KernelAddress & ~0x3FFFFFFFULL;
 
   Status = Directory->Open (
@@ -1307,6 +1318,7 @@ LinuxStageComponents (
     goto Done;
   }
   DecompressedRamdiskAllocated = TRUE;
+  WriteHandoffDiagnostic (0x1003U, KernelAddress, DecompressedRamdiskAddress, 0, EFI_SUCCESS);
 
   if (DecompressedRamdiskSize == 0 ||
       DecompressedRamdiskAddress > MAX_UINT64 - DecompressedRamdiskSize ||
@@ -1334,6 +1346,7 @@ LinuxStageComponents (
   if (EFI_ERROR (Status)) {
     goto Done;
   }
+  WriteHandoffDiagnostic (0x1004U, KernelAddress, DecompressedRamdiskAddress, 0, EFI_SUCCESS);
 
   Status = LoadAndPatchFdt (
              Directory,
@@ -1346,6 +1359,7 @@ LinuxStageComponents (
   if (EFI_ERROR (Status)) {
     goto Done;
   }
+  WriteHandoffDiagnostic (0x1005U, KernelAddress, DecompressedRamdiskAddress, 0, EFI_SUCCESS);
 
   FdtPages = EFI_SIZE_TO_PAGES (FdtBufferSize);
   MaxAddress = 0xFFFFFFFFULL;
@@ -1401,6 +1415,7 @@ LinuxStageComponents (
   if (EFI_ERROR (Status)) {
     goto Done;
   }
+  WriteHandoffDiagnostic (0x1006U, KernelAddress, DecompressedRamdiskAddress, FdtAddress, EFI_SUCCESS);
 
   __asm__ volatile ("mrs %0, CurrentEL" : "=r" (CurrentEl));
   if (CurrentEl != 0x4 && CurrentEl != 0x8) {
@@ -1439,6 +1454,7 @@ LinuxStageComponents (
     RamdiskAllocated = FALSE;
   }
 
+  WriteHandoffDiagnostic (0x1007U, KernelAddress, DecompressedRamdiskAddress, FdtAddress, EFI_SUCCESS);
   MemoryMapSize = 0;
   Status = gBS->GetMemoryMap (
                   &MemoryMapSize,
@@ -1493,8 +1509,8 @@ LinuxStageComponents (
   }
 
   // This marker is written after ExitBootServices using direct RAM access.
-  WriteHandoffDiagnostic (0xE001U, KernelAddress,
-                         DecompressedRamdiskAddress, FdtAddress);
+  WriteHandoffDiagnostic (0x1008U, KernelAddress,
+                         DecompressedRamdiskAddress, FdtAddress, EFI_SUCCESS);
 
   Arm64LinuxHandoff (
     KernelAddress,
@@ -2019,6 +2035,10 @@ AndroidStageBootImage (
   Status = EFI_ABORTED;
 
 Done:
+  if (EFI_ERROR (Status)) {
+    WriteHandoffDiagnostic (0x10FFU, KernelAddress,
+                            DecompressedRamdiskAddress, FdtAddress, Status);
+  }
   if (MemoryMap != NULL) {
     gBS->FreePool (MemoryMap);
   }
