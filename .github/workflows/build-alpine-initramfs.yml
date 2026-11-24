@@ -1,0 +1,105 @@
+name: Build Alpine ARM64 initramfs (SM-A205W)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/kexec-arm64-virtual-boot]
+    paths:
+      - "virtual-boot/initramfs/**"
+      - ".github/workflows/build-alpine-initramfs.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-initramfs:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc-aarch64-linux-gnu wget bzip2 cpio gzip
+
+      - name: Build static ARM64 BusyBox
+        env:
+          BUSYBOX_VERSION: "1.36.1"
+        run: |
+          wget -q "https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2"
+          tar -xjf "busybox-${BUSYBOX_VERSION}.tar.bz2"
+          cd "busybox-${BUSYBOX_VERSION}"
+          make defconfig
+          sed -i 's/^# CONFIG_STATIC is not set/CONFIG_STATIC=y/' .config
+          grep -q '^CONFIG_STATIC=y$' .config
+          make -j"$(nproc)" CROSS_COMPILE=aarch64-linux-gnu-
+          file busybox
+          aarch64-linux-gnu-readelf -h busybox | grep -E 'Class:.*ELF64|Machine:.*AArch64'
+          aarch64-linux-gnu-readelf -l busybox | grep -q 'INTERP' && {
+            echo "ERROR: BusyBox is not fully static"
+            exit 1
+          } || true
+          install -D -m 0755 busybox "$GITHUB_WORKSPACE/out/bin/busybox"
+
+      - name: Assemble initramfs tree
+        run: |
+          set -eu
+          ROOT="$GITHUB_WORKSPACE/initramfs-root"
+          mkdir -p "$ROOT"/{bin,sbin,etc,proc,sys,dev,run,tmp,mnt/data,newroot}
+          install -D -m 0755 virtual-boot/initramfs/init "$ROOT/init"
+          install -D -m 0755 out/bin/busybox "$ROOT/bin/busybox"
+
+          cd "$ROOT/bin"
+          for app in sh ash ls cat mount umount dmesg head tail sleep mkdir mknod             test echo; do
+            ln -sf busybox "$app"
+          done
+          cd "$GITHUB_WORKSPACE"
+
+          # switch_root is required by the final handoff; fail the build if
+          # the selected BusyBox configuration does not provide it.
+          out/bin/busybox --list | grep -qx switch_root
+          out/bin/busybox --list | grep -qx mount
+          out/bin/busybox --list | grep -qx sh
+          ln -sf ../bin/busybox "$ROOT/sbin/switch_root"
+
+          chmod 0755 "$ROOT/init"
+          test -x "$ROOT/bin/busybox"
+          test -x "$ROOT/sbin/switch_root"
+
+      - name: Build reproducible initramfs archive
+        run: |
+          set -eu
+          cd initramfs-root
+          find . -print0 | sort -z | cpio --null --create --format=newc --owner=0:0 2>../cpio-build.log | gzip -n -9 > ../initramfs-alpine.cpio.gz
+          cd ..
+          test -s initramfs-alpine.cpio.gz
+          sha256sum initramfs-alpine.cpio.gz | tee initramfs-alpine.sha256
+
+      - name: Verify archive and embedded init script
+        run: |
+          set -eu
+          mkdir verify
+          cd verify
+          gzip -t ../initramfs-alpine.cpio.gz
+          gzip -dc ../initramfs-alpine.cpio.gz | cpio -itv > ../initramfs-file-list.txt
+          gzip -dc ../initramfs-alpine.cpio.gz | cpio -idm --no-absolute-filenames
+          test -x init
+          test -x bin/busybox
+          test -x sbin/switch_root
+          grep -q 'ROOTFS FOUND' init
+          grep -q '/mnt/data/media/0/UEFI/ALP/rootfs' init
+          ./bin/busybox --list | grep -qx switch_root
+          cd ..
+          echo "Initramfs archive validation: OK"
+          cat initramfs-alpine.sha256
+
+      - name: Upload Alpine initramfs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: a205w-alpine-initramfs
+          if-no-files-found: error
+          path: |
+            initramfs-alpine.cpio.gz
+            initramfs-alpine.sha256
+            initramfs-file-list.txt
