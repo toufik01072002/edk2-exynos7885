@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
   push:
-    branches: [main, feature/kexec-arm64-virtual-boot, feature/a205w-handoff-diagnostics]
+    branches: [main, feature/kexec-arm64-virtual-boot, feature/a205w-handoff-diagnostics, feature/linux-launcher-diagnostics]
     paths:
       - "EXYNOS7885Pkg/**"
       - "BootShim/**"
@@ -75,3 +75,5 @@ jobs:
             edk2-exynos7885/workspace/UEFI.manifest.json
             edk2-exynos7885/workspace/SHA256SUMS
             edk2-exynos7885/workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/FV/EXYNOS7885PKG_UEFI.fd
+            edk2-exynos7885/workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/AARCH64/LINUX_CHECK.efi
+            edk2-exynos7885/workspace/Build/EXYNOS7885Pkg/DEBUG_GCC/AARCH64/LINUX_TRACE.efi
