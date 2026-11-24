@@ -1558,7 +1558,7 @@ LaunchLinuxManager (
       Print (L" - Initramfs : fichier non vide\n");
       Print (L" - DTB : signature FDT validee\n");
       if (Distros[Selected].Directory != NULL) {
-        Print (L" - Chemin ALP \\\\media\\\\0\\\\UEFI\\\\Alpine\\\\virtual-boot : accessible (OK)\n");
+        Print (L" - Chemin ALP \\media\\0\\UEFI\\Alpine\\virtual-boot : accessible (OK)\n");
       } else {
         Print (L" - Chemin ALP : indisponible\n");
         Status = EFI_NOT_FOUND;
