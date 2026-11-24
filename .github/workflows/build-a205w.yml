@@ -36,6 +36,9 @@ jobs:
             python3 python3-setuptools gcc-aarch64-linux-gnu \
             device-tree-compiler
 
+      - name: Valider la syntaxe de l'initramfs
+        run: sh -n edk2-exynos7885/virtual-boot/initramfs/init
+
       - name: Cloner EDK2 et edk2-platforms
         env:
           EDK2_REF: ${{ github.event.inputs.edk2_ref }}
