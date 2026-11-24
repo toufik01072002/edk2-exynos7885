@@ -1483,7 +1483,7 @@ LinuxStageComponents (
 
   // Save the state before ExitBootServices; no firmware calls are needed.
   WriteHandoffDiagnostic (0xE000U, KernelAddress,
-                         DecompressedRamdiskAddress, FdtAddress);
+                         DecompressedRamdiskAddress, FdtAddress, EFI_SUCCESS);
 
   for (Attempt = 0; Attempt < 2; Attempt++) {
     MemoryMapSize = MemoryMapCapacity;
