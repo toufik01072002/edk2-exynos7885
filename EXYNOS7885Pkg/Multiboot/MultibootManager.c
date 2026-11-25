@@ -1379,7 +1379,6 @@ LaunchAlpineStartupScript (
   return Status;
 }
 
-STATIC
 VOID
 LaunchLinuxManager (
   IN EFI_HANDLE ImageHandle
@@ -1996,8 +1995,8 @@ UefiMain (
     } else if (Selected == 1) {
       Status = LaunchAlpineStartupScript (ImageHandle);
       if (EFI_ERROR (Status)) {
-        Print (L\"\nEchec du lancement startup.nsh : %r\n\", Status);
-        Print (L\"Appuyez sur une touche pour revenir au menu.\n\");
+        Print (L"\nEchec du lancement startup.nsh : %r\n", Status);
+        Print (L"Appuyez sur une touche pour revenir au menu.\n");
         WaitForKey (&Key);
       }
     } else {
