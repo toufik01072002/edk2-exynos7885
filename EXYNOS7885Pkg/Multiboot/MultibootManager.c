@@ -1241,6 +1241,136 @@ IsAlpineRootfsAccessible (
 }
 
 STATIC
+EFI_STATUS
+LaunchAlpineStartupScript (
+  IN EFI_HANDLE ParentImage
+  )
+{
+  EFI_STATUS Status;
+  EFI_HANDLE *FvHandles;
+  UINTN FvCount;
+  UINTN Index;
+  EFI_FIRMWARE_VOLUME2_PROTOCOL *Fv;
+  VOID *ShellBuffer;
+  UINTN ShellSize;
+  UINT32 AuthenticationStatus;
+  EFI_HANDLE ShellImage;
+  EFI_LOADED_IMAGE_PROTOCOL *LoadedImage;
+  CHAR16 *LoadOptions;
+  CONST CHAR16 ShellArguments[] =
+    L"-exit FS4:\\media\\0\\UEFI\\ALP\\startup.nsh";
+
+  FvHandles = NULL;
+  FvCount = 0;
+  ShellBuffer = NULL;
+  ShellSize = 0;
+  ShellImage = NULL;
+  LoadedImage = NULL;
+  LoadOptions = NULL;
+
+  Status = gBS->LocateHandleBuffer (
+                  ByProtocol,
+                  &gEfiFirmwareVolume2ProtocolGuid,
+                  NULL,
+                  &FvCount,
+                  &FvHandles
+                  );
+  if (EFI_ERROR (Status) || FvCount == 0) {
+    Print (L"Firmware Volume introuvable : %r\\n", Status);
+    return EFI_NOT_FOUND;
+  }
+
+  Status = EFI_NOT_FOUND;
+  for (Index = 0; Index < FvCount; Index++) {
+    Fv = NULL;
+    if (EFI_ERROR (gBS->HandleProtocol (
+                         FvHandles[Index],
+                         &gEfiFirmwareVolume2ProtocolGuid,
+                         (VOID **)&Fv
+                         )) || Fv == NULL) {
+      continue;
+    }
+
+    ShellBuffer = NULL;
+    ShellSize = 0;
+    AuthenticationStatus = 0;
+    Status = Fv->ReadSection (
+                    Fv,
+                    &gUefiShellFileGuid,
+                    EFI_SECTION_PE32,
+                    0,
+                    &ShellBuffer,
+                    &ShellSize,
+                    &AuthenticationStatus
+                    );
+    if (!EFI_ERROR (Status) && ShellBuffer != NULL && ShellSize != 0) {
+      break;
+    }
+
+    if (ShellBuffer != NULL) {
+      gBS->FreePool (ShellBuffer);
+      ShellBuffer = NULL;
+    }
+  }
+
+  gBS->FreePool (FvHandles);
+  if (EFI_ERROR (Status) || ShellBuffer == NULL || ShellSize == 0) {
+    Print (L"Shell UEFI integre introuvable dans les volumes firmware : %r\\n",
+           Status);
+    return EFI_NOT_FOUND;
+  }
+
+  Status = gBS->LoadImage (
+                  FALSE,
+                  ParentImage,
+                  NULL,
+                  ShellBuffer,
+                  ShellSize,
+                  &ShellImage
+                  );
+  gBS->FreePool (ShellBuffer);
+  if (EFI_ERROR (Status)) {
+    Print (L"Chargement du Shell UEFI impossible : %r\\n", Status);
+    return Status;
+  }
+
+  Status = gBS->HandleProtocol (
+                  ShellImage,
+                  &gEfiLoadedImageProtocolGuid,
+                  (VOID **)&LoadedImage
+                  );
+  if (EFI_ERROR (Status) || LoadedImage == NULL) {
+    Print (L"Protocole LoadedImage du Shell indisponible : %r\\n", Status);
+    gBS->UnloadImage (ShellImage);
+    return Status;
+  }
+
+  Status = gBS->AllocatePool (
+                  EfiBootServicesData,
+                  sizeof (ShellArguments),
+                  (VOID **)&LoadOptions
+                  );
+  if (EFI_ERROR (Status)) {
+    gBS->UnloadImage (ShellImage);
+    return Status;
+  }
+
+  CopyMem (LoadOptions, ShellArguments, sizeof (ShellArguments));
+  LoadedImage->LoadOptions = LoadOptions;
+  LoadedImage->LoadOptionsSize = sizeof (ShellArguments);
+
+  Print (L"Lancement du Shell UEFI avec : %s\\n", ShellArguments);
+  Print (L"Script cible : FS4:\\media\\0\\UEFI\\ALP\\startup.nsh\\n");
+
+  Status = gBS->StartImage (ShellImage, NULL, NULL);
+
+  Print (L"Retour du script startup.nsh : %r\\n", Status);
+  gBS->FreePool (LoadOptions);
+  gBS->UnloadImage (ShellImage);
+  return Status;
+}
+
+STATIC
 VOID
 LaunchLinuxManager (
   IN EFI_HANDLE ImageHandle
@@ -1855,7 +1985,12 @@ UefiMain (
     if (Selected == 0) {
       LaunchAndroidFromVolumes (ImageHandle);
     } else if (Selected == 1) {
-      LaunchLinuxManager (ImageHandle);
+      Status = LaunchAlpineStartupScript (ImageHandle);
+      if (EFI_ERROR (Status)) {
+        Print (L\"\\nEchec du lancement startup.nsh : %r\\n\", Status);
+        Print (L\"Appuyez sur une touche pour revenir au menu.\\n\");
+        WaitForKey (&Key);
+      }
     } else {
       gST->ConOut->ClearScreen (gST->ConOut);
       Print (L"Le demarrage Windows ARM64 n'est pas encore integre.\\n");
