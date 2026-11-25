@@ -4,6 +4,9 @@
 #include <Library/UefiBootServicesTableLib.h>
 #include <Protocol/BlockIo.h>
 #include <Protocol/SimpleFileSystem.h>
+#include <Protocol/FirmwareVolume2.h>
+#include <Protocol/LoadedImage.h>
+#include <Guid/Section.h>
 #include <Guid/FileInfo.h>
 #include <Guid/FileSystemInfo.h>
 #include "AndroidImageLoader.h"
@@ -705,13 +708,13 @@ InspectAndroidBootImage (
   Print (L"Ramdisk addr* : 0x%08x\n", ReadLe32 (Header + 20));
   Print (L"Second size   : %u octets\n", SecondSize);
   Print (L"\n* Adresses historiques du header : non utilisees comme adresses de chargement.\n");
-  Print (L"\\nImage validee. Chargement temporaire des composants...\\n");
+  Print (L"\nImage validee. Chargement temporaire des composants...\n");
   Status = AndroidStageBootImage (ParentImage, Directory, FileName);
   if (EFI_ERROR (Status)) {
     goto Done;
   }
 
-  Print (L"\\nChargement termine. Appuyez sur une touche pour revenir.\\n");
+  Print (L"\nChargement termine. Appuyez sur une touche pour revenir.\n");
   {
     EFI_INPUT_KEY Key;
     WaitForKey (&Key);
@@ -1276,7 +1279,7 @@ LaunchAlpineStartupScript (
                   &FvHandles
                   );
   if (EFI_ERROR (Status) || FvCount == 0) {
-    Print (L"Firmware Volume introuvable : %r\\n", Status);
+    Print (L"Firmware Volume introuvable : %r\n", Status);
     return EFI_NOT_FOUND;
   }
 
@@ -1315,7 +1318,7 @@ LaunchAlpineStartupScript (
 
   gBS->FreePool (FvHandles);
   if (EFI_ERROR (Status) || ShellBuffer == NULL || ShellSize == 0) {
-    Print (L"Shell UEFI integre introuvable dans les volumes firmware : %r\\n",
+    Print (L"Shell UEFI integre introuvable dans les volumes firmware : %r\n",
            Status);
     return EFI_NOT_FOUND;
   }
@@ -1330,7 +1333,7 @@ LaunchAlpineStartupScript (
                   );
   gBS->FreePool (ShellBuffer);
   if (EFI_ERROR (Status)) {
-    Print (L"Chargement du Shell UEFI impossible : %r\\n", Status);
+    Print (L"Chargement du Shell UEFI impossible : %r\n", Status);
     return Status;
   }
 
@@ -1340,7 +1343,7 @@ LaunchAlpineStartupScript (
                   (VOID **)&LoadedImage
                   );
   if (EFI_ERROR (Status) || LoadedImage == NULL) {
-    Print (L"Protocole LoadedImage du Shell indisponible : %r\\n", Status);
+    Print (L"Protocole LoadedImage du Shell indisponible : %r\n", Status);
     gBS->UnloadImage (ShellImage);
     return Status;
   }
@@ -1359,12 +1362,12 @@ LaunchAlpineStartupScript (
   LoadedImage->LoadOptions = LoadOptions;
   LoadedImage->LoadOptionsSize = sizeof (ShellArguments);
 
-  Print (L"Lancement du Shell UEFI avec : %s\\n", ShellArguments);
-  Print (L"Script cible : FS4:\\media\\0\\UEFI\\ALP\\startup.nsh\\n");
+  Print (L"Lancement du Shell UEFI avec : %s\n", ShellArguments);
+  Print (L"Script cible : FS4:\\media\\0\\UEFI\\ALP\\startup.nsh\n");
 
   Status = gBS->StartImage (ShellImage, NULL, NULL);
 
-  Print (L"Retour du script startup.nsh : %r\\n", Status);
+  Print (L"Retour du script startup.nsh : %r\n", Status);
   gBS->FreePool (LoadOptions);
   gBS->UnloadImage (ShellImage);
   return Status;
@@ -1682,7 +1685,7 @@ LaunchLinuxManager (
     Print (L"========================================\n\n");
     Print (L"Aucune distribution detectee.\n\n");
     Print (L"Emplacement recherche sur les volumes internes :\n");
-    Print (L"\\Multiboot\\Linux\\<Distribution>\\\n\n");
+    Print (L"\\Multiboot\\Linux\\<Distribution>\\n\n");
     Print (L"Fichiers attendus : Image, initramfs, running.dtb\n");
     Print (L"Appuyez sur une touche pour revenir.\n");
     WaitForKey (&Key);
@@ -1987,14 +1990,14 @@ UefiMain (
     } else if (Selected == 1) {
       Status = LaunchAlpineStartupScript (ImageHandle);
       if (EFI_ERROR (Status)) {
-        Print (L\"\\nEchec du lancement startup.nsh : %r\\n\", Status);
-        Print (L\"Appuyez sur une touche pour revenir au menu.\\n\");
+        Print (L\"\nEchec du lancement startup.nsh : %r\n\", Status);
+        Print (L\"Appuyez sur une touche pour revenir au menu.\n\");
         WaitForKey (&Key);
       }
     } else {
       gST->ConOut->ClearScreen (gST->ConOut);
-      Print (L"Le demarrage Windows ARM64 n'est pas encore integre.\\n");
-      Print (L"Appuyez sur une touche pour revenir au menu.\\n");
+      Print (L"Le demarrage Windows ARM64 n'est pas encore integre.\n");
+      Print (L"Appuyez sur une touche pour revenir au menu.\n");
       WaitForKey (&Key);
     }
   }
